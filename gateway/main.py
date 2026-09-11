@@ -1,19 +1,22 @@
 """FastAPI Gateway Application Entrypoint."""
 
-from collections.abc import AsyncGenerator
+import time
+from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request, status
+from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from gateway.middleware.security import SecurityHeadersMiddleware
+from gateway.routes.dashboard import router as dashboard_router
 from gateway.routes.health import router as health_router
 from gateway.routes.proxy import router as proxy_router
 from gateway.routes.stream import router as stream_router
 from gateway.routes.verify import router as verify_router
 from shared.config import get_settings
 from shared.logging import configure_logging, get_logger
+from shared.telemetry import export_metrics, record_request_metric
 from shared.tracing import configure_tracer
 
 settings = get_settings()
@@ -63,13 +66,38 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # 3. Mount API Routers
+    # 3. Request Telemetry Middleware
+    @app.middleware("http")
+    async def request_telemetry_middleware(
+        request: Request,
+        call_next: Callable[[Request], Awaitable[Response]],
+    ) -> Response:
+        start_time = time.time()
+        tenant_id = request.headers.get("X-Tenant-ID", "anonymous")
+        response = await call_next(request)
+        _ = time.time() - start_time
+        endpoint = request.url.path
+        # Avoid exploding cardinality on dynamic paths
+        if endpoint.startswith("/v1/dashboard/sessions"):
+            endpoint = "/v1/dashboard/sessions"
+        record_request_metric(tenant_id=tenant_id, status_code=response.status_code, endpoint=endpoint)
+        return response
+
+    # 4. Mount Prometheus Metrics Endpoint
+    @app.get("/metrics", tags=["Observability"], include_in_schema=False)
+    async def metrics_endpoint() -> Response:
+        """Prometheus metrics scrape target."""
+        data, content_type = export_metrics()
+        return Response(content=data, media_type=content_type)
+
+    # 5. Mount API Routers
     app.include_router(health_router)
     app.include_router(verify_router)
     app.include_router(proxy_router)
     app.include_router(stream_router)
+    app.include_router(dashboard_router)
 
-    # 4. Global Error Handlers
+    # 6. Global Error Handlers
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         trace_id = getattr(request.state, "trace_id", "unknown")

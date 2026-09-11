@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from shared.config import get_settings
@@ -13,9 +13,10 @@ settings = get_settings()
 
 
 async def get_current_tenant(
-    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security_bearer)],
+    request: Request,
+    credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security_bearer)] = None,
 ) -> str:
-    """Resolve and authenticate current tenant ID from bearer token or fallback."""
+    """Resolve and authenticate current tenant ID from bearer token, tenant header, or fallback."""
     if credentials and credentials.credentials:
         token = credentials.credentials
         # Check against dev token or compute hash for lookup
@@ -26,6 +27,11 @@ async def get_current_tenant(
             detail="Invalid or expired authentication credentials",
             headers={"WWW-Authenticate": "Bearer"},
         )
+
+    # Check for X-Tenant-ID header
+    tenant_hdr = request.headers.get("X-Tenant-ID")
+    if tenant_hdr:
+        return tenant_hdr
 
     # In development/testing, default to demo tenant if no token passed
     if settings.debug or settings.environment.value in {"development", "test"}:

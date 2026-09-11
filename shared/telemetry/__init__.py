@@ -1,0 +1,43 @@
+"""Telemetry and metrics collectors for MIRAGE."""
+
+from shared.telemetry.metrics import (
+    ACTIVE_SESSIONS,
+    CIRCUIT_BREAKER_STATE,
+    CLIP_PREFILTER_PASS_RATE,
+    CORRECTION_TRIGGERED_TOTAL,
+    HALLUCINATION_TIER_TOTAL,
+    HRS_CI_WIDTH,
+    HRS_DISTRIBUTION,
+    MODULE_LATENCY_SECONDS,
+    RABBITMQ_QUEUE_DEPTH,
+    REQUESTS_TOTAL,
+    SCS_CACHE_HITS_TOTAL,
+    SCS_CACHE_MISSES_TOTAL,
+    VERIFICATION_LATENCY_SECONDS,
+    export_metrics,
+    record_circuit_breaker_state,
+    record_request_metric,
+    record_verification_metrics,
+    time_module,
+)
+
+__all__ = [
+    "ACTIVE_SESSIONS",
+    "CIRCUIT_BREAKER_STATE",
+    "CLIP_PREFILTER_PASS_RATE",
+    "CORRECTION_TRIGGERED_TOTAL",
+    "HALLUCINATION_TIER_TOTAL",
+    "HRS_CI_WIDTH",
+    "HRS_DISTRIBUTION",
+    "MODULE_LATENCY_SECONDS",
+    "RABBITMQ_QUEUE_DEPTH",
+    "REQUESTS_TOTAL",
+    "SCS_CACHE_HITS_TOTAL",
+    "SCS_CACHE_MISSES_TOTAL",
+    "VERIFICATION_LATENCY_SECONDS",
+    "export_metrics",
+    "record_circuit_breaker_state",
+    "record_request_metric",
+    "record_verification_metrics",
+    "time_module",
+]

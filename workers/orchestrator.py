@@ -3,11 +3,12 @@
 import asyncio
 import time
 import uuid
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from correction_agent.agent import CorrectionAgent
 
+from analytics.store import default_session_store
 from hrs_engine import HRSEngine
 from models.deberta import DeBERTaNLIVerifier
 from models.flan_t5 import AtomicClaimDecomposer
@@ -22,7 +23,8 @@ from shared.schemas import (
     VerificationStatus,
     determine_risk_tier,
 )
-from shared.tracing import get_current_trace_id
+from shared.telemetry import record_verification_metrics, time_module
+from shared.tracing import get_current_trace_id, trace_span
 from workers.ics.worker import ICSWorker
 from workers.rav.worker import RAVWorker
 from workers.scs.worker import SCSWorker
@@ -62,115 +64,197 @@ class VerificationOrchestrator:
         start_time = time.time()
         trace_id = get_current_trace_id()
 
-        # 1. Atomic claim decomposition (sub-50ms)
-        claims = self.decomposer.decompose(request.response)
-        if not claims:
-            # Empty response or pure whitespace
-            hrs_res = HRSResult(
-                hrs=0.0,
-                raw_score=0.0,
-                tier=determine_risk_tier(0.0),
-                conformal_interval=ConformalInterval(lower=0.0, upper=0.05),
-                signal_attribution=SignalAttribution(),
-                claims_count=0,
-                contradicted_claims_count=0,
-                computation_latency_ms=0.0,
-            )
-            return VerificationResponse(
-                request_id=f"req_{uuid.uuid4().hex[:12]}",
-                verified_response=request.response,
-                original_response=request.response,
-                hrs_result=hrs_res,
-                claims=[],
-                metadata=VerificationMetadata(
-                    trace_id=trace_id,
-                    execution_time_ms=0.0,
-                    pipeline_signals_used=[],
-                ),
-            )
+        with trace_span(
+            "mirage.pipeline_execution",
+            attributes={
+                "tenant_id": request.tenant_id,
+                "model_id": request.model_id,
+                "prompt": request.prompt,  # will be hashed by sanitize_trace_attributes
+                "response": request.response,  # will be hashed by sanitize_trace_attributes
+            },
+        ):
+            # 1. Atomic claim decomposition (sub-50ms)
+            with trace_span("mirage.claim_decomposition"), time_module("flan_t5"):
+                claims = self.decomposer.decompose(request.response)
 
-        # 2. Parallel signal execution: SCS prompt variance + ICS contradiction matrix
-        scs_task = asyncio.create_task(
-            self.scs_worker.compute_scs_score(
-                prompt=request.prompt,
-                model_id=request.model_id,
+            if not claims:
+                # Empty response or pure whitespace
+                hrs_res = HRSResult(
+                    hrs=0.0,
+                    raw_score=0.0,
+                    tier=determine_risk_tier(0.0),
+                    conformal_interval=ConformalInterval(lower=0.0, upper=0.05),
+                    signal_attribution=SignalAttribution(),
+                    claims_count=0,
+                    contradicted_claims_count=0,
+                    computation_latency_ms=0.0,
+                )
+                record_verification_metrics(
+                    tenant_id=request.tenant_id,
+                    model_id=request.model_id,
+                    hrs=0.0,
+                    tier="LOW",
+                    ci_width=0.05,
+                    latency_seconds=0.0,
+                    cached_scs_hit=None,
+                    correction_applied=False,
+                )
+                return VerificationResponse(
+                    request_id=f"req_{uuid.uuid4().hex[:12]}",
+                    verified_response=request.response,
+                    original_response=request.response,
+                    hrs_result=hrs_res,
+                    claims=[],
+                    metadata=VerificationMetadata(
+                        trace_id=trace_id,
+                        execution_time_ms=0.0,
+                        pipeline_signals_used=[],
+                    ),
+                )
+
+            # 2. Parallel signal execution: SCS prompt variance + ICS contradiction matrix
+            with trace_span("mirage.scs_and_ics_signals"):
+                with time_module("scs"):
+                    scs_task = asyncio.create_task(
+                        self.scs_worker.compute_scs_score(
+                            prompt=request.prompt,
+                            model_id=request.model_id,
+                            tenant_id=request.tenant_id,
+                        )
+                    )
+                with time_module("ics"):
+                    ics_scores = self.ics_worker.compute_claim_ics_scores(claims)
+
+            # 3. Parallel RAV evidence search per claim
+            with trace_span("mirage.rav_retrieval"), time_module("rav"):
+                rav_tasks = [
+                    self.rav_worker.search_evidence(
+                        query=c.text,
+                        collection_name=request.knowledge_base_id or "default_kb",
+                    )
+                    for c in claims
+                ]
+                evidence_results = await asyncio.gather(*rav_tasks)
+                scs_score, cached_scs_hit = await scs_task
+
+            # 4. Compute per-claim RAV and NLI scores
+            with trace_span("mirage.nli_scoring"), time_module("nli"):
+                rav_scores: list[float] = [
+                    self.rav_worker.compute_rav_score(c, evidence_results[idx]) for idx, c in enumerate(claims)
+                ]
+                nli_scores: list[float] = [
+                    self.verifier.aggregate_multi_evidence(c.text, evidence_results[idx])
+                    for idx, c in enumerate(claims)
+                ]
+
+            # 5. Synthesize calibrated HRS and Mondrian conformal intervals
+            with trace_span("mirage.hrs_synthesis"), time_module("hrs_engine"):
+                hrs_result, verified_claims = self.hrs_engine.process_claims(
+                    claims=claims,
+                    rav_scores=rav_scores,
+                    evidence_chunks_per_claim=evidence_results,
+                    scs_score=scs_score,
+                    ics_scores=ics_scores,
+                    nli_scores=nli_scores,
+                    scs_enabled=True,
+                    has_image=False,
+                )
+
+            req_id = f"req_{uuid.uuid4().hex[:12]}"
+            verified_text = request.response
+            correction_applied = False
+            correction_iters = 0
+
+            # 6. Trigger agentic correction loop if risk is High or Critical (> 0.60)
+            has_contradiction = any(c.status == VerificationStatus.CONTRADICTED for c in verified_claims)
+            if hrs_result.hrs > 0.60 or has_contradiction:
+                with trace_span("mirage.agentic_correction"), time_module("correction"):
+                    (
+                        corrected_text,
+                        was_corrected,
+                        iters,
+                        _,
+                        _,
+                    ) = await self.correction_agent.correct_response(
+                        response_id=req_id,
+                        original_response=request.response,
+                        verified_claims=verified_claims,
+                    )
+                    if was_corrected:
+                        verified_text = corrected_text
+                        correction_applied = True
+                        correction_iters = iters
+
+            elapsed_ms = round((time.time() - start_time) * 1000, 2)
+            hrs_result.computation_latency_ms = elapsed_ms
+            ci_width = round(hrs_result.conformal_interval.upper - hrs_result.conformal_interval.lower, 4)
+
+            # Record metrics & audit session
+            record_verification_metrics(
                 tenant_id=request.tenant_id,
+                model_id=request.model_id,
+                hrs=hrs_result.hrs,
+                tier=hrs_result.tier.value,
+                ci_width=ci_width,
+                latency_seconds=elapsed_ms / 1000.0,
+                cached_scs_hit=cached_scs_hit,
+                correction_applied=correction_applied,
+                correction_success=correction_applied and verified_text != request.response,
             )
-        )
-        ics_scores = self.ics_worker.compute_claim_ics_scores(claims)
 
-        # 3. Parallel RAV evidence search per claim
-        rav_tasks = [
-            self.rav_worker.search_evidence(
-                query=c.text,
-                collection_name=request.knowledge_base_id or "default_kb",
+            # Store session in analytics store
+            claims_dicts: list[dict[str, Any]] = [
+                {
+                    "claim_id": c.claim.claim_id,
+                    "text": c.claim.text,
+                    "type": c.claim.claim_type.value,
+                    "criticality": c.claim.criticality.value,
+                    "status": c.status.value,
+                    "hrs_contribution": c.risk_score,
+                }
+                for c in verified_claims
+            ]
+
+            attribution_dict: dict[str, float] = {
+                "rav": hrs_result.signal_attribution.rav,
+                "scs": hrs_result.signal_attribution.scs,
+                "nli": hrs_result.signal_attribution.nli,
+                "ics": hrs_result.signal_attribution.ics,
+                "vgs": hrs_result.signal_attribution.vgs if hrs_result.signal_attribution.vgs is not None else 0.0,
+            }
+
+            default_session_store.record_session(
+                session_id=req_id,
+                tenant_id=request.tenant_id,
+                trace_id=trace_id,
+                model_id=request.model_id,
+                prompt=request.prompt,
+                response=request.response,
+                hrs_score=hrs_result.hrs,
+                risk_tier=hrs_result.tier.value,
+                ci_lower=hrs_result.conformal_interval.lower,
+                ci_upper=hrs_result.conformal_interval.upper,
+                correction_applied=correction_applied,
+                claims_count=len(verified_claims),
+                contradicted_count=sum(1 for c in verified_claims if c.status == VerificationStatus.CONTRADICTED),
+                claims=claims_dicts,
+                signal_attribution=attribution_dict,
             )
-            for c in claims
-        ]
-        evidence_results = await asyncio.gather(*rav_tasks)
-        scs_score, cached_scs_hit = await scs_task
 
-        # 4. Compute per-claim RAV and NLI scores
-        rav_scores: list[float] = [
-            self.rav_worker.compute_rav_score(c, evidence_results[idx]) for idx, c in enumerate(claims)
-        ]
-        nli_scores: list[float] = [
-            self.verifier.aggregate_multi_evidence(c.text, evidence_results[idx]) for idx, c in enumerate(claims)
-        ]
+            metadata = VerificationMetadata(
+                trace_id=trace_id,
+                execution_time_ms=elapsed_ms,
+                pipeline_signals_used=["rav", "scs", "nli", "ics"],
+                cached_scs_hit=cached_scs_hit,
+                correction_applied=correction_applied,
+                correction_iterations=correction_iters,
+            )
 
-        # 5. Synthesize calibrated HRS and Mondrian conformal intervals
-        hrs_result, verified_claims = self.hrs_engine.process_claims(
-            claims=claims,
-            rav_scores=rav_scores,
-            evidence_chunks_per_claim=evidence_results,
-            scs_score=scs_score,
-            ics_scores=ics_scores,
-            nli_scores=nli_scores,
-            scs_enabled=True,
-            has_image=False,
-        )
-
-        req_id = f"req_{uuid.uuid4().hex[:12]}"
-        verified_text = request.response
-        correction_applied = False
-        correction_iters = 0
-
-        # 6. Trigger agentic correction loop if risk is High or Critical (> 0.60)
-        has_contradiction = any(c.status == VerificationStatus.CONTRADICTED for c in verified_claims)
-        if hrs_result.hrs > 0.60 or has_contradiction:
-            (
-                corrected_text,
-                was_corrected,
-                iters,
-                _,
-                _,
-            ) = await self.correction_agent.correct_response(
-                response_id=req_id,
+            return VerificationResponse(
+                request_id=req_id,
+                verified_response=verified_text,
                 original_response=request.response,
-                verified_claims=verified_claims,
+                hrs_result=hrs_result,
+                claims=verified_claims,
+                metadata=metadata,
             )
-            if was_corrected:
-                verified_text = corrected_text
-                correction_applied = True
-                correction_iters = iters
-
-        elapsed_ms = round((time.time() - start_time) * 1000, 2)
-        hrs_result.computation_latency_ms = elapsed_ms
-
-        metadata = VerificationMetadata(
-            trace_id=trace_id,
-            execution_time_ms=elapsed_ms,
-            pipeline_signals_used=["rav", "scs", "nli", "ics"],
-            cached_scs_hit=cached_scs_hit,
-            correction_applied=correction_applied,
-            correction_iterations=correction_iters,
-        )
-
-        return VerificationResponse(
-            request_id=req_id,
-            verified_response=verified_text,
-            original_response=request.response,
-            hrs_result=hrs_result,
-            claims=verified_claims,
-            metadata=metadata,
-        )

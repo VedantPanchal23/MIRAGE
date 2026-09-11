@@ -1,14 +1,26 @@
 .PHONY: setup dev test test-unit test-integration lint format migrate docker-up docker-down clean
 
-PYTHON ?= python
+ifeq ($(OS),Windows_NT)
+    VENV_BIN := .venv/Scripts
+else
+    VENV_BIN := .venv/bin
+endif
+
+PYTHON ?= $(VENV_BIN)/python
+PYTEST ?= $(VENV_BIN)/pytest
+RUFF   ?= $(VENV_BIN)/ruff
+MYPY   ?= $(VENV_BIN)/mypy
+UVICORN ?= $(VENV_BIN)/uvicorn
+ALEMBIC ?= $(VENV_BIN)/alembic
 
 setup:
+	py -3.12 -m venv .venv
 	$(PYTHON) -m pip install --upgrade pip
 	$(PYTHON) -m pip install -e ".[dev]"
 
 dev:
 	docker compose up -d
-	uvicorn gateway.main:app --host 0.0.0.0 --port 8000 --reload
+	$(UVICORN) gateway.main:app --host 0.0.0.0 --port 8000 --reload
 
 docker-up:
 	docker compose up -d
@@ -17,23 +29,23 @@ docker-down:
 	docker compose down
 
 migrate:
-	alembic upgrade head
+	$(ALEMBIC) upgrade head
 
 test:
-	pytest
+	$(PYTEST)
 
 test-unit:
-	pytest -m unit
+	$(PYTEST) -m unit
 
 test-integration:
-	pytest -m integration
+	$(PYTEST) -m integration
 
 lint:
-	ruff check .
-	mypy --strict shared/ db/
+	$(RUFF) check .
+	$(MYPY) --strict workers/ models/ gateway/ shared/ db/
 
 format:
-	ruff format .
+	$(RUFF) format .
 
 clean:
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage dist build *.egg-info

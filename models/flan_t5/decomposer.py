@@ -47,7 +47,7 @@ class AtomicClaimDecomposer:
             try:
                 from transformers import AutoModelForSeq2SeqLM, AutoTokenizer
 
-                self._tokenizer = AutoTokenizer.from_pretrained(model_name)  # type: ignore[no-untyped-call]
+                self._tokenizer = AutoTokenizer.from_pretrained(model_name)
                 self._model = AutoModelForSeq2SeqLM.from_pretrained(model_name)
                 logger.info("Loaded neural FLAN-T5 decomposer", model=model_name)
             except Exception as exc:

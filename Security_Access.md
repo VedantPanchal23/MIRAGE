@@ -337,7 +337,7 @@ Retry-After: 43
 # Gateway CORS configuration
 allowed_origins = [
     "https://dashboard.mirage-ai.internal",  # Dashboard
-    "https://*.tenant-domain.com",            # Configurable per tenant
+    "https://*.tenant-domain.com",  # Configurable per tenant
 ]
 allow_credentials = True
 allow_methods = ["GET", "POST", "DELETE"]

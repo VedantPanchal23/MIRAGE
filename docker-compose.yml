@@ -1,0 +1,122 @@
+services:
+  # ============================================================================
+  # Relational Database: PostgreSQL 16 (Auditing, Row-Level Security, Tenancy)
+  # ============================================================================
+  postgres:
+    image: postgres:16-alpine
+    container_name: mirage-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-mirage}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mirage_dev_secret}
+      POSTGRES_DB: ${POSTGRES_DB:-mirage_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-mirage} -d ${POSTGRES_DB:-mirage_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Document Store: MongoDB 7 (Verification Execution Traces & Raw Payloads)
+  # ============================================================================
+  mongodb:
+    image: mongo:7.0
+    container_name: mirage-mongodb
+    restart: unless-stopped
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-mirage_mongo_secret}
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Vector Database: Qdrant (Knowledge Base Embeddings & Retrieval)
+  # ============================================================================
+  qdrant:
+    image: qdrant/qdrant:v1.12.0
+    container_name: mirage-qdrant
+    restart: unless-stopped
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - qdrant_storage:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # In-Memory Cache & Rate Limiter: Redis 7
+  # ============================================================================
+  redis:
+    image: redis:7.2-alpine
+    container_name: mirage-redis
+    restart: unless-stopped
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:-mirage_redis_secret}"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-mirage_redis_secret}", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Message Broker: RabbitMQ 3.13 (Celery Multi-Signal Pipeline Distribution)
+  # ============================================================================
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    container_name: mirage-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-mirage}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-mirage_rabbit_secret}
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # Distributed Tracing: Grafana Tempo
+  # ============================================================================
+  tempo:
+    image: grafana/tempo:2.6.0
+    container_name: mirage-tempo
+    restart: unless-stopped
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./docker/tempo.yaml:/etc/tempo.yaml
+      - tempodata:/var/tempo
+    ports:
+      - "3200:3200" # Tempo HTTP
+      - "4317:4317" # OTLP gRPC
+      - "4318:4318" # OTLP HTTP
+
+volumes:
+  pgdata:
+  mongodata:
+  qdrant_storage:
+  redisdata:
+  rabbitmqdata:
+  tempodata:

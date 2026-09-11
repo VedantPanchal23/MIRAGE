@@ -372,6 +372,7 @@ This prevents undercoverage in high-risk categories, guaranteeing enterprise-gra
 ```python
 from typing import TypedDict, List, Dict, Optional
 
+
 class MirageAgentState(TypedDict):
     response_id: str
     original_response: str

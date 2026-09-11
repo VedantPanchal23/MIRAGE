@@ -8,12 +8,9 @@ from fastapi import APIRouter, Depends
 
 from gateway.middleware.auth import get_current_tenant
 from gateway.middleware.rate_limiter import rate_limiter
+from models.flan_t5 import AtomicClaimDecomposer
 from shared.logging import get_logger
 from shared.schemas import (
-    CRITICALITY_WEIGHTS,
-    Claim,
-    ClaimCriticality,
-    ClaimType,
     ClaimVerificationResult,
     ConformalInterval,
     HRSResult,
@@ -28,23 +25,7 @@ from shared.tracing import get_current_trace_id
 
 router = APIRouter(prefix="/v1", tags=["Verification"])
 logger = get_logger("verify_route")
-
-
-def extract_baseline_claims(text: str) -> list[Claim]:
-    """Baseline claim extraction parsing sentences into atomic propositions."""
-    sentences = [s.strip() for s in text.replace("\n", ". ").split(".") if s.strip()]
-    claims: list[Claim] = []
-    for idx, sentence in enumerate(sentences, start=1):
-        crit = ClaimCriticality.HIGH if any(char.isdigit() for char in sentence) else ClaimCriticality.MEDIUM
-        claim = Claim(
-            claim_id=f"c_{idx:02d}",
-            text=sentence,
-            claim_type=ClaimType.NUMERICAL if any(char.isdigit() for char in sentence) else ClaimType.FACTUAL,
-            criticality=crit,
-            criticality_weight=CRITICALITY_WEIGHTS[crit],
-        )
-        claims.append(claim)
-    return claims or [Claim(claim_id="c_01", text=text, claim_type=ClaimType.FACTUAL)]
+decomposer = AtomicClaimDecomposer(use_neural=False)
 
 
 @router.post("/verify", response_model=VerificationResponse)
@@ -61,8 +42,8 @@ async def verify_completion(
 
     logger.info("Executing verification request", tenant_id=tenant_id, trace_id=trace_id)
 
-    # Decompose response into claims
-    extracted_claims = extract_baseline_claims(request.response)
+    # Decompose response into atomic claims via FLAN-T5 engine
+    extracted_claims = decomposer.decompose(request.response)
 
     # Baseline multi-signal verification pass
     verified_claims: list[ClaimVerificationResult] = []

@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     groq_api_key: str = Field(default="")
     openrouter_api_key: str = Field(default="")
     huggingface_api_key: str = Field(default="")
+    llm_upstream_url: str = Field(default="https://api.groq.com/openai/v1")
 
     # --------------------------------------------------------------------------
     # Model Thresholds & Parameters

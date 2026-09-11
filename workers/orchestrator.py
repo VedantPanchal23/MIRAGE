@@ -3,6 +3,10 @@
 import asyncio
 import time
 import uuid
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from correction_agent.agent import CorrectionAgent
 
 from hrs_engine import HRSEngine
 from models.deberta import DeBERTaNLIVerifier
@@ -15,6 +19,7 @@ from shared.schemas import (
     VerificationMetadata,
     VerificationRequest,
     VerificationResponse,
+    VerificationStatus,
     determine_risk_tier,
 )
 from shared.tracing import get_current_trace_id
@@ -36,6 +41,7 @@ class VerificationOrchestrator:
         ics_worker: ICSWorker | None = None,
         nli_verifier: DeBERTaNLIVerifier | None = None,
         hrs_engine: HRSEngine | None = None,
+        correction_agent: "CorrectionAgent | None" = None,
     ) -> None:
         self.decomposer = decomposer or AtomicClaimDecomposer(use_neural=False)
         self.verifier = nli_verifier or DeBERTaNLIVerifier(use_neural=False)
@@ -43,6 +49,13 @@ class VerificationOrchestrator:
         self.scs_worker = scs_worker or SCSWorker(verifier=self.verifier)
         self.ics_worker = ics_worker or ICSWorker(verifier=self.verifier)
         self.hrs_engine = hrs_engine or HRSEngine()
+
+        if correction_agent is None:
+            from correction_agent.agent import CorrectionAgent as _CorrectionAgent
+
+            self.correction_agent = _CorrectionAgent(graph=None)
+        else:
+            self.correction_agent = correction_agent
 
     async def verify_request(self, request: VerificationRequest) -> VerificationResponse:
         """Execute full multi-signal factual consistency verification pipeline."""
@@ -117,6 +130,30 @@ class VerificationOrchestrator:
             has_image=False,
         )
 
+        req_id = f"req_{uuid.uuid4().hex[:12]}"
+        verified_text = request.response
+        correction_applied = False
+        correction_iters = 0
+
+        # 6. Trigger agentic correction loop if risk is High or Critical (> 0.60)
+        has_contradiction = any(c.status == VerificationStatus.CONTRADICTED for c in verified_claims)
+        if hrs_result.hrs > 0.60 or has_contradiction:
+            (
+                corrected_text,
+                was_corrected,
+                iters,
+                _,
+                _,
+            ) = await self.correction_agent.correct_response(
+                response_id=req_id,
+                original_response=request.response,
+                verified_claims=verified_claims,
+            )
+            if was_corrected:
+                verified_text = corrected_text
+                correction_applied = True
+                correction_iters = iters
+
         elapsed_ms = round((time.time() - start_time) * 1000, 2)
         hrs_result.computation_latency_ms = elapsed_ms
 
@@ -125,12 +162,13 @@ class VerificationOrchestrator:
             execution_time_ms=elapsed_ms,
             pipeline_signals_used=["rav", "scs", "nli", "ics"],
             cached_scs_hit=cached_scs_hit,
-            correction_applied=False,
+            correction_applied=correction_applied,
+            correction_iterations=correction_iters,
         )
 
         return VerificationResponse(
-            request_id=f"req_{uuid.uuid4().hex[:12]}",
-            verified_response=request.response,
+            request_id=req_id,
+            verified_response=verified_text,
             original_response=request.response,
             hrs_result=hrs_result,
             claims=verified_claims,

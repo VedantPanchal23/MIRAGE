@@ -63,6 +63,7 @@ def configure_logging(service_name: str = "mirage", log_level: str = "INFO", jso
     root_logger.addHandler(handler)
     root_logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
+
 def get_logger(name: str = "mirage") -> structlog.stdlib.BoundLogger:
     """Retrieve a bound structured logger instance."""
     return cast(structlog.stdlib.BoundLogger, structlog.get_logger(name))

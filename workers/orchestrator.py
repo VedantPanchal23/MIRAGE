@@ -4,18 +4,17 @@ import asyncio
 import time
 import uuid
 
-from models.deberta.verifier import DeBERTaNLIVerifier
-from models.flan_t5.decomposer import AtomicClaimDecomposer
+from hrs_engine import HRSEngine
+from models.deberta import DeBERTaNLIVerifier
+from models.flan_t5 import AtomicClaimDecomposer
 from shared.logging import get_logger
 from shared.schemas import (
-    ClaimVerificationResult,
     ConformalInterval,
     HRSResult,
     SignalAttribution,
     VerificationMetadata,
     VerificationRequest,
     VerificationResponse,
-    VerificationStatus,
     determine_risk_tier,
 )
 from shared.tracing import get_current_trace_id
@@ -36,12 +35,14 @@ class VerificationOrchestrator:
         scs_worker: SCSWorker | None = None,
         ics_worker: ICSWorker | None = None,
         nli_verifier: DeBERTaNLIVerifier | None = None,
+        hrs_engine: HRSEngine | None = None,
     ) -> None:
         self.decomposer = decomposer or AtomicClaimDecomposer(use_neural=False)
         self.verifier = nli_verifier or DeBERTaNLIVerifier(use_neural=False)
         self.rav_worker = rav_worker or RAVWorker()
         self.scs_worker = scs_worker or SCSWorker(verifier=self.verifier)
         self.ics_worker = ics_worker or ICSWorker(verifier=self.verifier)
+        self.hrs_engine = hrs_engine or HRSEngine()
 
     async def verify_request(self, request: VerificationRequest) -> VerificationResponse:
         """Execute full multi-signal factual consistency verification pipeline."""
@@ -96,81 +97,28 @@ class VerificationOrchestrator:
         evidence_results = await asyncio.gather(*rav_tasks)
         scs_score, cached_scs_hit = await scs_task
 
-        # 4. Synthesize per-claim verification results
-        verified_claims: list[ClaimVerificationResult] = []
-        weighted_claim_risk_sum = 0.0
+        # 4. Compute per-claim RAV and NLI scores
+        rav_scores: list[float] = [
+            self.rav_worker.compute_rav_score(c, evidence_results[idx]) for idx, c in enumerate(claims)
+        ]
+        nli_scores: list[float] = [
+            self.verifier.aggregate_multi_evidence(c.text, evidence_results[idx]) for idx, c in enumerate(claims)
+        ]
 
-        for idx, claim in enumerate(claims):
-            chunks = evidence_results[idx]
-            s_rav = self.rav_worker.compute_rav_score(claim, chunks)
-            s_nli = self.verifier.aggregate_multi_evidence(claim.text, chunks)
-            s_ics = ics_scores.get(claim.claim_id, 0.0)
-
-            # Signal weighting: RAV (0.35) + SCS (0.20) + NLI (0.30) + ICS (0.15)
-            w_rav, w_scs, w_nli, w_ics = 0.35, 0.20, 0.30, 0.15
-            claim_risk = round(
-                w_rav * s_rav + w_scs * scs_score + w_nli * s_nli + w_ics * s_ics,
-                4,
-            )
-
-            # Determine claim status
-            if s_nli > 0.65 or s_ics > 0.70 or claim_risk > 0.60:
-                status = VerificationStatus.CONTRADICTED
-                explanation = "Contradiction detected by NLI logic or intra-response consistency check."
-            elif claim_risk < 0.25 and s_rav < 0.20:
-                status = VerificationStatus.SUPPORTED
-                explanation = "Claim is strongly supported by retrieved knowledge base evidence."
-            elif not chunks:
-                status = VerificationStatus.INSUFFICIENT_EVIDENCE
-                explanation = "No authoritative evidence chunks found in configured knowledge base."
-            else:
-                status = VerificationStatus.NEUTRAL
-                explanation = "Claim has neutral evidence alignment."
-
-            attribution = {
-                "rav": round(w_rav * s_rav / max(claim_risk, 0.01), 3),
-                "scs": round(w_scs * scs_score / max(claim_risk, 0.01), 3),
-                "nli": round(w_nli * s_nli / max(claim_risk, 0.01), 3),
-                "ics": round(w_ics * s_ics / max(claim_risk, 0.01), 3),
-            }
-
-            verified_claims.append(
-                ClaimVerificationResult(
-                    claim=claim,
-                    status=status,
-                    risk_score=claim_risk,
-                    rav_score=s_rav,
-                    scs_score=scs_score,
-                    nli_score=s_nli,
-                    ics_score=s_ics,
-                    signal_attribution=attribution,
-                    evidence_chunks=chunks,
-                    explanation=explanation,
-                )
-            )
-            weighted_claim_risk_sum += claim_risk * claim.criticality_weight
-
-        # 5. Criticality-weighted response HRS aggregation
-        weight_sum = sum(c.criticality_weight for c in claims) or 1.0
-        response_hrs = round(min(1.0, max(0.0, weighted_claim_risk_sum / weight_sum)), 4)
-        tier = determine_risk_tier(response_hrs)
-        elapsed_ms = round((time.time() - start_time) * 1000, 2)
-
-        hrs_result = HRSResult(
-            hrs=response_hrs,
-            raw_score=response_hrs,
-            tier=tier,
-            conformal_interval=ConformalInterval(
-                lower=max(0.0, round(response_hrs - 0.06, 4)),
-                upper=min(1.0, round(response_hrs + 0.06, 4)),
-                confidence_level=0.95,
-                conditional_group=f"tier:{tier.value}",
-            ),
-            signal_attribution=SignalAttribution(rav=0.35, scs=0.20, nli=0.30, ics=0.15),
-            claims_count=len(claims),
-            contradicted_claims_count=sum(1 for c in verified_claims if c.status == VerificationStatus.CONTRADICTED),
-            computation_latency_ms=elapsed_ms,
+        # 5. Synthesize calibrated HRS and Mondrian conformal intervals
+        hrs_result, verified_claims = self.hrs_engine.process_claims(
+            claims=claims,
+            rav_scores=rav_scores,
+            evidence_chunks_per_claim=evidence_results,
+            scs_score=scs_score,
+            ics_scores=ics_scores,
+            nli_scores=nli_scores,
+            scs_enabled=True,
+            has_image=False,
         )
+
+        elapsed_ms = round((time.time() - start_time) * 1000, 2)
+        hrs_result.computation_latency_ms = elapsed_ms
 
         metadata = VerificationMetadata(
             trace_id=trace_id,

@@ -116,12 +116,63 @@
   - `ruff check .` passed with 0 errors.
   - `mypy --strict` passed with 0 errors across 62 source files.
   - Full test suite: 96/96 tests passed 100%.
-  - Commit and push to GitHub `main`.
+  - Commit and push to GitHub `main` (`commit 43ff129`).
 
 ---
 
-### Phase 8: Benchmarks, Adversarial Suite & Production Hardening — PENDING
-- [ ] Benchmark execution harness (HaluEval, TruthfulQA, FActScoring).
-- [ ] Adversarial attack suite (ATK-01 to ATK-04).
-- [ ] k6 performance test scenarios (100 CCU sustained load).
-- [ ] Gate 8 Final Release Audit & Verification.
+### Phase 7.5: Edge Cases & Adversarial Robustness Suite — COMPLETE ✅
+- [x] Comprehensive adversarial attack suite in `tests/unit/test_edge_cases.py` (25 tests).
+- [x] ATK-01 (adversarial prompt injection / hallucination baiting).
+- [x] ATK-02 (subtle numerical corruption).
+- [x] ATK-03 (knowledge base contamination).
+- [x] ATK-04 (intra-response contradictory gaslighting).
+- [x] 100% tests passing, committed and pushed to `main` (`commit 67caf98`).
+
+---
+
+### Phase 8: Benchmarking Harness, Statistical Evaluation & k6 Load Testing — COMPLETE ✅
+- [x] **8.1 Statistical Metrics Engine** (`benchmarks/metrics.py`):
+  - Macro F1, AUROC, AUPRC, 15-bin ECE, MCE, Brier score, Mondrian conformal coverage.
+  - Paired Bootstrap resampling test (10,000 resamples), McNemar's test.
+- [x] **8.2 Benchmark Dataset Loaders** (`benchmarks/datasets/`):
+  - HaluEval (`halueval.py`): QA, dialogue, and summarization splits.
+  - TruthfulQA (`truthfulqa.py`): Misconceptions split for zero-shot calibration generalization.
+  - FActScore (`factscore.py`): Biography domain atomic factual precision loader.
+- [x] **8.3 Central Evaluator & CLI Runner** (`benchmarks/evaluator.py`, `benchmarks/runner.py`):
+  - Async parallel runner with hardware-aware concurrency capping (8 workers for i5-13th HX).
+  - Target criteria checks matching Section 17 of `Benchmarking_Evaluation.md`.
+  - JSON reporting in `results/`.
+- [x] **8.4 k6 Performance Load Testing Suite** (`tests/performance/`):
+  - `baseline.js` (1 VU), `ramp_up.js` (1->100 VUs), `sustained_load.js` (100 VUs), `cache_warm.js` (>35% hit rate).
+  - Python async load driver `run_load_tests.py`: **544.9 req/s throughput**, **P50 = 15.73ms**, **P95 = 23.54ms** (SLA target < 3000ms), 0.00% errors.
+- [x] **8.5 Publication-Grade SVG Generator** (`scripts/generate_figures.py`):
+  - Generated SVG diagrams in `docs/figures/` (Reliability diagram, ROC/PR curves, Conformal coverage, Latency breakdown).
+- [x] **8.6 Unit Tests & Quality Gates**:
+  - `tests/unit/test_benchmarks.py` (13 tests) + full test suite: **134/134 passed 100%**.
+  - `ruff check` and `ruff format` 100% clean.
+  - `mypy --strict` passed with 0 errors across 78 source files.
+  - Committed and pushed to GitHub `main` (`commit 0cc9c76`).
+
+---
+
+### Phase 9: Multimodal Visual Grounding Module (CLIP Pre-Filter + LLaVA-1.6 / Vision API) — IN PROGRESS
+- [ ] **9.1 Visual Grounding Schema & Input Pipeline**:
+  - Add image inputs support to `VerificationRequest` (base64 and URL).
+  - Add image claims to `AtomicClaimDecomposer` taxonomy.
+- [ ] **9.2 CLIP Pre-Filter Engine** (`workers/visual/clip_filter.py`):
+  - Cosine similarity between image embeddings and visual claim text.
+  - Configurable threshold ($\tau_{clip} = 0.85$, per-tenant configurable).
+  - High similarity bypass mechanism (skips heavy LLaVA for obvious matches).
+- [ ] **9.3 LLaVA-1.6 / Vision Verification Worker** (`workers/visual/worker.py`):
+  - VQA verification prompt with `CONSISTENT`, `INCONSISTENT`, `INSUFFICIENT_EVIDENCE` parsing.
+  - Fallback support: Local ONNX/CLIP + PyTorch GPU (RTX 3050 6GB) / API fallback.
+- [ ] **9.4 Multimodal Integration in Orchestrator & HRS Engine**:
+  - Integrate `vgs_score` signal into `VerificationOrchestrator` and `HRSEngine`.
+  - Dynamic weight adjustment for multimodal vs text-only requests.
+- [ ] **9.5 MMHAL-Bench Benchmark Loader** (`benchmarks/datasets/mmhal.py`):
+  - Loader and evaluator for multimodal hallucination benchmarks.
+- [ ] **9.6 Test Suite & Quality Gates**:
+  - Unit and integration tests for CLIP pre-filter and visual grounding worker.
+  - Ruff format, ruff check, and mypy --strict validation.
+  - Commit and push to GitHub `main`.
+

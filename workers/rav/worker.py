@@ -4,6 +4,7 @@ from typing import Any
 
 from qdrant_client import QdrantClient
 
+from gateway.middleware.circuit_breaker import qdrant_circuit
 from shared.config import get_settings
 from shared.logging import get_logger
 from shared.schemas import Claim, EvidenceChunk
@@ -22,7 +23,7 @@ class RAVWorker:
         self._local_docs: list[EvidenceChunk] = []
 
         try:
-            self._client = QdrantClient(host=self.host, port=self.port, timeout=2, check_compatibility=False)
+            self._client = QdrantClient(host=self.host, port=self.port, timeout=1, check_compatibility=False)
         except Exception as exc:
             logger.warning("Could not connect to Qdrant, using in-memory store", error=str(exc))
             self._client = None
@@ -61,15 +62,19 @@ class RAVWorker:
             scored.sort(key=lambda x: x.similarity_score, reverse=True)
             return scored[:limit]
 
-        # 2. Query Qdrant if client is connected
-        if self._client is not None:
+        # 2. Query Qdrant if client is connected and circuit breaker is not OPEN
+        if self._client is not None and qdrant_circuit.current_state != "open":
             try:
-                # In full pipeline, query vector is computed with all-mpnet-base-v2
-                results = self._client.query_points(
-                    collection_name=collection_name,
-                    query=[0.1] * 768,  # placeholder representation
-                    limit=limit,
-                ).points
+
+                def _do_query() -> Any:
+                    assert self._client is not None
+                    return self._client.query_points(
+                        collection_name=collection_name,
+                        query=[0.1] * 768,  # placeholder representation
+                        limit=limit,
+                    ).points
+
+                results = qdrant_circuit.call(_do_query)
                 evidence: list[EvidenceChunk] = []
                 for hit in results:
                     payload: dict[str, Any] = hit.payload or {}

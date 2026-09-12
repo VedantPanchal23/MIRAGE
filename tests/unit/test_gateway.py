@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gateway.main import app
-from gateway.middleware.circuit_breaker import get_all_circuit_statuses
+from gateway.middleware.circuit_breaker import get_all_circuit_statuses, reset_all_circuits
 from gateway.middleware.rate_limiter import SlidingWindowRateLimiter
 
 
@@ -111,6 +111,7 @@ class TestRateLimiterAndCircuits:
         assert "Rate limit exceeded" in str(exc_info.value)
 
     def test_all_circuits_initialized(self) -> None:
+        reset_all_circuits()
         circuits = get_all_circuit_statuses()
         expected = {"llm_api", "qdrant", "nli_verifier", "flan_t5_decomposer", "redis_cache", "rabbitmq_broker"}
         assert set(circuits.keys()) == expected

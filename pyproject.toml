@@ -53,6 +53,7 @@ dependencies = [
     "scipy>=1.14.1",
     "langgraph>=0.2.0",
     "prometheus-client>=0.21.0",
+    "matplotlib>=3.9.0",
 ]
 
 [project.optional-dependencies]
@@ -89,6 +90,9 @@ select = [
     "ARG", # flake8-unused-arguments
 ]
 ignore = ["B008"]
+
+[tool.ruff.lint.per-file-ignores]
+"benchmarks/datasets/*" = ["E501"]
 
 [tool.mypy]
 python_version = "3.12"

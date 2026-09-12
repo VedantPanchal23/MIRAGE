@@ -96,3 +96,10 @@ def get_all_circuit_statuses() -> dict[str, dict[str, Any]]:
         }
         for cb in circuits
     }
+
+
+def reset_all_circuits() -> None:
+    """Reset all circuit breakers to closed state and clear failure counters."""
+    circuits = [llm_circuit, qdrant_circuit, nli_circuit, flan_t5_circuit, redis_circuit, rabbitmq_circuit]
+    for cb in circuits:
+        cb.close()

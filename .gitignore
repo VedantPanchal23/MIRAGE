@@ -89,3 +89,7 @@ node_modules/
 dashboard/build/
 dashboard/dist/
 .eslintcache
+
+# Benchmark & load test results
+results/*
+!results/.gitkeep

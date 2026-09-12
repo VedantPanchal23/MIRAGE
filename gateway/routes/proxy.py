@@ -1,4 +1,4 @@
-"""OpenAI-compatible drop-in reverse proxy (POST /v1/chat/completions)."""
+"""OpenAI-compatible drop-in reverse proxy (POST /v1/chat/completions) with live factual verification."""
 
 import time
 import uuid
@@ -12,10 +12,13 @@ from gateway.middleware.circuit_breaker import llm_circuit
 from gateway.middleware.rate_limiter import rate_limiter
 from shared.config import get_settings
 from shared.logging import get_logger
+from shared.schemas import VerificationRequest
+from workers.orchestrator import VerificationOrchestrator
 
 router = APIRouter(prefix="/v1", tags=["OpenAI Proxy"])
 logger = get_logger("proxy_route")
 settings = get_settings()
+orchestrator = VerificationOrchestrator()
 
 
 @router.post("/chat/completions")
@@ -48,12 +51,26 @@ async def chat_completions_proxy(
         try:
 
             async def _call_groq() -> dict[str, Any]:
-                async with httpx.AsyncClient(timeout=15.0) as client:
+                req_payload = dict(payload)
+                async with httpx.AsyncClient(timeout=20.0) as client:
                     resp = await client.post(
                         "https://api.groq.com/openai/v1/chat/completions",
                         headers={"Authorization": f"Bearer {settings.groq_api_key}"},
-                        json=payload,
+                        json=req_payload,
                     )
+                    # If requested model is not found on provider, fall back to default primary model
+                    if resp.status_code == 404 and req_payload.get("model") != settings.default_primary_model:
+                        logger.warning(
+                            "Model not found on Groq, falling back to default primary model",
+                            requested_model=req_payload.get("model"),
+                            fallback_model=settings.default_primary_model,
+                        )
+                        req_payload["model"] = settings.default_primary_model
+                        resp = await client.post(
+                            "https://api.groq.com/openai/v1/chat/completions",
+                            headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                            json=req_payload,
+                        )
                     resp.raise_for_status()
                     data = resp.json()
                     assert isinstance(data, dict)
@@ -72,17 +89,26 @@ async def chat_completions_proxy(
         # Development / mock response when no API key is provided
         completion_text = f"Verified response generated for prompt: '{last_user_msg}'."
 
-    # 2. Run verification
-    simulated_hrs = 0.04
-    tier_str = "LOW"
+    # 2. Run multi-signal verification through orchestrator
+    v_req = VerificationRequest(
+        prompt=last_user_msg,
+        response=completion_text,
+        tenant_id=tenant_id,
+        model_id=model_name,
+    )
+    v_res = await orchestrator.verify_request(v_req)
+
+    actual_hrs = v_res.hrs_result.hrs
+    tier_str = v_res.hrs_result.tier.value
+    final_text = v_res.verified_response
 
     # Attach verification metadata headers
-    response.headers["X-Mirage-HRS"] = str(simulated_hrs)
+    response.headers["X-Mirage-HRS"] = str(actual_hrs)
     response.headers["X-Mirage-Tier"] = tier_str
     response.headers["X-Trace-ID"] = trace_id
 
     elapsed_ms = round((time.time() - start_time) * 1000, 2)
-    logger.info("Proxy request completed", latency_ms=elapsed_ms, hrs=simulated_hrs, tier=tier_str)
+    logger.info("Proxy request completed", latency_ms=elapsed_ms, hrs=actual_hrs, tier=tier_str)
 
     # 3. Format strictly compliant OpenAI Chat Completion response
     return {
@@ -95,16 +121,23 @@ async def chat_completions_proxy(
                 "index": 0,
                 "message": {
                     "role": "assistant",
-                    "content": completion_text,
+                    "content": final_text,
                 },
                 "finish_reason": "stop",
             }
         ],
         "usage": usage_info,
         "mirage": {
-            "hrs": simulated_hrs,
+            "hrs": actual_hrs,
             "tier": tier_str,
             "trace_id": trace_id,
             "verified": True,
+            "claims_count": v_res.hrs_result.claims_count,
+            "contradicted_count": v_res.hrs_result.contradicted_claims_count,
+            "correction_applied": v_res.metadata.correction_applied,
+            "conformal_interval": {
+                "lower": v_res.hrs_result.conformal_interval.lower,
+                "upper": v_res.hrs_result.conformal_interval.upper,
+            },
         },
     }

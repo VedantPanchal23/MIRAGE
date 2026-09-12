@@ -192,7 +192,15 @@ class CorrectionGraph:
                         data = resp.json()
                         content = data["choices"][0]["message"]["content"].strip()
                         if content:
-                            return str(content)
+                            p_entail, _, p_contra = self.verifier.predict_pair(evidence_chunks[0], content)
+                            if p_contra < 0.3 and p_entail >= 0.4:
+                                return str(content)
+                            logger.info(
+                                "LLM rewrite failed evidence alignment check, using authoritative evidence fallback",
+                                rewrite=content,
+                                p_entail=p_entail,
+                                p_contra=p_contra,
+                            )
             except Exception as exc:
                 logger.debug("Upstream LLM rewrite call failed, using evidence alignment fallback", error=str(exc))
 

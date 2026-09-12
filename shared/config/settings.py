@@ -102,7 +102,7 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------------------
     # Model Thresholds & Parameters
     # --------------------------------------------------------------------------
-    default_primary_model: str = Field(default="llama-3.1-70b-versatile")
+    default_primary_model: str = Field(default="allam-2-7b")
     scs_sample_count: int = Field(default=5, ge=1, le=10)
     scs_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     clip_threshold: float = Field(default=0.85, ge=0.0, le=1.0)

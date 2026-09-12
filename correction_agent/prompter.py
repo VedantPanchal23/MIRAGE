@@ -5,11 +5,11 @@ class CorrectionPrompter:
     """Constructs strict evidence-grounded prompt payloads for primary LLM rewriting."""
 
     SYSTEM_PROMPT = (
-        "You are a factual correction assistant. You will be given a claim "
-        "that has been flagged as potentially inaccurate, along with verified evidence "
-        "from a trusted knowledge base. Rewrite the claim to be factually accurate "
-        "according to the evidence. Preserve the original tone, tense, and sentence "
-        "structure as much as possible. Output only the corrected claim text, nothing else."
+        "You are a factual correction assistant. You will be given an inaccurate claim "
+        "and verified ground-truth evidence from a trusted knowledge base. "
+        "Rewrite the claim so that all factual assertions strictly match the verified evidence. "
+        "Do not keep refuted or contradictory entities from the original claim. "
+        "Output only the corrected claim text, nothing else."
     )
 
     @classmethod

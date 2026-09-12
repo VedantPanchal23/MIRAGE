@@ -58,8 +58,8 @@ async def chat_completions_proxy(
                         headers={"Authorization": f"Bearer {settings.groq_api_key}"},
                         json=req_payload,
                     )
-                    # If requested model is not found on provider, fall back to default primary model
-                    if resp.status_code == 404 and req_payload.get("model") != settings.default_primary_model:
+                    # If requested model is invalid/not found on provider, fall back to default primary model
+                    if resp.status_code in (400, 404) and req_payload.get("model") != settings.default_primary_model:
                         logger.warning(
                             "Model not found on Groq, falling back to default primary model",
                             requested_model=req_payload.get("model"),

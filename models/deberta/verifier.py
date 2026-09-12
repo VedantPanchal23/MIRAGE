@@ -132,22 +132,24 @@ class DeBERTaNLIVerifier:
             "it",
         }
 
+        p_content = p_words - stopwords
+        h_content = h_words - stopwords
+        shared_content = p_content.intersection(h_content)
         shared = p_words.intersection(h_words)
         overlap = len(shared) / len(h_words)
 
         # Check for numeric or date mismatch
         p_nums = set(re.findall(r"\b\d+\b", p_lower))
         h_nums = set(re.findall(r"\b\d+\b", h_lower))
-        if h_nums and p_nums and not h_nums.issubset(p_nums) and (overlap >= 0.20 or len(shared) >= 1):
+        if h_nums and p_nums and not h_nums.issubset(p_nums) and (overlap >= 0.20 or len(shared_content) >= 1):
             # Shared context but numbers contradict (e.g., 1999 vs 1928)
             return 0.02, 0.08, 0.90
 
-        if has_negation_p != has_negation_h and (overlap > 0.40 or len(shared) >= 2):
+        if has_negation_p != has_negation_h and (
+            len(shared_content) >= 2 or (h_content and len(shared_content) / len(h_content) > 0.40)
+        ):
             # Direct polarity flip
             return 0.01, 0.09, 0.90
-
-        p_content = p_words - stopwords
-        h_content = h_words - stopwords
 
         # Direct entailment if hypothesis content words are a subset of premise content words
         if h_content and h_content.issubset(p_content):

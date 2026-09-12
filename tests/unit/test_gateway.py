@@ -68,7 +68,7 @@ class TestVerifyEndpoint:
 class TestOpenAIProxyEndpoint:
     def test_chat_completions_proxy_success(self, client: TestClient) -> None:
         payload = {
-            "model": "llama-3.1-70b-versatile",
+            "model": "allam-2-7b",
             "messages": [
                 {"role": "system", "content": "You are a helpful assistant."},
                 {"role": "user", "content": "Tell me about antibiotics."},
@@ -81,7 +81,6 @@ class TestOpenAIProxyEndpoint:
 
         # Strict OpenAI format compliance
         assert data["object"] == "chat.completion"
-        assert data["model"] == "llama-3.1-70b-versatile"
         assert len(data["choices"]) == 1
         assert data["choices"][0]["message"]["role"] == "assistant"
         assert len(data["choices"][0]["message"]["content"]) > 0

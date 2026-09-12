@@ -85,7 +85,7 @@ class AtomicClaimDecomposer:
         """Split text into independent atomic claims with sub-50ms CPU latency."""
         start_time = time.time()
         cleaned_text = text.strip()
-        if not cleaned_text:
+        if not cleaned_text or not any(c.isalnum() for c in cleaned_text):
             return []
 
         # If neural model is enabled and ready, attempt model decomposition

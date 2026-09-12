@@ -1,3 +1,4 @@
+from collections.abc import Sequence
 from typing import Any, Literal
 
 import numpy as np
@@ -12,8 +13,8 @@ CalibrationMethod = Literal["isotonic", "platt", "temperature"]
 
 
 def compute_ece(
-    y_true: list[float] | np.ndarray[Any, Any],
-    y_prob: list[float] | np.ndarray[Any, Any],
+    y_true: Sequence[float | int] | np.ndarray[Any, Any],
+    y_prob: Sequence[float] | np.ndarray[Any, Any],
     n_bins: int = 15,
 ) -> float:
     """Compute Expected Calibration Error (ECE) across specified probability bins.
@@ -51,8 +52,8 @@ def compute_ece(
 
 
 def compute_mce(
-    y_true: list[float] | np.ndarray[Any, Any],
-    y_prob: list[float] | np.ndarray[Any, Any],
+    y_true: Sequence[float | int] | np.ndarray[Any, Any],
+    y_prob: Sequence[float] | np.ndarray[Any, Any],
     n_bins: int = 15,
 ) -> float:
     """Compute Maximum Calibration Error (MCE) across probability bins."""
@@ -86,8 +87,8 @@ def compute_mce(
 
 
 def compute_brier_score(
-    y_true: list[float] | np.ndarray[Any, Any],
-    y_prob: list[float] | np.ndarray[Any, Any],
+    y_true: Sequence[float | int] | np.ndarray[Any, Any],
+    y_prob: Sequence[float] | np.ndarray[Any, Any],
 ) -> float:
     """Compute mean squared error between true binary outcome and predicted probability."""
     y_true_arr = np.asarray(y_true, dtype=float)
@@ -107,7 +108,7 @@ class Calibrator:
         self._platt: LogisticRegression | None = None
         self._temperature: float = 1.0
 
-    def fit(self, raw_scores: list[float], true_labels: list[int | float]) -> None:
+    def fit(self, raw_scores: Sequence[float], true_labels: Sequence[int | float]) -> None:
         """Fit calibration model on held-out calibration set (e.g. 1000 HaluEval samples)."""
         scores_arr = np.asarray(raw_scores, dtype=float)
         labels_arr = np.asarray(true_labels, dtype=float)

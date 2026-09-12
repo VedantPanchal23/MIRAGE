@@ -1,5 +1,7 @@
 """Unit and contract tests for the FastAPI Gateway layer."""
 
+from typing import Any
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -93,7 +95,7 @@ class TestOpenAIProxyEndpoint:
         assert "x-mirage-hrs" in response.headers
 
     def test_chat_completions_empty_messages_error(self, client: TestClient) -> None:
-        payload = {"messages": []}
+        payload: dict[str, Any] = {"messages": []}
         response = client.post("/v1/chat/completions", json=payload)
         assert response.status_code == 400
 

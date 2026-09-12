@@ -1,5 +1,6 @@
 """Meta-Learner: LightGBM gradient boosted decision tree classifier and baseline ensemble."""
 
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -31,7 +32,7 @@ class HRSMetaLearner:
                 logger.warning("Failed to load LightGBM model from disk", error=str(exc))
                 self.model = None
 
-    def fit(self, X: list[list[float]], y: list[int | float]) -> None:
+    def fit(self, X: Sequence[Sequence[float]], y: Sequence[int | float]) -> None:
         """Fit a LightGBM classifier on training/calibration feature vectors."""
         if not HAS_LIGHTGBM:
             logger.warning("LightGBM not available, skipping fit")

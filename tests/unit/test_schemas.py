@@ -38,7 +38,7 @@ class TestClaimSchemas:
         claim = Claim(claim_id="c_02", text="Water boils at 100 degrees Celsius.")
         with pytest.raises(ValidationError):
             # Model is frozen
-            claim.text = "New text"  # type: ignore[misc]
+            claim.text = "New text"
 
     def test_criticality_weights_mapping(self) -> None:
         assert CRITICALITY_WEIGHTS[ClaimCriticality.HIGH] == 1.0

@@ -1,6 +1,7 @@
 """Mondrian (Group-Conditional) Conformal Prediction Engine."""
 
 import math
+from collections.abc import Sequence
 from typing import Any
 
 import numpy as np
@@ -31,9 +32,9 @@ class MondrianConformalPredictor:
 
     def fit(
         self,
-        predicted_scores: list[float] | np.ndarray[Any, Any],
-        true_labels: list[int | float] | np.ndarray[Any, Any],
-        groups: list[str] | None = None,
+        predicted_scores: Sequence[float] | np.ndarray[Any, Any],
+        true_labels: Sequence[int | float] | np.ndarray[Any, Any],
+        groups: Sequence[str] | None = None,
     ) -> None:
         """Calibrate group-conditional non-conformity quantiles on held-out calibration set."""
         preds = np.asarray(predicted_scores, dtype=float)
@@ -96,9 +97,9 @@ class MondrianConformalPredictor:
 
     def evaluate_coverage(
         self,
-        predicted_scores: list[float],
-        true_labels: list[int | float],
-        groups: list[str] | None = None,
+        predicted_scores: Sequence[float],
+        true_labels: Sequence[int | float],
+        groups: Sequence[str] | None = None,
     ) -> dict[str, float]:
         """Evaluate empirical coverage and mean interval width on a test set."""
         if not predicted_scores:

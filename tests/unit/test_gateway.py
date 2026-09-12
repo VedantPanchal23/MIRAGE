@@ -113,7 +113,15 @@ class TestRateLimiterAndCircuits:
     def test_all_circuits_initialized(self) -> None:
         reset_all_circuits()
         circuits = get_all_circuit_statuses()
-        expected = {"llm_api", "qdrant", "nli_verifier", "flan_t5_decomposer", "redis_cache", "rabbitmq_broker"}
+        expected = {
+            "llm_api",
+            "qdrant",
+            "nli_verifier",
+            "flan_t5_decomposer",
+            "redis_cache",
+            "rabbitmq_broker",
+            "llava_model",
+        }
         assert set(circuits.keys()) == expected
         for _name, info in circuits.items():
             assert info["state"] == "closed"

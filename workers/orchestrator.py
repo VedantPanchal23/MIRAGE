@@ -28,12 +28,13 @@ from shared.tracing import get_current_trace_id, trace_span
 from workers.ics.worker import ICSWorker
 from workers.rav.worker import RAVWorker
 from workers.scs.worker import SCSWorker
+from workers.visual import VisualGroundingWorker
 
 logger = get_logger("verification_orchestrator")
 
 
 class VerificationOrchestrator:
-    """Coordinates parallel execution of the 4 core text verification signals."""
+    """Coordinates parallel execution of the verification signals across RAV, SCS, ICS, NLI, and VGS."""
 
     def __init__(
         self,
@@ -44,6 +45,7 @@ class VerificationOrchestrator:
         nli_verifier: DeBERTaNLIVerifier | None = None,
         hrs_engine: HRSEngine | None = None,
         correction_agent: "CorrectionAgent | None" = None,
+        visual_worker: VisualGroundingWorker | None = None,
     ) -> None:
         self.decomposer = decomposer or AtomicClaimDecomposer(use_neural=False)
         self.verifier = nli_verifier or DeBERTaNLIVerifier(use_neural=False)
@@ -51,6 +53,7 @@ class VerificationOrchestrator:
         self.scs_worker = scs_worker or SCSWorker(verifier=self.verifier)
         self.ics_worker = ics_worker or ICSWorker(verifier=self.verifier)
         self.hrs_engine = hrs_engine or HRSEngine()
+        self.visual_worker = visual_worker or VisualGroundingWorker()
 
         if correction_agent is None:
             from correction_agent.agent import CorrectionAgent as _CorrectionAgent
@@ -112,7 +115,20 @@ class VerificationOrchestrator:
                     ),
                 )
 
-            # 2. Parallel signal execution: SCS prompt variance + ICS contradiction matrix
+            images = request.all_images
+            has_image = bool(images)
+            signals_used: list[str] = ["rav", "scs", "nli", "ics"]
+
+            # 2. Parallel signal execution: SCS prompt variance + ICS contradiction matrix + Visual Grounding
+            visual_task: asyncio.Task[Any] | None = None
+            if has_image:
+                visual_task = asyncio.create_task(
+                    self.visual_worker.verify_claims(
+                        claims=claims,
+                        images=images,
+                    )
+                )
+
             with trace_span("mirage.scs_and_ics_signals"):
                 with time_module("scs"):
                     scs_task = asyncio.create_task(
@@ -137,7 +153,7 @@ class VerificationOrchestrator:
                 evidence_results = await asyncio.gather(*rav_tasks)
                 scs_score, cached_scs_hit = await scs_task
 
-            # 4. Compute per-claim RAV and NLI scores
+            # 4. Compute per-claim RAV and NLI scores (+ gather Visual Grounding if multimodal)
             with trace_span("mirage.nli_scoring"), time_module("nli"):
                 rav_scores: list[float] = [
                     self.rav_worker.compute_rav_score(c, evidence_results[idx]) for idx, c in enumerate(claims)
@@ -146,6 +162,13 @@ class VerificationOrchestrator:
                     self.verifier.aggregate_multi_evidence(c.text, evidence_results[idx])
                     for idx, c in enumerate(claims)
                 ]
+
+            vgs_scores: list[float] | None = None
+            if visual_task is not None:
+                with trace_span("mirage.visual_grounding"), time_module("visual"):
+                    visual_results = await visual_task
+                    vgs_scores = [vr[0] for vr in visual_results]
+                    signals_used.append("vgs")
 
             # 5. Synthesize calibrated HRS and Mondrian conformal intervals
             with trace_span("mirage.hrs_synthesis"), time_module("hrs_engine"):
@@ -156,8 +179,9 @@ class VerificationOrchestrator:
                     scs_score=scs_score,
                     ics_scores=ics_scores,
                     nli_scores=nli_scores,
+                    vgs_scores=vgs_scores,
                     scs_enabled=True,
-                    has_image=False,
+                    has_image=has_image,
                 )
 
             req_id = f"req_{uuid.uuid4().hex[:12]}"
@@ -244,7 +268,7 @@ class VerificationOrchestrator:
             metadata = VerificationMetadata(
                 trace_id=trace_id,
                 execution_time_ms=elapsed_ms,
-                pipeline_signals_used=["rav", "scs", "nli", "ics"],
+                pipeline_signals_used=signals_used,
                 cached_scs_hit=cached_scs_hit,
                 correction_applied=correction_applied,
                 correction_iterations=correction_iters,

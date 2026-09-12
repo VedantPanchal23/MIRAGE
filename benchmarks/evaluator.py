@@ -25,6 +25,7 @@ class BenchmarkCase:
     ground_truth_label: int  # 0 = Factual / Supported, 1 = Hallucinated / Contradicted
     domain: str = "general"
     reference_evidence: Sequence[str] = ()
+    images: Sequence[str] = ()
 
 
 @dataclass(frozen=True)

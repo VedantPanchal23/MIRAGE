@@ -83,10 +83,26 @@ rabbitmq_circuit = pybreaker.CircuitBreaker(
     listeners=[listener],
 )
 
+# Multimodal Vision Model Server (LLaVA-1.6 / Vision API)
+llava_circuit = pybreaker.CircuitBreaker(
+    fail_max=3,
+    reset_timeout=30,
+    name="llava_model",
+    listeners=[listener],
+)
+
 
 def get_all_circuit_statuses() -> dict[str, dict[str, Any]]:
     """Return dictionary of current circuit states and fail counters."""
-    circuits = [llm_circuit, qdrant_circuit, nli_circuit, flan_t5_circuit, redis_circuit, rabbitmq_circuit]
+    circuits = [
+        llm_circuit,
+        qdrant_circuit,
+        nli_circuit,
+        flan_t5_circuit,
+        redis_circuit,
+        rabbitmq_circuit,
+        llava_circuit,
+    ]
     return {
         (cb.name or "unknown"): {
             "state": cb.current_state,
@@ -100,6 +116,14 @@ def get_all_circuit_statuses() -> dict[str, dict[str, Any]]:
 
 def reset_all_circuits() -> None:
     """Reset all circuit breakers to closed state and clear failure counters."""
-    circuits = [llm_circuit, qdrant_circuit, nli_circuit, flan_t5_circuit, redis_circuit, rabbitmq_circuit]
+    circuits = [
+        llm_circuit,
+        qdrant_circuit,
+        nli_circuit,
+        flan_t5_circuit,
+        redis_circuit,
+        rabbitmq_circuit,
+        llava_circuit,
+    ]
     for cb in circuits:
         cb.close()

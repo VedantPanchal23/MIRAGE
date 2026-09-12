@@ -23,11 +23,24 @@ class VerificationRequest(BaseModel):
         default_factory=list,
         description="Optional list of image URLs/paths referenced in multimodal claims",
     )
+    images: list[str] = Field(
+        default_factory=list,
+        description="Optional list of base64 data URIs or image URLs for multimodal verification",
+    )
     model_id: str = Field(default="llama-3.1-70b-versatile", description="Generator model identifier")
     auto_correct: bool = Field(
         default=True,
         description="Whether to run the LangGraph agentic correction loop if HRS exceeds threshold",
     )
+
+    @property
+    def all_images(self) -> list[str]:
+        """Combine image_urls and images lists removing duplicates while preserving order."""
+        combined: list[str] = []
+        for img in self.image_urls + self.images:
+            if img and img not in combined:
+                combined.append(img)
+        return combined
 
 
 class VerificationMetadata(BaseModel):

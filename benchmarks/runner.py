@@ -12,9 +12,12 @@ import time
 from datetime import UTC, datetime
 from pathlib import Path
 
-from benchmarks.datasets.factscore import FActScoreLoader
-from benchmarks.datasets.halueval import HaluEvalLoader
-from benchmarks.datasets.truthfulqa import TruthfulQALoader
+from benchmarks.datasets import (
+    FActScoreLoader,
+    HaluEvalLoader,
+    MMHALBenchLoader,
+    TruthfulQALoader,
+)
 from benchmarks.evaluator import (
     BenchmarkCase,
     BenchmarkOutput,
@@ -63,6 +66,8 @@ class BenchmarkRunner:
                 response=case.response,
                 tenant_id=f"bench_{case.domain}",
                 model_id="benchmark_target",
+                image_urls=list(case.images),
+                auto_correct=False,
             )
 
             start = time.time()
@@ -190,6 +195,10 @@ async def main_async(args: argparse.Namespace) -> int:
         cases = FActScoreLoader(args.factscore_path).load_cases(limit=args.limit)
         datasets_to_run.append(("FActScore (Biographies)", cases))
 
+    if args.benchmark in ("all", "mmhal"):
+        cases = MMHALBenchLoader(args.mmhal_path).load_cases(limit=args.limit)
+        datasets_to_run.append(("MMHAL-Bench (Multimodal)", cases))
+
     results: list[BenchmarkResult] = []
     for name, cases in datasets_to_run:
         res = await runner.run_benchmark(name, cases)
@@ -205,7 +214,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="MIRAGE Benchmarking & Evaluation CLI Runner")
     parser.add_argument(
         "--benchmark",
-        choices=["all", "halueval", "truthfulqa", "factscore"],
+        choices=["all", "halueval", "truthfulqa", "factscore", "mmhal"],
         default="all",
         help="Which benchmark dataset to evaluate",
     )
@@ -221,6 +230,7 @@ def main() -> None:
     parser.add_argument("--halueval-path", default=None, help="Path to external HaluEval JSON/JSONL")
     parser.add_argument("--truthfulqa-path", default=None, help="Path to external TruthfulQA JSON/JSONL")
     parser.add_argument("--factscore-path", default=None, help="Path to external FActScore JSON/JSONL")
+    parser.add_argument("--mmhal-path", default=None, help="Path to external MMHAL-Bench JSON/JSONL")
 
     args = parser.parse_args()
     exit_code = asyncio.run(main_async(args))

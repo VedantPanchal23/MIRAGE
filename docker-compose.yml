@@ -113,6 +113,62 @@ services:
       - "4317:4317" # OTLP gRPC
       - "4318:4318" # OTLP HTTP
 
+  # ============================================================================
+  # FastAPI Gateway: Ingestion, Proxying, Rate Limiting & Verification Orchestrator
+  # ============================================================================
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.gateway
+    container_name: mirage-gateway
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - ENVIRONMENT=production
+      - POSTGRES_USER=${POSTGRES_USER:-mirage}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-mirage_dev_secret}
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-mirage_db}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_PASSWORD=${REDIS_PASSWORD:-mirage_redis_secret}
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=${RABBITMQ_USER:-mirage}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD:-mirage_rabbit_secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ============================================================================
+  # React 18 / Nginx Frontend: Real-Time Hallucination & Drift Dashboard
+  # ============================================================================
+  dashboard:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.dashboard
+    container_name: mirage-dashboard
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - gateway
+
 volumes:
   pgdata:
   mongodata:
@@ -120,3 +176,4 @@ volumes:
   redisdata:
   rabbitmqdata:
   tempodata:
+

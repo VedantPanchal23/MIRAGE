@@ -29,6 +29,7 @@ async def health_check() -> dict[str, Any]:
         "environment": settings.environment.value,
         "uptime_seconds": uptime_seconds,
         "circuit_breakers": circuit_statuses,
+        "circuits": circuit_statuses,
         "components": {
             "gateway": {"status": "healthy"},
             "postgres": {"status": "configured", "host": settings.postgres_host},

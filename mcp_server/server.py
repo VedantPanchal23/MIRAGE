@@ -70,6 +70,28 @@ class MirageMCPServer:
                     "required": ["text"],
                 },
             },
+            {
+                "name": "query_audit_logs",
+                "description": (
+                    "Search and query past hallucination verification sessions and audit logs "
+                    "using natural language or keyword filters (e.g. 'critical risk sessions', 'contradictions')."
+                ),
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Natural language query, e.g. 'Show critical risk sessions'",
+                        },
+                        "tenant_id": {
+                            "type": "string",
+                            "description": "Tenant identifier.",
+                            "default": "default_tenant",
+                        },
+                    },
+                    "required": ["query"],
+                },
+            },
         ]
 
     async def verify_factual_consistency(
@@ -183,6 +205,19 @@ class MirageMCPServer:
                     "jsonrpc": "2.0",
                     "id": msg_id,
                     "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]},
+                }
+
+            if tool_name == "query_audit_logs":
+                from analytics.audit_service import AuditService
+
+                matches = AuditService.natural_language_query(
+                    query=arguments.get("query", ""),
+                    tenant_id=arguments.get("tenant_id", "default_tenant"),
+                )
+                return {
+                    "jsonrpc": "2.0",
+                    "id": msg_id,
+                    "result": {"content": [{"type": "text", "text": json.dumps({"matches": matches}, indent=2)}]},
                 }
 
             return {

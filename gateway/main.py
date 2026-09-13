@@ -8,9 +8,12 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from gateway.middleware.pii import PIIDetectionMiddleware
 from gateway.middleware.security import SecurityHeadersMiddleware
+from gateway.routes.audit import router as audit_router
 from gateway.routes.dashboard import router as dashboard_router
 from gateway.routes.health import router as health_router
+from gateway.routes.knowledge_base import router as knowledge_base_router
 from gateway.routes.proxy import router as proxy_router
 from gateway.routes.stream import router as stream_router
 from gateway.routes.verify import router as verify_router
@@ -57,7 +60,10 @@ def create_app() -> FastAPI:
     # 1. Security Headers Middleware
     app.add_middleware(SecurityHeadersMiddleware)
 
-    # 2. CORS Middleware
+    # 2. PII Detection Middleware (Pre-processing scanner, non-blocking)
+    app.add_middleware(PIIDetectionMiddleware)
+
+    # 3. CORS Middleware
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"] if settings.debug else ["https://dashboard.mirage-ai.internal"],
@@ -66,7 +72,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # 3. Request Telemetry Middleware
+    # 4. Request Telemetry Middleware
     @app.middleware("http")
     async def request_telemetry_middleware(
         request: Request,
@@ -83,19 +89,21 @@ def create_app() -> FastAPI:
         record_request_metric(tenant_id=tenant_id, status_code=response.status_code, endpoint=endpoint)
         return response
 
-    # 4. Mount Prometheus Metrics Endpoint
+    # 5. Mount Prometheus Metrics Endpoint
     @app.get("/metrics", tags=["Observability"], include_in_schema=False)
     async def metrics_endpoint() -> Response:
         """Prometheus metrics scrape target."""
         data, content_type = export_metrics()
         return Response(content=data, media_type=content_type)
 
-    # 5. Mount API Routers
+    # 6. Mount API Routers
     app.include_router(health_router)
     app.include_router(verify_router)
     app.include_router(proxy_router)
     app.include_router(stream_router)
     app.include_router(dashboard_router)
+    app.include_router(knowledge_base_router)
+    app.include_router(audit_router)
 
     # 6. Global Error Handlers
     @app.exception_handler(Exception)

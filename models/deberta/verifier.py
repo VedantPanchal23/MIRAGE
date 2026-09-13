@@ -83,7 +83,19 @@ class DeBERTaNLIVerifier:
         h_lower = hypothesis.lower()
 
         # Check for explicit negation clashes (e.g. "is" vs "is not", "cures" vs "does not cure")
-        neg_words = [" not ", " never ", " no ", " cannot ", " false ", "isn't", "wasn't", "aren't"]
+        neg_words = [
+            " not ",
+            " never ",
+            " no ",
+            " cannot ",
+            " false ",
+            "isn't",
+            "wasn't",
+            "aren't",
+            " zero ",
+            " none ",
+            " without ",
+        ]
         has_negation_p = any(neg in p_lower for neg in neg_words)
         has_negation_h = any(neg in h_lower for neg in neg_words)
 

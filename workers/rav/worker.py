@@ -65,12 +65,13 @@ class RAVWorker:
         # 2. Query Qdrant if client is connected and circuit breaker is not OPEN
         if self._client is not None and qdrant_circuit.current_state != "open":
             try:
+                from workers.rav.ingestion import compute_deterministic_embedding
 
                 def _do_query() -> Any:
                     assert self._client is not None
                     return self._client.query_points(
                         collection_name=collection_name,
-                        query=[0.1] * 768,  # placeholder representation
+                        query=compute_deterministic_embedding(query, dim=768),
                         limit=limit,
                     ).points
 

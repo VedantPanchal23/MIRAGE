@@ -1,13 +1,8 @@
-﻿import React from "react";
-import { DriftReport } from "../types";
+import React from "react";
 
-interface DriftChartProps {
-  drift: DriftReport;
-}
-
-export const DriftChart: React.FC<DriftChartProps> = ({ drift }) => {
+export function DriftChart({ drift = {} }) {
   const points = drift.timeseries || [];
-  const maxScore = 0.50; // max Y on scale
+  const maxScore = 0.50;
   const height = 140;
   const width = 500;
   const padding = 20;
@@ -55,12 +50,12 @@ export const DriftChart: React.FC<DriftChartProps> = ({ drift }) => {
         <div className="flex items-center space-x-3">
           <div className="text-right">
             <div className="text-xs font-mono font-bold text-slate-200">
-              PSI = {drift.psi.toFixed(4)}
+              PSI = {Number(drift.psi || 0).toFixed(4)}
             </div>
-            <div className="text-[10px] text-slate-400">KS p = {drift.ks_p_value.toFixed(3)}</div>
+            <div className="text-[10px] text-slate-400">KS p = {Number(drift.ks_p_value || 0).toFixed(3)}</div>
           </div>
           <span className={`text-xs px-2.5 py-1 rounded-md font-semibold border ${statusColors.badge}`}>
-            {drift.psi_status}
+            {drift.psi_status || "STABLE"}
           </span>
         </div>
       </div>
@@ -127,4 +122,4 @@ export const DriftChart: React.FC<DriftChartProps> = ({ drift }) => {
       </div>
     </div>
   );
-};
+}

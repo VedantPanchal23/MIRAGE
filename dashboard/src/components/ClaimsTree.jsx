@@ -1,19 +1,6 @@
-﻿import React from "react";
-import { ClaimItem } from "../types";
+import React from "react";
 
-interface ClaimsTreeProps {
-  claims: ClaimItem[];
-  originalText: string;
-  verifiedText: string;
-  correctionApplied: boolean;
-}
-
-export const ClaimsTree: React.FC<ClaimsTreeProps> = ({
-  claims,
-  originalText,
-  verifiedText,
-  correctionApplied,
-}) => {
+export function ClaimsTree({ claims = [], originalText = "", verifiedText = "", correctionApplied = false }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-6">
       <div>
@@ -68,7 +55,7 @@ export const ClaimsTree: React.FC<ClaimsTreeProps> = ({
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">
-                  <span className="font-mono text-[11px] text-slate-400">Risk: {c.hrs_contribution.toFixed(3)}</span>
+                  <span className="font-mono text-[11px] text-slate-400">Risk: {Number(c.hrs_contribution || 0).toFixed(3)}</span>
                   {statusBadge}
                 </div>
               </div>
@@ -99,4 +86,4 @@ export const ClaimsTree: React.FC<ClaimsTreeProps> = ({
       </div>
     </div>
   );
-};
+}

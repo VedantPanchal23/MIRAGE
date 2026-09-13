@@ -1,26 +1,17 @@
-﻿import React from "react";
-import { SignalAttribution } from "../types";
+import React from "react";
 
-interface SHAPWaterfallProps {
-  attribution: SignalAttribution;
-  hrsScore: number;
-}
-
-export const SHAPWaterfall: React.FC<SHAPWaterfallProps> = ({
-  attribution,
-  hrsScore,
-}) => {
+export function SHAPWaterfall({ attribution = {}, hrsScore = 0.0 }) {
   const signals = [
-    { name: "RAV (Retrieval Support)", value: attribution.rav, color: "bg-blue-500", desc: "Knowledge Base semantic matching" },
-    { name: "SCS (Semantic Entropy)", value: attribution.scs, color: "bg-indigo-500", desc: "n=5 sampling consistency" },
-    { name: "NLI (Entailment Verifier)", value: attribution.nli, color: "bg-purple-500", desc: "DeBERTa-v3 cross-encoder" },
-    { name: "ICS (Internal Inconsistency)", value: attribution.ics, color: "bg-amber-500", desc: "Pairwise intra-response contradiction" },
+    { name: "RAV (Retrieval Support)", value: attribution.rav || 0.0, color: "bg-blue-500", desc: "Knowledge Base semantic matching" },
+    { name: "SCS (Semantic Entropy)", value: attribution.scs || 0.0, color: "bg-indigo-500", desc: "n=5 sampling consistency" },
+    { name: "NLI (Entailment Verifier)", value: attribution.nli || 0.0, color: "bg-purple-500", desc: "DeBERTa-v3 cross-encoder" },
+    { name: "ICS (Internal Inconsistency)", value: attribution.ics || 0.0, color: "bg-amber-500", desc: "Pairwise intra-response contradiction" },
   ];
 
   if (attribution.vgs !== undefined && attribution.vgs !== null) {
     signals.push({
       name: "VGS (Visual Grounding)",
-      value: attribution.vgs,
+      value: attribution.vgs || 0.0,
       color: "bg-emerald-500",
       desc: "CLIP pre-filter & LLaVA-1.6 VQA",
     });
@@ -34,7 +25,7 @@ export const SHAPWaterfall: React.FC<SHAPWaterfallProps> = ({
         <div>
           <h3 className="text-sm font-semibold text-slate-200">TreeSHAP Feature Attribution</h3>
           <p className="text-xs text-slate-400 mt-0.5">
-            Marginal signal contribution to Calibrated HRS ({hrsScore.toFixed(3)})
+            Marginal signal contribution to Calibrated HRS ({Number(hrsScore).toFixed(3)})
           </p>
         </div>
         <span className="text-xs font-mono bg-slate-800 text-slate-300 px-2 py-1 rounded">
@@ -50,7 +41,7 @@ export const SHAPWaterfall: React.FC<SHAPWaterfallProps> = ({
               <div className="flex justify-between items-center text-xs mb-1.5">
                 <span className="font-medium text-slate-300">{sig.name}</span>
                 <div className="flex items-center space-x-2">
-                  <span className="text-slate-400 font-mono text-[11px]">{sig.value.toFixed(3)}</span>
+                  <span className="text-slate-400 font-mono text-[11px]">{Number(sig.value).toFixed(3)}</span>
                   <span className="font-semibold text-slate-200 w-9 text-right">{percentage}%</span>
                 </div>
               </div>
@@ -67,4 +58,4 @@ export const SHAPWaterfall: React.FC<SHAPWaterfallProps> = ({
       </div>
     </div>
   );
-};
+}

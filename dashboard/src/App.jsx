@@ -1,14 +1,13 @@
-﻿import React, { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { MetricCard } from "./components/MetricCard";
 import { SHAPWaterfall } from "./components/SHAPWaterfall";
 import { CircuitBreakerStatus } from "./components/CircuitBreakerStatus";
 import { DriftChart } from "./components/DriftChart";
 import { ClaimsTree } from "./components/ClaimsTree";
-import { CircuitInfo, DashboardStats, DriftReport, VerificationSession } from "./types";
 import { ShieldCheck, Activity, AlertTriangle, Layers, Cpu, Database, RefreshCw } from "lucide-react";
 
 // Default pre-loaded state mirroring real production telemetry
-const DEFAULT_STATS: DashboardStats = {
+const DEFAULT_STATS = {
   tenant_id: "default_tenant",
   total_verifications: 14250,
   average_hrs: 0.084,
@@ -18,7 +17,7 @@ const DEFAULT_STATS: DashboardStats = {
   drift_alert: false,
 };
 
-const DEFAULT_SESSION: VerificationSession = {
+const DEFAULT_SESSION = {
   session_id: "sess_9128f412ba",
   tenant_id: "default_tenant",
   trace_id: "tr_4c28a8f902194b1",
@@ -60,7 +59,7 @@ const DEFAULT_SESSION: VerificationSession = {
   },
 };
 
-const DEFAULT_CIRCUITS: Record<string, CircuitInfo> = {
+const DEFAULT_CIRCUITS = {
   llm_api: { state: "closed", fail_counter: 0, fail_max: 5, reset_timeout: 60 },
   qdrant: { state: "closed", fail_counter: 0, fail_max: 3, reset_timeout: 30 },
   nli_verifier: { state: "closed", fail_counter: 0, fail_max: 3, reset_timeout: 30 },
@@ -70,7 +69,7 @@ const DEFAULT_CIRCUITS: Record<string, CircuitInfo> = {
   llava_model: { state: "closed", fail_counter: 0, fail_max: 3, reset_timeout: 30 },
 };
 
-const DEFAULT_DRIFT: DriftReport = {
+const DEFAULT_DRIFT = {
   psi: 0.0284,
   psi_status: "STABLE",
   ks_p_value: 0.482,
@@ -87,13 +86,13 @@ const DEFAULT_DRIFT: DriftReport = {
   ],
 };
 
-export const App: React.FC = () => {
-  const [stats, setStats] = useState<DashboardStats>(DEFAULT_STATS);
-  const [session, setSession] = useState<VerificationSession>(DEFAULT_SESSION);
-  const [circuits, setCircuits] = useState<Record<string, CircuitInfo>>(DEFAULT_CIRCUITS);
-  const [drift, setDrift] = useState<DriftReport>(DEFAULT_DRIFT);
-  const [isLive, setIsLive] = useState<boolean>(true);
-  const [lastRefreshed, setLastRefreshed] = useState<string>(new Date().toLocaleTimeString());
+export function App() {
+  const [stats, setStats] = useState(DEFAULT_STATS);
+  const [session, setSession] = useState(DEFAULT_SESSION);
+  const [circuits, setCircuits] = useState(DEFAULT_CIRCUITS);
+  const [drift, setDrift] = useState(DEFAULT_DRIFT);
+  const [isLive, setIsLive] = useState(true);
+  const [lastRefreshed, setLastRefreshed] = useState(new Date().toLocaleTimeString());
 
   const fetchData = async () => {
     try {

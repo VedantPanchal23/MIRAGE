@@ -1,21 +1,16 @@
-﻿import React from "react";
-import { CircuitInfo } from "../types";
+import React from "react";
 
-interface CircuitBreakerStatusProps {
-  circuits: Record<string, CircuitInfo>;
-}
+const NAMES_MAP = {
+  llm_api: { label: "Primary LLM API", role: "Groq / OpenAI / OpenRouter" },
+  qdrant: { label: "Qdrant Vector DB", role: "Knowledge Base Retrieval" },
+  nli_verifier: { label: "DeBERTa NLI Verifier", role: "TorchServe Entailment Server" },
+  flan_t5_decomposer: { label: "FLAN-T5 Decomposer", role: "Atomic Claim Extraction" },
+  redis_cache: { label: "Redis Cache", role: "SCS Semantic Cluster Cache" },
+  rabbitmq_broker: { label: "RabbitMQ Broker", role: "Celery Task Queue" },
+  llava_model: { label: "LLaVA-1.6 Vision", role: "Multimodal VQA Grounding" },
+};
 
-export const CircuitBreakerStatus: React.FC<CircuitBreakerStatusProps> = ({ circuits }) => {
-  const namesMap: Record<string, { label: string; role: string }> = {
-    llm_api: { label: "Primary LLM API", role: "Groq / OpenAI / OpenRouter" },
-    qdrant: { label: "Qdrant Vector DB", role: "Knowledge Base Retrieval" },
-    nli_verifier: { label: "DeBERTa NLI Verifier", role: "TorchServe Entailment Server" },
-    flan_t5_decomposer: { label: "FLAN-T5 Decomposer", role: "Atomic Claim Extraction" },
-    redis_cache: { label: "Redis Cache", role: "SCS Semantic Cluster Cache" },
-    rabbitmq_broker: { label: "RabbitMQ Broker", role: "Celery Task Queue" },
-    llava_model: { label: "LLaVA-1.6 Vision", role: "Multimodal VQA Grounding" },
-  };
-
+export function CircuitBreakerStatus({ circuits = {} }) {
   return (
     <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg">
       <div className="flex items-center justify-between mb-4">
@@ -32,7 +27,7 @@ export const CircuitBreakerStatus: React.FC<CircuitBreakerStatusProps> = ({ circ
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-4">
         {Object.entries(circuits).map(([key, info]) => {
-          const meta = namesMap[key] || { label: key, role: "Backend Subsystem" };
+          const meta = NAMES_MAP[key] || { label: key, role: "Backend Subsystem" };
           const isClosed = info.state === "closed";
           const isOpen = info.state === "open";
 
@@ -66,8 +61,8 @@ export const CircuitBreakerStatus: React.FC<CircuitBreakerStatusProps> = ({ circ
               </div>
 
               <div className="mt-3 pt-2 border-t border-slate-900 flex justify-between text-[10px] text-slate-400 font-mono">
-                <span>Failures: {info.fail_counter}/{info.fail_max}</span>
-                <span>Timeout: {info.reset_timeout}s</span>
+                <span>Failures: {info.fail_counter || 0}/{info.fail_max || 3}</span>
+                <span>Timeout: {info.reset_timeout || 30}s</span>
               </div>
             </div>
           );
@@ -75,4 +70,4 @@ export const CircuitBreakerStatus: React.FC<CircuitBreakerStatusProps> = ({ circ
       </div>
     </div>
   );
-};
+}

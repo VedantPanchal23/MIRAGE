@@ -68,6 +68,7 @@ dev = [
     "types-redis>=4.6.0",
     "types-passlib>=1.7.7",
     "types-python-jose>=3.3.4",
+    "pika>=1.3.2",
 ]
 
 [tool.setuptools.packages.find]
@@ -116,5 +117,6 @@ markers = [
     "contract: API contract tests against OpenAPI specification",
     "security: Security, RBAC, and tenant isolation tests",
     "adversarial: Adversarial robustness attack simulations (ATK-01 to ATK-04)",
+    "chaos: Fault injection and degradation tests",
 ]
 addopts = "-v --strict-markers"

@@ -1,0 +1,3 @@
+user default on >mirage_admin_secret ~* +@all
+user mirage_app on >mirage_redis_secret resetkeys ~ratelimit:* ~scs:* ~config:* ~rav_embed:* +@read +@write +@connection +@scripting +time -@admin -@dangerous
+user mirage_celery on >mirage_celery_secret resetkeys ~celery-task-meta-* ~celery-chord-* -@admin -@dangerous +@connection +get +set +setex +expire +del +mget +client +info

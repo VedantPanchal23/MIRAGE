@@ -1,5 +1,6 @@
 """Circuit breaker specifications and listeners using pybreaker."""
 
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pybreaker
@@ -30,6 +31,63 @@ class CircuitBreakerLogger(pybreaker.CircuitBreakerListener):
 
 
 listener = CircuitBreakerLogger()
+
+
+class AsyncCircuitBreaker:
+    """Async-compatible wrapper around pybreaker.CircuitBreaker.
+
+    Solves pybreaker's synchronous limitation where call() treats an unawaited coroutine
+    as success and call_async() crashes due to deprecated Tornado dependency.
+    """
+
+    def __init__(self, breaker: pybreaker.CircuitBreaker) -> None:
+        self.breaker = breaker
+
+    @property
+    def current_state(self) -> str:
+        return self.breaker.current_state
+
+    @property
+    def fail_counter(self) -> int:
+        return self.breaker.fail_counter
+
+    @property
+    def name(self) -> str | None:
+        return self.breaker.name
+
+    def close(self) -> None:
+        self.breaker.close()
+
+    async def call(self, coro_fn: Any, *args: Any, **kwargs: Any) -> Any:
+        with self.breaker._lock:
+            state = self.breaker.state
+            if state.name == pybreaker.STATE_OPEN:
+                timeout = timedelta(seconds=self.breaker.reset_timeout)
+                opened_at = self.breaker._state_storage.opened_at
+                if opened_at and datetime.now(UTC) < opened_at + timeout:
+                    raise pybreaker.CircuitBreakerError("Timeout not elapsed yet, circuit breaker still open")
+                self.breaker.half_open()
+                state = self.breaker.state
+
+            for listener in self.breaker.listeners:
+                listener.before_call(self.breaker, coro_fn, *args, **kwargs)
+
+        try:
+            res = await coro_fn(*args, **kwargs)
+        except BaseException as exc:
+            with self.breaker._lock:
+                state._handle_error(exc)
+            raise
+        else:
+            with self.breaker._lock:
+                state._handle_success()
+            return res
+
+
+async def call_async_with_circuit(breaker: pybreaker.CircuitBreaker, coro_fn: Any, *args: Any, **kwargs: Any) -> Any:
+    """Convenience helper to invoke an async coroutine under pybreaker protection."""
+    return await AsyncCircuitBreaker(breaker).call(coro_fn, *args, **kwargs)
+
 
 # ------------------------------------------------------------------------------
 # Per-dependency Circuit Breakers

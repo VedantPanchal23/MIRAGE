@@ -1,6 +1,7 @@
 """Shared schema exports."""
 
 from shared.schemas.audit import AuditLogEntry, compute_sha256
+from shared.schemas.auth import ROLE_PERMISSIONS, AuthContext, Permission, Role
 from shared.schemas.claims import (
     CRITICALITY_WEIGHTS,
     Claim,
@@ -27,6 +28,10 @@ from shared.schemas.verification import (
 __all__ = [
     "AuditLogEntry",
     "compute_sha256",
+    "AuthContext",
+    "Role",
+    "Permission",
+    "ROLE_PERMISSIONS",
     "Claim",
     "ClaimCriticality",
     "ClaimType",

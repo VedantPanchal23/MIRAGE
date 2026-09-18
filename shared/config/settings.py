@@ -4,7 +4,7 @@ from enum import StrEnum
 from functools import lru_cache
 from typing import Literal
 
-from pydantic import Field
+from pydantic import Field, ValidationInfo, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -59,24 +59,45 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------------------
     mongo_uri: str = Field(default="mongodb://root:mirage_mongo_secret@localhost:27017")
     mongo_db: str = Field(default="mirage_traces")
+    mongo_retention_days: int = Field(default=90)
 
     # --------------------------------------------------------------------------
-    # Redis Cache
+    # Redis Cache & Rate Limiting (P0.4)
     # --------------------------------------------------------------------------
     redis_host: str = Field(default="localhost")
     redis_port: int = Field(default=6379)
+    redis_username: str = Field(default="")
     redis_password: str = Field(default="mirage_redis_secret")
     redis_url: str = Field(default="redis://:mirage_redis_secret@localhost:6379/0")
+    redis_max_connections: int = Field(default=50)
+    redis_socket_timeout: float = Field(default=2.0)
+    redis_socket_connect_timeout: float = Field(default=2.0)
+    redis_rate_limit_fail_closed: bool = Field(default=True)
 
     # --------------------------------------------------------------------------
-    # RabbitMQ & Celery
+    # RabbitMQ & Celery (P0.5)
     # --------------------------------------------------------------------------
     rabbitmq_host: str = Field(default="localhost")
     rabbitmq_port: int = Field(default=5672)
     rabbitmq_user: str = Field(default="mirage")
     rabbitmq_password: str = Field(default="mirage_rabbit_secret")
+    rabbitmq_vhost: str = Field(default="/")
     celery_broker_url: str = Field(default="amqp://mirage:mirage_rabbit_secret@localhost:5672//")
-    celery_result_backend: str = Field(default="rpc://")
+    celery_result_backend: str = Field(default="redis://mirage_celery:mirage_celery_secret@localhost:6379/1")
+    celery_redis_username: str = Field(default="mirage_celery")
+    celery_redis_password: str = Field(default="mirage_celery_secret")
+
+    @field_validator("celery_broker_url")
+    @classmethod
+    def validate_broker_tls(cls, v: str, info: ValidationInfo) -> str:
+        """Enforce AMQPS (TLS 1.2+) in production per Security_Access.md §4.1 and ADR 0003."""
+        env = info.data.get("environment")
+        if env == EnvironmentType.PRODUCTION and not v.startswith("amqps://"):
+            raise ValueError(
+                "Production security policy violation: CELERY_BROKER_URL must use AMQPS (TLS 1.2+) "
+                f"in production mode. Plaintext amqp:// is strictly prohibited. Received: {v[:8]}***"
+            )
+        return v
 
     # --------------------------------------------------------------------------
     # Qdrant Vector Database

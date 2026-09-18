@@ -11,6 +11,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
+from db.persistence import default_persistence_service
 from shared.logging import get_logger
 from shared.schemas.audit import compute_sha256
 
@@ -27,12 +28,22 @@ def register_audit_entry(tenant_id: str, entry: dict[str, Any]) -> None:
     _in_memory_audit_store[tenant_id].append(entry)
 
 
+def clear_in_memory_audit_store() -> None:
+    """Clear in-memory audit store simulating process restart."""
+    _in_memory_audit_store.clear()
+
+
 class AuditService:
     """Core service providing cryptographic audit verification and compliance reports."""
 
     @classmethod
+    async def verify_audit_hash_chain_authoritative(cls, tenant_id: str) -> dict[str, Any]:
+        """Verify the cryptographic SHA-256 hash chain directly from PostgreSQL."""
+        return await default_persistence_service.verify_audit_hash_chain(tenant_id=tenant_id)
+
+    @classmethod
     def verify_audit_hash_chain(cls, tenant_id: str, records: list[dict[str, Any]] | None = None) -> dict[str, Any]:
-        """Verify the cryptographic SHA-256 hash chain across all audit log records for a tenant.
+        """Verify the cryptographic SHA-256 hash chain across audit log records (in-memory or supplied).
 
         Detects any modification, insertion, or deletion of past audit log records.
         """
@@ -141,6 +152,11 @@ class AuditService:
             "tamper_verification_signature": compliance_signature,
             "download_url": f"/v1/audit/report/{session_id}/pdf",
         }
+
+    @classmethod
+    async def export_tenant_data_jsonl_authoritative(cls, tenant_id: str) -> list[str]:
+        """Export all verification sessions for a tenant directly from PostgreSQL."""
+        return await default_persistence_service.export_tenant_data_jsonl(tenant_id=tenant_id)
 
     @classmethod
     def export_tenant_data_jsonl(cls, tenant_id: str, records: list[dict[str, Any]] | None = None) -> list[str]:

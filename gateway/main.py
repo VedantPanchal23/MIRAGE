@@ -3,13 +3,17 @@
 import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
+from datetime import UTC, datetime
 
 from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from db.mongo import MongoPersistenceError
+from db.persistence import DatabasePersistenceError
+from db.redis import RedisServiceError, default_redis_client_manager
 from gateway.middleware.pii import PIIDetectionMiddleware
-from gateway.middleware.security import SecurityHeadersMiddleware
+from gateway.middleware.security import HeaderSanitizationMiddleware, SecurityHeadersMiddleware
 from gateway.routes.audit import router as audit_router
 from gateway.routes.dashboard import router as dashboard_router
 from gateway.routes.health import router as health_router
@@ -27,7 +31,7 @@ settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
-    """Application lifecycle hook initializing logging and tracing."""
+    """Application lifecycle hook initializing logging, tracing, and closing connections on exit."""
     configure_logging(
         service_name="mirage-gateway",
         log_level=settings.log_level,
@@ -40,6 +44,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     logger = get_logger("gateway")
     logger.info("MIRAGE Gateway initialized", version="2.1.0", environment=settings.environment.value)
     yield
+    await default_redis_client_manager.close()
     logger.info("MIRAGE Gateway shutdown complete")
 
 
@@ -71,6 +76,9 @@ def create_app() -> FastAPI:
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["*"],
     )
+
+    # 4. Header Sanitization Middleware (Strips untrusted client headers e.g. X-Role at ASGI boundary)
+    app.add_middleware(HeaderSanitizationMiddleware)
 
     # 4. Request Telemetry Middleware
     @app.middleware("http")
@@ -106,6 +114,61 @@ def create_app() -> FastAPI:
     app.include_router(audit_router)
 
     # 6. Global Error Handlers
+    @app.exception_handler(DatabasePersistenceError)
+    async def database_persistence_exception_handler(request: Request, exc: DatabasePersistenceError) -> JSONResponse:
+        trace_id = getattr(request.state, "trace_id", "unknown")
+        logger = get_logger("gateway")
+        logger.error("Authoritative PostgreSQL persistence unavailable", error=str(exc), trace_id=trace_id)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "error": {
+                    "code": "SERVICE_DEGRADED",
+                    "message": "Authoritative database persistence is unavailable. Verification transaction aborted.",
+                    "details": {"error": str(exc)},
+                    "trace_id": trace_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            },
+        )
+
+    @app.exception_handler(MongoPersistenceError)
+    async def mongo_persistence_exception_handler(request: Request, exc: MongoPersistenceError) -> JSONResponse:
+        trace_id = getattr(request.state, "trace_id", "unknown")
+        logger = get_logger("gateway")
+        logger.error("Authoritative MongoDB trace persistence unavailable", error=str(exc), trace_id=trace_id)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "error": {
+                    "code": "SERVICE_DEGRADED",
+                    "message": "Authoritative trace persistence is unavailable. Verification transaction aborted.",
+                    "details": {"error": str(exc)},
+                    "trace_id": trace_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            },
+        )
+
+    @app.exception_handler(RedisServiceError)
+    async def redis_service_exception_handler(request: Request, exc: RedisServiceError) -> JSONResponse:
+        trace_id = getattr(request.state, "trace_id", "unknown")
+        logger = get_logger("gateway")
+        logger.error("Redis service failure", error=str(exc), trace_id=trace_id)
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={
+                "error": {
+                    "code": "SERVICE_DEGRADED",
+                    "message": "Rate limiting service is unavailable. Request rejected for system stability.",
+                    "details": {"error": str(exc)},
+                    "trace_id": trace_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
+                }
+            },
+            headers={"Retry-After": "10"},
+        )
+
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
         trace_id = getattr(request.state, "trace_id", "unknown")

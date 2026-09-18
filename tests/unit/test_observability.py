@@ -16,6 +16,7 @@ from analytics.drift import (
 )
 from gateway.main import app
 from mcp_server.server import MirageMCPServer
+from shared.schemas.auth import Role
 from shared.telemetry import (
     CIRCUIT_BREAKER_STATE,
     HALLUCINATION_TIER_TOTAL,
@@ -34,6 +35,7 @@ from shared.tracing import (
     sanitize_trace_attributes,
     trace_span,
 )
+from tests.auth_factory import AuthTestFactory
 
 
 class TestPrometheusMetrics:
@@ -248,9 +250,10 @@ class TestDashboardAPI:
     def test_get_dashboard_stats(self) -> None:
         """Verify GET /v1/dashboard/stats returns aggregate metrics and tier breakdown."""
         client = TestClient(app)
+        headers = AuthTestFactory.auth_headers(tenant_id="tenant_dash", role=Role.OPERATOR)
         response = client.get(
             "/v1/dashboard/stats",
-            headers={"X-API-Key": "dev_key_default", "X-Tenant-ID": "tenant_dash"},
+            headers=headers,
         )
         assert response.status_code == 200
         data = response.json()
@@ -265,9 +268,10 @@ class TestDashboardAPI:
     def test_get_dashboard_sessions_pagination_and_filter(self) -> None:
         """Verify GET /v1/dashboard/sessions pagination and risk_tier filtering."""
         client = TestClient(app)
+        headers = AuthTestFactory.auth_headers(tenant_id="tenant_dash", role=Role.OPERATOR)
         response = client.get(
             "/v1/dashboard/sessions?risk_tier=CRITICAL",
-            headers={"X-API-Key": "dev_key_default", "X-Tenant-ID": "tenant_dash"},
+            headers=headers,
         )
         assert response.status_code == 200
         data = response.json()
@@ -278,9 +282,10 @@ class TestDashboardAPI:
     def test_get_drift_report_and_timeseries(self) -> None:
         """Verify GET /v1/drift returns PSI drift metrics and daily time-series."""
         client = TestClient(app)
+        headers = AuthTestFactory.auth_headers(tenant_id="tenant_dash", role=Role.OPERATOR)
         response = client.get(
             "/v1/drift?days=7",
-            headers={"X-API-Key": "dev_key_default", "X-Tenant-ID": "tenant_dash"},
+            headers=headers,
         )
         assert response.status_code == 200
         data = response.json()

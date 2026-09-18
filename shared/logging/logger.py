@@ -29,6 +29,23 @@ def configure_logging(service_name: str = "mirage", log_level: str = "INFO", jso
         event_dict["service"] = service_name
         return event_dict
 
+    # Secret sanitizer processor
+    def sanitize_secrets_processor(
+        _logger: Any,
+        _method_name: str,
+        event_dict: structlog.types.EventDict,
+    ) -> structlog.types.EventDict:
+        import re
+
+        cred_pattern = re.compile(r"://([^:]+):([^@]+)@")
+        for key, value in list(event_dict.items()):
+            if any(k in key.lower() for k in ("password", "secret", "token", "api_key", "credentials")):
+                event_dict[key] = "***"
+            elif isinstance(value, str):
+                event_dict[key] = cred_pattern.sub(r"://\1:***@", value)
+        return event_dict
+
+    shared_processors.insert(0, sanitize_secrets_processor)
     shared_processors.insert(0, add_service_context)
 
     formatter_processor: structlog.types.Processor

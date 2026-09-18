@@ -16,9 +16,20 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Inject settings database URL
-settings = get_settings()
-config.set_main_option("sqlalchemy.url", settings.database_sync_url)
+# Inject database URL: prefer CLI -x argument, environment variables, or programmatic override
+x_args = context.get_x_argument(as_dictionary=True)
+if "sqlalchemy.url" in x_args:
+    config.set_main_option("sqlalchemy.url", x_args["sqlalchemy.url"])
+elif "DATABASE_SYNC_URL" in os.environ:
+    config.set_main_option("sqlalchemy.url", os.environ["DATABASE_SYNC_URL"])
+elif "DATABASE_URL" in os.environ:
+    sync_url = os.environ["DATABASE_URL"].replace("+asyncpg", "").replace("+psycopg2", "")
+    config.set_main_option("sqlalchemy.url", sync_url)
+else:
+    current_url = config.get_main_option("sqlalchemy.url")
+    if not current_url or current_url == "postgresql://mirage:mirage_dev_secret@localhost:5432/mirage_db":
+        settings = get_settings()
+        config.set_main_option("sqlalchemy.url", settings.database_sync_url)
 
 target_metadata = Base.metadata
 

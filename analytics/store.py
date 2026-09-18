@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from analytics.drift import LongitudinalDriftTracker
+from db.persistence import default_persistence_service
 
 
 @dataclass
@@ -35,11 +36,22 @@ class SessionRecord:
 
 
 class SessionStore:
-    """Central store for verification sessions and longitudinal drift analytics."""
+    """Central store for verification sessions and longitudinal drift analytics.
+
+    Differentiates between:
+    - PostgreSQL: Authoritative persistent source of truth surviving restarts.
+    - Process-local cache: Bounded in-memory cache for live drift calculations and offline unit tests.
+    """
+
+    MAX_LOCAL_SESSIONS: int = 1000
 
     def __init__(self, drift_tracker: LongitudinalDriftTracker | None = None) -> None:
         self.sessions: list[SessionRecord] = []
         self.drift_tracker = drift_tracker or LongitudinalDriftTracker()
+
+    def clear_local_cache(self) -> None:
+        """Clear the process-local cache to simulate application/process restart."""
+        self.sessions.clear()
 
     def record_session(
         self,
@@ -60,7 +72,7 @@ class SessionStore:
         signal_attribution: dict[str, float] | None = None,
         timestamp: datetime | None = None,
     ) -> SessionRecord:
-        """Record and index a newly verified session."""
+        """Record and index a session into the process-local cache and drift tracker."""
         created_dt = timestamp or datetime.now(UTC)
         prompt_hash = hashlib.sha256(prompt.encode("utf-8")).hexdigest()
         response_hash = hashlib.sha256(response.encode("utf-8")).hexdigest()
@@ -85,8 +97,41 @@ class SessionStore:
         )
 
         self.sessions.append(record)
+        if len(self.sessions) > self.MAX_LOCAL_SESSIONS:
+            self.sessions = self.sessions[-self.MAX_LOCAL_SESSIONS :]
         self.drift_tracker.record_score(tenant_id, hrs_score)
         return record
+
+    async def list_sessions_authoritative(
+        self,
+        tenant_id: str,
+        risk_tier: str | None = None,
+        min_hrs: float | None = None,
+        max_hrs: float | None = None,
+        page: int = 1,
+        page_size: int = 20,
+    ) -> tuple[int, list[dict[str, Any]]]:
+        """Query sessions authoritatively from PostgreSQL under tenant RLS context."""
+        return await default_persistence_service.list_sessions(
+            tenant_id=tenant_id,
+            risk_tier=risk_tier,
+            min_hrs=min_hrs,
+            max_hrs=max_hrs,
+            page=page,
+            page_size=page_size,
+        )
+
+    async def get_stats_authoritative(self, tenant_id: str) -> dict[str, Any]:
+        """Aggregate stats authoritatively from PostgreSQL merged with drift telemetry."""
+        stats = await default_persistence_service.get_stats(tenant_id=tenant_id)
+        drift_rep = self.drift_tracker.get_drift_report(tenant_id)
+        stats["drift_report"] = asdict(drift_rep)
+        stats["contradiction_rate"] = 0.0
+        return stats
+
+    async def get_time_series_authoritative(self, tenant_id: str, days: int = 30) -> list[dict[str, Any]]:
+        """Compute daily time-series aggregates authoritatively from PostgreSQL."""
+        return await default_persistence_service.get_time_series(tenant_id=tenant_id, days=days)
 
     def list_sessions(
         self,
@@ -97,7 +142,7 @@ class SessionStore:
         page: int = 1,
         page_size: int = 20,
     ) -> tuple[int, list[dict[str, Any]]]:
-        """Query and paginate sessions with optional tenant and risk filters."""
+        """Query and paginate sessions from process-local cache."""
         filtered = self.sessions
 
         if tenant_id:
@@ -116,7 +161,7 @@ class SessionStore:
         return total, items
 
     def get_stats(self, tenant_id: str | None = None) -> dict[str, Any]:
-        """Aggregate summary metrics for the executive dashboard."""
+        """Aggregate summary metrics from process-local cache."""
         records = self.sessions
         if tenant_id:
             records = [s for s in records if s.tenant_id == tenant_id]
@@ -156,13 +201,12 @@ class SessionStore:
         }
 
     def get_time_series(self, tenant_id: str, days: int = 30) -> list[dict[str, Any]]:
-        """Compute daily time series aggregates for longitudinal charts."""
+        """Compute daily time series aggregates from process-local cache."""
         cutoff = datetime.now(UTC) - timedelta(days=days)
         records = [
             s for s in self.sessions if s.tenant_id == tenant_id and datetime.fromisoformat(s.created_at) >= cutoff
         ]
 
-        # Group by day YYYY-MM-DD
         daily_groups: dict[str, list[SessionRecord]] = {}
         for s in records:
             day_key = s.created_at[:10]

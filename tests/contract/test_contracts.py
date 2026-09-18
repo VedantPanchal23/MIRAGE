@@ -11,6 +11,7 @@ Implements Testing Strategy §6:
 from starlette.testclient import TestClient
 
 from gateway.main import create_app
+from tests.auth_factory import AuthTestFactory
 
 app = create_app()
 client = TestClient(app)
@@ -52,7 +53,8 @@ class TestAPIContracts:
             "response": "Water is represented by the chemical formula H2O.",
             "tenant_id": "tenant_contract_01",
         }
-        response = client.post("/v1/verify", json=payload)
+        headers = AuthTestFactory.auth_headers(tenant_id="tenant_contract_01")
+        response = client.post("/v1/verify", json=payload, headers=headers)
         assert response.status_code == 200
         data = response.json()
 
@@ -79,8 +81,9 @@ class TestAPIContracts:
 
     def test_error_response_contract_schema(self) -> None:
         """Verify validation failure returns standardized error schema."""
+        headers = AuthTestFactory.auth_headers(tenant_id="tenant_contract_01")
         # Empty prompt should trigger validation error
-        response = client.post("/v1/verify", json={"prompt": "", "response": ""})
+        response = client.post("/v1/verify", json={"prompt": "", "response": ""}, headers=headers)
         assert response.status_code == 422
         data = response.json()
         assert "detail" in data

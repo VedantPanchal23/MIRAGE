@@ -5,108 +5,47 @@ Implements Security & Access Document §13:
 - Permission Matrix: VERIFY_WRITE, VERIFY_READ, DASHBOARD_READ, CONFIG_WRITE,
   AUDIT_READ, AUDIT_EXPORT, CIRCUITS_MANAGE, KB_WRITE
 - require_permission(...) FastAPI dependency
+- Complete elimination of trust in client-supplied X-Role headers
 """
 
 from collections.abc import Callable, Coroutine
-from enum import StrEnum
 from typing import Annotated, Any
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials
 
-from gateway.middleware.auth import get_current_tenant, security_bearer
+from gateway.middleware.auth import get_current_auth, get_current_tenant, security_bearer
 from shared.logging import get_logger
+from shared.schemas.auth import ROLE_PERMISSIONS, AuthContext, Permission, Role
+
+# Re-export for backward compatibility
+__all__ = [
+    "Role",
+    "Permission",
+    "ROLE_PERMISSIONS",
+    "AuthContext",
+    "require_permission",
+    "resolve_role_from_request",
+    "get_current_tenant",
+    "security_bearer",
+]
 
 logger = get_logger("rbac_middleware")
 
 
-class Role(StrEnum):
-    """Enterprise authorization roles."""
-
-    SUPER_ADMIN = "super_admin"
-    TENANT_ADMIN = "tenant_admin"
-    OPERATOR = "operator"
-    AUDITOR = "auditor"
-    API_CLIENT = "api_client"
-
-
-class Permission(StrEnum):
-    """Granular resource action permissions."""
-
-    VERIFY_WRITE = "verify:write"
-    VERIFY_READ = "verify:read"
-    DASHBOARD_READ = "dashboard:read"
-    CONFIG_WRITE = "config:write"
-    AUDIT_READ = "audit:read"
-    AUDIT_EXPORT = "audit:export"
-    CIRCUITS_MANAGE = "circuits:manage"
-    KB_WRITE = "kb:write"
-
-
-# Role-to-Permissions Access Matrix (Security & Access Document §13.2)
-ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
-    Role.SUPER_ADMIN: {
-        Permission.VERIFY_WRITE,
-        Permission.VERIFY_READ,
-        Permission.DASHBOARD_READ,
-        Permission.CONFIG_WRITE,
-        Permission.AUDIT_READ,
-        Permission.AUDIT_EXPORT,
-        Permission.CIRCUITS_MANAGE,
-        Permission.KB_WRITE,
-    },
-    Role.TENANT_ADMIN: {
-        Permission.VERIFY_WRITE,
-        Permission.VERIFY_READ,
-        Permission.DASHBOARD_READ,
-        Permission.CONFIG_WRITE,
-        Permission.AUDIT_READ,
-        Permission.AUDIT_EXPORT,
-        Permission.KB_WRITE,
-    },
-    Role.OPERATOR: {
-        Permission.VERIFY_WRITE,
-        Permission.VERIFY_READ,
-        Permission.DASHBOARD_READ,
-        Permission.CIRCUITS_MANAGE,
-        Permission.KB_WRITE,
-    },
-    Role.AUDITOR: {
-        Permission.VERIFY_READ,
-        Permission.DASHBOARD_READ,
-        Permission.AUDIT_READ,
-        Permission.AUDIT_EXPORT,
-    },
-    Role.API_CLIENT: {
-        Permission.VERIFY_WRITE,
-        Permission.VERIFY_READ,
-        Permission.KB_WRITE,
-    },
-}
-
-
 def resolve_role_from_request(
     request: Request,
-    credentials: HTTPAuthorizationCredentials | None,
+    _credentials: HTTPAuthorizationCredentials | None = None,
 ) -> Role:
-    """Resolve role from X-Role header, API key pattern, or default API_CLIENT."""
-    # Explicit role header (used by internal dashboard / admin tokens)
-    role_hdr = request.headers.get("X-Role")
-    if role_hdr:
-        try:
-            return Role(role_hdr.lower())
-        except ValueError:
-            pass
+    """Resolve role strictly from cryptographically verified request state.
 
-    if credentials and credentials.credentials:
-        token = credentials.credentials
-        if token.startswith("mirage_admin_"):
-            return Role.SUPER_ADMIN
-        if token.startswith("mirage_auditor_"):
-            return Role.AUDITOR
-        if token.startswith("mirage_operator_"):
-            return Role.OPERATOR
-
+    CRITICAL SECURITY INVARIANT:
+    X-Role headers are completely ignored and stripped. Role is derived
+    exclusively from request.state.auth.
+    """
+    auth: AuthContext | None = getattr(request.state, "auth", None)
+    if auth is not None and isinstance(auth, AuthContext):
+        return auth.role
     return Role.API_CLIENT
 
 
@@ -115,18 +54,19 @@ def require_permission(required_perm: Permission) -> Callable[..., Coroutine[Any
 
     async def _dependency(
         request: Request,
-        tenant_id: str = Depends(get_current_tenant),
-        credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security_bearer)] = None,
+        auth: Annotated[AuthContext, Depends(get_current_auth)],
     ) -> str:
-        role = resolve_role_from_request(request, credentials)
+        # Derive role ONLY from cryptographically verified auth context
+        role = auth.role
         allowed_permissions = ROLE_PERMISSIONS.get(role, set())
 
         if required_perm not in allowed_permissions:
             logger.warning(
                 "RBAC permission denied",
-                tenant_id=tenant_id,
+                tenant_id=auth.tenant_id,
                 role=role.value,
                 required_permission=required_perm.value,
+                client_sent_x_role=request.headers.get("X-Role"),
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -134,6 +74,7 @@ def require_permission(required_perm: Permission) -> Callable[..., Coroutine[Any
             )
 
         request.state.role = role.value
-        return tenant_id
+        request.state.tenant_id = auth.tenant_id
+        return auth.tenant_id
 
     return _dependency

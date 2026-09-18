@@ -18,6 +18,7 @@ from gateway.middleware.circuit_breaker import (
     redis_circuit,
 )
 from shared.schemas import Claim, ClaimCriticality, ClaimType
+from tests.auth_factory import AuthTestFactory
 from workers.visual.worker import VisualGroundingWorker
 
 app = create_app()
@@ -54,7 +55,8 @@ class TestChaosResilience:
             "response": "Mars does not have an official capital city.",
             "tenant_id": "tenant_chaos_01",
         }
-        res = client.post("/v1/verify", json=payload)
+        headers = AuthTestFactory.auth_headers(tenant_id="tenant_chaos_01")
+        res = client.post("/v1/verify", json=payload, headers=headers)
         assert res.status_code == 200
         data = res.json()
         assert "hrs_result" in data

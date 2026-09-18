@@ -143,6 +143,7 @@ class KnowledgeBaseIngestionService:
                 self.client = QdrantClient(
                     host=settings.qdrant_host,
                     port=settings.qdrant_port,
+                    api_key=settings.qdrant_api_key,
                     timeout=2,
                     check_compatibility=False,
                 )

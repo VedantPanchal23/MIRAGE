@@ -29,7 +29,10 @@ async def chat_completions_proxy(
     tenant_id: Annotated[str, Depends(get_current_tenant)],
 ) -> dict[str, Any]:
     """Proxy OpenAI chat completion requests, verifying factual consistency before return."""
-    rate_limiter.check_rate_limit(tenant_id)
+    rl_res = await rate_limiter.check_rate_limit(tenant_id)
+    response.headers["X-RateLimit-Limit"] = str(rl_res.limit)
+    response.headers["X-RateLimit-Remaining"] = str(rl_res.remaining)
+    response.headers["X-RateLimit-Reset"] = str(rl_res.reset_time)
     trace_id = getattr(request.state, "trace_id", uuid.uuid4().hex)
 
     messages = payload.get("messages", [])

@@ -14,7 +14,14 @@ class VerificationRequest(BaseModel):
 
     prompt: str = Field(min_length=1, description="Original user prompt provided to the LLM")
     response: str = Field(min_length=1, description="Generated response to be verified")
-    tenant_id: str = Field(default="default_tenant", description="Tenant identifier for multi-tenant isolation")
+    tenant_id: str = Field(
+        default="",
+        description="Optional tenant identifier for payload verification against authenticated tenant",
+    )
+    session_id: str | None = Field(
+        default=None,
+        description="Optional deterministic session identifier for broker and task idempotency",
+    )
     knowledge_base_id: str | None = Field(
         default=None,
         description="Target Qdrant collection ID for retrieval-augmented verification",

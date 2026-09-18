@@ -232,6 +232,8 @@ class LongitudinalDriftTracker:
             self._baseline[tenant_id].append(hrs)
 
         self._samples[tenant_id].append(hrs)
+        if len(self._samples[tenant_id]) > 5000:
+            self._samples[tenant_id] = self._samples[tenant_id][-5000:]
 
     def get_drift_report(self, tenant_id: str) -> DriftReport:
         """Generate real-time drift report for a tenant against baseline."""

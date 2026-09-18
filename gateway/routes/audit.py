@@ -29,8 +29,14 @@ async def verify_audit_chain(
     tenant_id: str = Depends(require_permission(Permission.AUDIT_READ)),
 ) -> dict[str, Any]:
     """Verify the cryptographic SHA-256 hash chain across all audit logs for the calling tenant."""
-    result = AuditService.verify_audit_hash_chain(tenant_id=tenant_id)
-    return result
+    try:
+        res = await AuditService.verify_audit_hash_chain_authoritative(tenant_id=tenant_id)
+        if res.get("chain_status") != "EMPTY" or not res.get("valid"):
+            return res
+    except Exception as exc:
+        logger.warning("PostgreSQL audit chain check unavailable, falling back to local store", error=str(exc))
+
+    return AuditService.verify_audit_hash_chain(tenant_id=tenant_id)
 
 
 @router.get("/report/{session_id}")
@@ -48,7 +54,15 @@ async def export_tenant_audit_logs(
     tenant_id: str = Depends(require_permission(Permission.AUDIT_EXPORT)),
 ) -> Response:
     """Export all audit logs and verification records for tenant in JSON Lines format (GDPR Art. 20)."""
-    lines = AuditService.export_tenant_data_jsonl(tenant_id=tenant_id)
+    lines: list[str] = []
+    try:
+        lines = await AuditService.export_tenant_data_jsonl_authoritative(tenant_id=tenant_id)
+    except Exception as exc:
+        logger.warning("PostgreSQL export query failed, checking local store", error=str(exc))
+
+    if not lines:
+        lines = AuditService.export_tenant_data_jsonl(tenant_id=tenant_id)
+
     jsonl_content = "\n".join(lines)
     return Response(
         content=jsonl_content,

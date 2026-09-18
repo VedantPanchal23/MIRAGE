@@ -10,6 +10,8 @@ Implements Testing Strategy §5:
 from starlette.testclient import TestClient
 
 from gateway.main import create_app
+from shared.schemas.auth import Role
+from tests.auth_factory import AuthTestFactory
 
 app = create_app()
 client = TestClient(app)
@@ -27,7 +29,8 @@ class TestPipelineIntegration:
             "knowledge_base_id": "default_kb",
         }
 
-        response = client.post("/v1/verify", json=payload)
+        headers = AuthTestFactory.auth_headers(tenant_id="tenant_integration_01", role=Role.API_CLIENT)
+        response = client.post("/v1/verify", json=payload, headers=headers)
         assert response.status_code == 200
 
         data = response.json()
@@ -58,11 +61,13 @@ class TestPipelineIntegration:
             "collection_name": "space_history_kb",
         }
 
+        kb_headers = AuthTestFactory.auth_headers(tenant_id="tenant_integration_kb", role=Role.TENANT_ADMIN)
+
         # 1. Upload document
         upload_res = client.post(
             "/v1/knowledge-base/upload",
             json=doc_payload,
-            headers={"X-Tenant-ID": "tenant_integration_kb"},
+            headers=kb_headers,
         )
         assert upload_res.status_code == 201
         upload_data = upload_res.json()
@@ -72,7 +77,7 @@ class TestPipelineIntegration:
         # 2. List documents
         list_res = client.get(
             "/v1/knowledge-base/documents",
-            headers={"X-Tenant-ID": "tenant_integration_kb"},
+            headers=kb_headers,
         )
         assert list_res.status_code == 200
         docs = list_res.json()["documents"]
@@ -82,16 +87,18 @@ class TestPipelineIntegration:
         doc_id = upload_data["document_id"]
         del_res = client.delete(
             f"/v1/knowledge-base/documents/{doc_id}",
-            headers={"X-Tenant-ID": "tenant_integration_kb"},
+            headers=kb_headers,
         )
         assert del_res.status_code == 200
 
     def test_audit_chain_and_compliance_report_integration(self) -> None:
         """Verify cryptographic audit chain inspection and compliance certificate generation."""
+        audit_headers = AuthTestFactory.auth_headers(tenant_id="tenant_integration_audit", role=Role.AUDITOR)
+
         # 1. Verify chain
         chain_res = client.post(
             "/v1/audit/verify-chain",
-            headers={"X-Tenant-ID": "tenant_integration_audit", "X-Role": "auditor"},
+            headers=audit_headers,
         )
         assert chain_res.status_code == 200
         assert chain_res.json()["valid"] is True
@@ -99,7 +106,7 @@ class TestPipelineIntegration:
         # 2. Generate report
         report_res = client.get(
             "/v1/audit/report/sess_integration_test_99",
-            headers={"X-Tenant-ID": "tenant_integration_audit", "X-Role": "auditor"},
+            headers=audit_headers,
         )
         assert report_res.status_code == 200
         report_data = report_res.json()
@@ -111,7 +118,7 @@ class TestPipelineIntegration:
         query_res = client.post(
             "/v1/audit/query",
             json={"query": "show all critical risk sessions with contradiction"},
-            headers={"X-Tenant-ID": "tenant_integration_audit", "X-Role": "auditor"},
+            headers=audit_headers,
         )
         assert query_res.status_code == 200
         assert "results" in query_res.json()

@@ -1,0 +1,165 @@
+{
+  "rabbit_version": "3.13.6",
+  "users": [
+    {
+      "name": "mirage",
+      "password": "mirage_rabbit_secret",
+      "tags": ["administrator"]
+    }
+  ],
+  "vhosts": [
+    {
+      "name": "/"
+    }
+  ],
+  "permissions": [
+    {
+      "user": "mirage",
+      "vhost": "/",
+      "configure": ".*",
+      "write": ".*",
+      "read": ".*"
+    }
+  ],
+  "exchanges": [
+    {
+      "name": "mirage.direct",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    },
+    {
+      "name": "mirage.dlx",
+      "vhost": "/",
+      "type": "direct",
+      "durable": true,
+      "auto_delete": false,
+      "internal": false,
+      "arguments": {}
+    }
+  ],
+  "queues": [
+    {
+      "name": "mirage.verify",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "mirage.dlx",
+        "x-dead-letter-routing-key": "verify.dlq",
+        "x-max-length": 10000,
+        "x-overflow": "reject-publish",
+        "x-delivery-limit": 5
+      }
+    },
+    {
+      "name": "mirage.drift",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "mirage.dlx",
+        "x-dead-letter-routing-key": "drift.dlq",
+        "x-max-length": 1000,
+        "x-overflow": "reject-publish",
+        "x-delivery-limit": 5
+      }
+    },
+    {
+      "name": "mirage.ingest",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum",
+        "x-dead-letter-exchange": "mirage.dlx",
+        "x-dead-letter-routing-key": "ingest.dlq",
+        "x-max-length": 5000,
+        "x-overflow": "reject-publish",
+        "x-delivery-limit": 5
+      }
+    },
+    {
+      "name": "mirage.verify.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "mirage.drift.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    },
+    {
+      "name": "mirage.ingest.dlq",
+      "vhost": "/",
+      "durable": true,
+      "auto_delete": false,
+      "arguments": {
+        "x-queue-type": "quorum"
+      }
+    }
+  ],
+  "bindings": [
+    {
+      "source": "mirage.direct",
+      "vhost": "/",
+      "destination": "mirage.verify",
+      "destination_type": "queue",
+      "routing_key": "verify.task",
+      "arguments": {}
+    },
+    {
+      "source": "mirage.direct",
+      "vhost": "/",
+      "destination": "mirage.drift",
+      "destination_type": "queue",
+      "routing_key": "drift.task",
+      "arguments": {}
+    },
+    {
+      "source": "mirage.direct",
+      "vhost": "/",
+      "destination": "mirage.ingest",
+      "destination_type": "queue",
+      "routing_key": "ingest.task",
+      "arguments": {}
+    },
+    {
+      "source": "mirage.dlx",
+      "vhost": "/",
+      "destination": "mirage.verify.dlq",
+      "destination_type": "queue",
+      "routing_key": "verify.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "mirage.dlx",
+      "vhost": "/",
+      "destination": "mirage.drift.dlq",
+      "destination_type": "queue",
+      "routing_key": "drift.dlq",
+      "arguments": {}
+    },
+    {
+      "source": "mirage.dlx",
+      "vhost": "/",
+      "destination": "mirage.ingest.dlq",
+      "destination_type": "queue",
+      "routing_key": "ingest.dlq",
+      "arguments": {}
+    }
+  ]
+}

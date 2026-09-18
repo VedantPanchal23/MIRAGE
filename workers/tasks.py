@@ -1,9 +1,25 @@
-"""Celery background tasks for asynchronous verification and drift tracking."""
+"""Celery background tasks for asynchronous verification and drift tracking.
+
+Implements ADR 0003:
+- Durable execution with pre-execution idempotency checking
+- Deterministic session_id binding preventing duplicate database records
+- Poison-message rejection to DLQ via Reject(requeue=False)
+- Exponential backoff with bounded jitter on transient failures
+"""
 
 import asyncio
-from typing import Any
+import concurrent.futures
+import os
+import random
+import threading
+import time
+from typing import Any, cast
+
+from celery.exceptions import MaxRetriesExceededError, Reject
+from pydantic import ValidationError
 
 from analytics.drift import LongitudinalDriftTracker
+from db.persistence import default_persistence_service
 from shared.logging import get_logger
 from shared.schemas import VerificationRequest
 from workers.celery_app import celery_app
@@ -13,35 +29,130 @@ from workers.rav.ingestion import KnowledgeBaseIngestionService
 logger = get_logger("celery_tasks")
 drift_tracker = LongitudinalDriftTracker()
 
+NON_RETRYABLE_EXCEPTIONS = (
+    ValidationError,
+    ValueError,
+    KeyError,
+    TypeError,
+)
 
-@celery_app.task(name="workers.tasks.async_verify_task", bind=True, max_retries=2)  # type: ignore[untyped-decorator]
+_HEARTBEAT_PATH = "/tmp/worker_heartbeat"
+_stop_heartbeat = threading.Event()
+
+
+def _heartbeat_loop() -> None:
+    while not _stop_heartbeat.is_set():
+        try:
+            with open(_HEARTBEAT_PATH, "w") as f:
+                f.write(str(time.time()))
+        except Exception:
+            pass
+        _stop_heartbeat.wait(5.0)
+
+
+try:
+    from celery import signals
+
+    @signals.worker_ready.connect  # type: ignore[untyped-decorator]
+    def on_worker_ready(**_kwargs: Any) -> None:
+        logger.info("Celery worker ready, starting heartbeat thread")
+        _stop_heartbeat.clear()
+        t = threading.Thread(target=_heartbeat_loop, daemon=True, name="celery_heartbeat")
+        t.start()
+
+    @signals.worker_shutdown.connect  # type: ignore[untyped-decorator]
+    def on_worker_shutdown(**_kwargs: Any) -> None:
+        logger.info("Celery worker shutting down, stopping heartbeat")
+        _stop_heartbeat.set()
+        try:
+            if os.path.exists(_HEARTBEAT_PATH):
+                os.remove(_HEARTBEAT_PATH)
+        except Exception:
+            pass
+except Exception:
+    pass
+
+
+def _run_async(coro: Any) -> Any:
+    """Execute an asynchronous coroutine safely across both sync and async thread contexts."""
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop is not None and loop.is_running():
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(asyncio.run, coro).result()
+    else:
+        return asyncio.run(coro)
+
+
+@celery_app.task(
+    name="workers.tasks.async_verify_task",
+    bind=True,
+    max_retries=3,
+    acks_late=True,
+    reject_on_worker_lost=True,
+)  # type: ignore[untyped-decorator]
 def async_verify_task(
     self: Any,
     prompt: str,
     response: str,
     tenant_id: str = "default_tenant",
     knowledge_base_id: str = "default_kb",
+    session_id: str | None = None,
 ) -> dict[str, Any]:
     """Background task executing complete multi-signal verification pipeline asynchronously."""
-    logger.info("Executing async verification task", tenant_id=tenant_id)
+    logger.info("Executing async verification task", tenant_id=tenant_id, session_id=session_id)
+
+    # 1. Validation of required inputs (Poison payload check)
+    if not prompt or not isinstance(prompt, str) or not response or not isinstance(response, str):
+        logger.error(
+            "Poison payload received: invalid prompt/response",
+            tenant_id=tenant_id,
+            session_id=session_id,
+        )
+        raise Reject("Invalid task arguments; non-retryable poison payload", requeue=False)
+
     try:
+        # 2. Pre-execution Idempotency Check in PostgreSQL
+        if session_id and default_persistence_service is not None:
+            try:
+                existing_sess = _run_async(default_persistence_service.get_session_by_id(tenant_id, session_id))
+                if existing_sess is not None:
+                    logger.info(
+                        "Async task duplicate execution detected; session already committed in PostgreSQL",
+                        session_id=session_id,
+                        tenant_id=tenant_id,
+                    )
+                    return {
+                        "session_id": existing_sess.session_id,
+                        "verified_response": response,
+                        "hrs_score": existing_sess.hrs_score,
+                        "risk_tier": existing_sess.risk_tier,
+                        "idempotent_duplicate": True,
+                    }
+            except Exception as check_exc:
+                logger.warning(
+                    "Pre-execution idempotency check encountered error, proceeding to pipeline",
+                    error=str(check_exc),
+                    session_id=session_id,
+                )
+
+        # 3. Pipeline Execution
         orchestrator = VerificationOrchestrator()
         req = VerificationRequest(
             prompt=prompt,
             response=response,
             tenant_id=tenant_id,
             knowledge_base_id=knowledge_base_id,
+            session_id=session_id,
         )
 
-        # Run async coroutine within sync Celery task worker thread
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        try:
-            res = loop.run_until_complete(orchestrator.verify_request(req))
-        finally:
-            loop.close()
+        res = _run_async(orchestrator.verify_request(req))
 
         return {
+            "session_id": res.request_id,
             "verified_response": res.verified_response,
             "hrs_score": res.hrs_result.hrs,
             "risk_tier": res.hrs_result.tier.value,
@@ -51,37 +162,106 @@ def async_verify_task(
             },
             "correction_applied": res.metadata.correction_applied,
             "claims_count": res.hrs_result.claims_count,
+            "idempotent_duplicate": False,
         }
+
+    except NON_RETRYABLE_EXCEPTIONS as fatal_exc:
+        # Poison message: invalid schema or types -> reject directly to DLQ
+        logger.critical(
+            "Terminal non-retryable error in async verification; rejecting to DLQ",
+            error=str(fatal_exc),
+            session_id=session_id,
+            tenant_id=tenant_id,
+        )
+        raise Reject(fatal_exc, requeue=False) from fatal_exc
+
+    except Reject:
+        # Re-raise explicit Rejects without wrapping
+        raise
+
     except Exception as exc:
-        logger.error("Async verification failed", error=str(exc))
-        raise self.retry(exc=exc, countdown=2) from exc
+        # Transient failure (network, external timeout, lock blip) -> exponential backoff
+        retries = self.request.retries
+        delay = min(60.0, (2**retries) + random.uniform(0.1, 1.0))
+        logger.warning(
+            "Async verification task transient error; scheduling retry with backoff",
+            error=str(exc),
+            retry_count=retries,
+            delay_seconds=round(delay, 2),
+            session_id=session_id,
+            tenant_id=tenant_id,
+        )
+        try:
+            raise self.retry(exc=exc, countdown=delay, max_retries=3) from exc
+        except MaxRetriesExceededError as max_exc:
+            logger.critical(
+                "Async verification task exhausted all retries; rejecting to DLQ",
+                session_id=session_id,
+                tenant_id=tenant_id,
+                error=str(max_exc),
+            )
+            raise Reject("Task retries exhausted", requeue=False) from max_exc
 
 
-@celery_app.task(name="workers.tasks.recompute_drift_task")  # type: ignore[untyped-decorator]
-def recompute_drift_task(tenant_id: str = "default_tenant") -> dict[str, Any]:
+@celery_app.task(
+    name="workers.tasks.recompute_drift_task",
+    bind=True,
+    max_retries=3,
+    acks_late=True,
+)  # type: ignore[untyped-decorator]
+def recompute_drift_task(self: Any, tenant_id: str = "default_tenant") -> dict[str, Any]:
     """Daily periodic task recomputing longitudinal PSI and KS drift metrics."""
     logger.info("Executing daily drift recomputation task", tenant_id=tenant_id)
-    report = drift_tracker.get_drift_report(tenant_id)
-    return {
-        "tenant_id": tenant_id,
-        "psi": report.psi,
-        "psi_status": report.status.value,
-        "ks_p_value": report.ks_pvalue,
-        "alert": report.alert_triggered,
-    }
+    if not tenant_id or not isinstance(tenant_id, str):
+        raise Reject("Invalid tenant_id for drift recomputation", requeue=False)
+
+    try:
+        report = drift_tracker.get_drift_report(tenant_id)
+        return {
+            "tenant_id": tenant_id,
+            "psi": report.psi,
+            "psi_status": report.status.value,
+            "ks_p_value": report.ks_pvalue,
+            "alert": report.alert_triggered,
+        }
+    except Exception as exc:
+        logger.error("Drift recomputation task failed", error=str(exc), tenant_id=tenant_id)
+        try:
+            raise self.retry(exc=exc, countdown=10, max_retries=3) from exc
+        except MaxRetriesExceededError as max_exc:
+            raise Reject("Drift task retries exhausted", requeue=False) from max_exc
 
 
-@celery_app.task(name="workers.tasks.ingest_document_task")  # type: ignore[untyped-decorator]
-def ingest_document_task(filename: str, content: str, tenant_id: str) -> dict[str, Any]:
+@celery_app.task(
+    name="workers.tasks.ingest_document_task",
+    bind=True,
+    max_retries=3,
+    acks_late=True,
+)  # type: ignore[untyped-decorator]
+def ingest_document_task(
+    self: Any, filename: str, content: str, tenant_id: str, collection_name: str = "default_kb"
+) -> dict[str, Any]:
     """Asynchronous task for processing and indexing large knowledge base uploads."""
     logger.info("Executing async KB ingestion task", filename=filename, tenant_id=tenant_id)
+    if not filename or not content or not tenant_id:
+        raise Reject("Invalid document ingestion parameters", requeue=False)
+
     service = KnowledgeBaseIngestionService()
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     try:
-        result = loop.run_until_complete(
-            service.ingest_document(filename=filename, content=content, tenant_id=tenant_id)
+        result = _run_async(
+            service.ingest_document(
+                filename=filename,
+                content=content,
+                tenant_id=tenant_id,
+                collection_name=collection_name,
+            )
         )
-    finally:
-        loop.close()
-    return result
+        return cast(dict[str, Any], result)
+    except NON_RETRYABLE_EXCEPTIONS as fatal_exc:
+        raise Reject(fatal_exc, requeue=False) from fatal_exc
+    except Exception as exc:
+        logger.error("KB ingestion task transient failure", error=str(exc))
+        try:
+            raise self.retry(exc=exc, countdown=5, max_retries=3) from exc
+        except MaxRetriesExceededError as max_exc:
+            raise Reject("Ingestion task retries exhausted", requeue=False) from max_exc

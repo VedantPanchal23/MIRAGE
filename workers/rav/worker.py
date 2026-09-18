@@ -23,7 +23,13 @@ class RAVWorker:
         self._local_docs: list[EvidenceChunk] = []
 
         try:
-            self._client = QdrantClient(host=self.host, port=self.port, timeout=1, check_compatibility=False)
+            self._client = QdrantClient(
+                host=self.host,
+                port=self.port,
+                api_key=settings.qdrant_api_key,
+                timeout=1,
+                check_compatibility=False,
+            )
         except Exception as exc:
             logger.warning("Could not connect to Qdrant, using in-memory store", error=str(exc))
             self._client = None

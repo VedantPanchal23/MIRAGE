@@ -7,7 +7,12 @@ from shared.config import EnvironmentType, Settings, get_settings
 
 @pytest.mark.unit
 class TestConfig:
-    def test_default_settings(self) -> None:
+    def test_default_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("REDIS_PORT", raising=False)
+        monkeypatch.delenv("RABBITMQ_PORT", raising=False)
+        monkeypatch.delenv("POSTGRES_PORT", raising=False)
+        monkeypatch.delenv("QDRANT_PORT", raising=False)
+
         settings = Settings()
         assert settings.environment == EnvironmentType.DEVELOPMENT
         assert settings.debug is True
@@ -28,6 +33,7 @@ class TestConfig:
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv("CELERY_BROKER_URL", "amqps://mirage:secret@rabbit.internal:5671//")
         monkeypatch.setenv("DEBUG", "false")
         monkeypatch.setenv("SCS_SAMPLE_COUNT", "7")
         monkeypatch.setenv("CLIP_THRESHOLD", "0.90")

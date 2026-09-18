@@ -3,12 +3,23 @@
 import asyncio
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from correction_agent.agent import CorrectionAgent
 
 from analytics.store import default_session_store
+from db.mongo import MongoDuplicateTraceError, MongoTraceService, default_mongo_trace_service
+from db.persistence import (
+    AmbiguousPostgresCommitError,
+    DatabasePersistenceError,
+    DefinitivePostgresPersistenceError,
+    DuplicateSessionError,
+    PostgresPersistenceService,
+    default_persistence_service,
+)
+from gateway.middleware.pii import PIIDetector
 from hrs_engine import HRSEngine
 from models.deberta import DeBERTaNLIVerifier
 from models.flan_t5 import AtomicClaimDecomposer
@@ -46,6 +57,8 @@ class VerificationOrchestrator:
         hrs_engine: HRSEngine | None = None,
         correction_agent: "CorrectionAgent | None" = None,
         visual_worker: VisualGroundingWorker | None = None,
+        persistence_service: PostgresPersistenceService | None = default_persistence_service,
+        mongo_service: MongoTraceService | None = default_mongo_trace_service,
     ) -> None:
         self.decomposer = decomposer or AtomicClaimDecomposer(use_neural=False)
         self.verifier = nli_verifier or DeBERTaNLIVerifier(use_neural=False)
@@ -54,6 +67,8 @@ class VerificationOrchestrator:
         self.ics_worker = ics_worker or ICSWorker(verifier=self.verifier)
         self.hrs_engine = hrs_engine or HRSEngine()
         self.visual_worker = visual_worker or VisualGroundingWorker()
+        self.persistence_service = persistence_service
+        self.mongo_service = mongo_service
 
         if correction_agent is None:
             from correction_agent.agent import CorrectionAgent as _CorrectionAgent
@@ -184,7 +199,7 @@ class VerificationOrchestrator:
                     has_image=has_image,
                 )
 
-            req_id = f"req_{uuid.uuid4().hex[:12]}"
+            req_id = request.session_id or f"req_{uuid.uuid4().hex[:12]}"
             verified_text = request.response
             correction_applied = False
             correction_iters = 0
@@ -247,6 +262,169 @@ class VerificationOrchestrator:
                 "vgs": hrs_result.signal_attribution.vgs if hrs_result.signal_attribution.vgs is not None else 0.0,
             }
 
+            # 7. Coordinated Cross-Database Dual-Write (Best-Effort Dual-Write with Compensation)
+            # Consistency Model: Best-effort coordinated dual-write (NOT an atomic 2PC distributed transaction).
+            # Failure Windows:
+            # - Window 1 (Mongo fails first): Aborts before PG. 0 records in both. Returns HTTP 503.
+            # - Window 2 (PG fails after Mongo): PG rolls back; compensating delete cleans Mongo. Returns HTTP 503.
+            # - Window 3 (Crash after PG commit): Both durable on disk; client observes connection drop (never 200).
+            # - Window 4 (PG commit outcome ambiguous): Network drop during commit ACK. If PG committed,
+            #   compensating delete would drop Mongo trace leaving PG orphan. Cannot guarantee atomicity.
+            # - Window 5 (Compensating delete fails): PG rolled back; Mongo delete fails -> unrecoverable orphan
+            #   remains in Mongo until TTL or reconciliation. Re-raises PG error -> Returns HTTP 503.
+            # - Window 6 (Request retry): Duplicate session_id fails fast via unique indexes (Mongo unique session_id,
+            #   PG primary key).
+
+            # Scan prompt and response for PII indicators (Security_Access.md §4.3)
+            # Flagging only: records detected types and counts in metadata; never extracts/logs raw PII strings.
+            prompt_pii = PIIDetector.scan(request.prompt)
+            resp_pii = PIIDetector.scan(request.response)
+            pii_flagged = bool(prompt_pii["pii_detected"] or resp_pii["pii_detected"])
+            detected_types = sorted(set(prompt_pii["types"] + resp_pii["types"]))
+            total_pii_count = int(prompt_pii["count"] + resp_pii["count"])
+
+            # Step 1: Persist deep unstructured execution trace to MongoDB
+            if self.mongo_service is not None:
+                trace_doc: dict[str, Any] = {
+                    "session_id": req_id,
+                    "tenant_id": request.tenant_id,
+                    "trace_id": trace_id,
+                    "model_id": request.model_id,
+                    "raw_prompt": request.prompt,
+                    "raw_response": request.response,
+                    "verified_response": verified_text,
+                    "hrs_result": hrs_result.model_dump() if hasattr(hrs_result, "model_dump") else {},
+                    "claims": [
+                        {
+                            "claim_id": getattr(getattr(vc, "claim", vc), "claim_id", getattr(vc, "id", "")),
+                            "text": getattr(getattr(vc, "claim", vc), "text", getattr(vc, "claim_text", "")),
+                            "type": getattr(getattr(getattr(vc, "claim", vc), "claim_type", None), "value", "factual"),
+                            "criticality": getattr(
+                                getattr(getattr(vc, "claim", vc), "criticality", None), "value", "medium"
+                            ),
+                            "status": getattr(getattr(vc, "status", None), "value", "SUPPORTED"),
+                            "risk_score": float(getattr(vc, "risk_score", 0.0)),
+                            "signal_scores": getattr(vc, "signal_scores", {}),
+                        }
+                        for vc in verified_claims
+                    ],
+                    "evidence_chunks": [
+                        {
+                            "claim_index": idx,
+                            "claim_text": c.text,
+                            "chunks": [
+                                ch.model_dump()
+                                if hasattr(ch, "model_dump")
+                                else (ch.__dict__ if hasattr(ch, "__dict__") else ch)
+                                for ch in (evidence_results[idx] if idx < len(evidence_results) else [])
+                            ],
+                        }
+                        for idx, c in enumerate(claims)
+                    ],
+                    "correction_metadata": {
+                        "correction_applied": correction_applied,
+                        "iterations": correction_iters,
+                    },
+                    "execution_metadata": {
+                        "execution_time_ms": elapsed_ms,
+                        "pipeline_signals_used": signals_used,
+                        "cached_scs_hit": cached_scs_hit,
+                    },
+                    "pii_metadata": {
+                        "pii_flagged": pii_flagged,
+                        "detected_types": detected_types,
+                        "total_count": total_pii_count,
+                    },
+                    "created_at": datetime.now(UTC),
+                }
+                try:
+                    await self.mongo_service.persist_verification_trace(
+                        tenant_id=request.tenant_id,
+                        trace_data=trace_doc,
+                    )
+                except MongoDuplicateTraceError:
+                    logger.info(
+                        "Trace document already exists in MongoDB for session; preserving existing trace",
+                        session_id=req_id,
+                        tenant_id=request.tenant_id,
+                    )
+
+            # Step 2: Persist authoritative relational transaction to PostgreSQL
+            if self.persistence_service is not None:
+                try:
+                    await self.persistence_service.persist_verification_transaction(
+                        session_id=req_id,
+                        tenant_id=request.tenant_id,
+                        trace_id=trace_id,
+                        model_id=request.model_id,
+                        prompt=request.prompt,
+                        response=request.response,
+                        hrs_score=hrs_result.hrs,
+                        risk_tier=hrs_result.tier.value,
+                        verified_claims=verified_claims,
+                        correction_applied=correction_applied,
+                    )
+                except DuplicateSessionError:
+                    # Idempotent duplicate delivery: PostgreSQL already committed this session.
+                    # Do NOT delete from MongoDB; return cleanly without appending a duplicate audit log.
+                    logger.info(
+                        "Idempotent duplicate session detected in PostgreSQL; preserving existing record",
+                        session_id=req_id,
+                        tenant_id=request.tenant_id,
+                    )
+                except DefinitivePostgresPersistenceError as def_exc:
+                    # Case A: Definitive PostgreSQL failure/rollback before COMMIT.
+                    # We know with certainty that PostgreSQL has 0 records and no audit hash chain was updated.
+                    # Therefore, compensating MongoDB delete is SAFE and REQUIRED.
+                    logger.info(
+                        "Definitive PostgreSQL failure before commit; executing compensating MongoDB delete",
+                        session_id=req_id,
+                        tenant_id=request.tenant_id,
+                        error=str(def_exc),
+                    )
+                    if self.mongo_service is not None:
+                        try:
+                            await self.mongo_service.delete_trace(
+                                tenant_id=request.tenant_id,
+                                session_id=req_id,
+                            )
+                        except Exception as del_exc:
+                            logger.critical(
+                                "Compensating MongoDB delete failed! Orphaned trace document requires reconciliation",
+                                session_id=req_id,
+                                tenant_id=request.tenant_id,
+                                error=str(del_exc),
+                                orphan_state="mongodb_unreconciled",
+                            )
+                    raise
+                except AmbiguousPostgresCommitError as amb_exc:
+                    # Case B: Ambiguous PostgreSQL COMMIT outcome (network timeout / connection drop during commit).
+                    # DO NOT blindly delete Mongo trace! PostgreSQL may have already committed the session and
+                    # the immutable audit hash chain. Deleting Mongo trace would permanently orphan the audit record.
+                    # Preserving the trace ensures trace data exists for subsequent reconciliation.
+                    logger.critical(
+                        "Ambiguous PostgreSQL commit outcome! PRESERVING MongoDB trace for reconciliation",
+                        session_id=req_id,
+                        tenant_id=request.tenant_id,
+                        trace_id=trace_id,
+                        error=str(amb_exc),
+                        orphan_state="postgres_commit_ambiguous",
+                        reconciliation_required=True,
+                    )
+                    raise
+                except DatabasePersistenceError as db_exc:
+                    # Generic / unknown database persistence error: default to safe preservation
+                    logger.critical(
+                        "Unclassified PostgreSQL persistence error! Preserving MongoDB trace for safety",
+                        session_id=req_id,
+                        tenant_id=request.tenant_id,
+                        trace_id=trace_id,
+                        error=str(db_exc),
+                        orphan_state="unclassified_persistence_error",
+                    )
+                    raise
+
+            # Step 3: Record in-memory session cache (only reached upon mutual persistence success)
             default_session_store.record_session(
                 session_id=req_id,
                 tenant_id=request.tenant_id,

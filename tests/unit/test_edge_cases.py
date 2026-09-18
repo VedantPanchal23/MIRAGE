@@ -26,6 +26,7 @@ from shared.schemas import (
     VerificationStatus,
 )
 from shared.tracing import sanitize_trace_attributes
+from tests.auth_factory import AuthTestFactory
 from workers.ics.worker import ICSWorker
 from workers.orchestrator import VerificationOrchestrator
 from workers.rav.worker import RAVWorker
@@ -40,15 +41,17 @@ class TestGatewayEdgeCases:
 
     def test_proxy_empty_messages_list(self) -> None:
         client = TestClient(app)
-        res = client.post("/v1/chat/completions", json={"messages": []})
+        headers = AuthTestFactory.auth_headers(tenant_id="edge_tenant")
+        res = client.post("/v1/chat/completions", json={"messages": []}, headers=headers)
         assert res.status_code == 400
 
     def test_proxy_whitespace_only_user_message(self) -> None:
         client = TestClient(app)
+        headers = AuthTestFactory.auth_headers(tenant_id="edge_tenant")
         res = client.post(
             "/v1/chat/completions",
             json={"messages": [{"role": "user", "content": "   \n\t  "}]},
-            headers={"X-Tenant-ID": "edge_tenant", "X-API-Key": "dev_key_default"},
+            headers=headers,
         )
         assert res.status_code in (200, 400, 502)
 
@@ -59,10 +62,11 @@ class TestGatewayEdgeCases:
             "response": "Water is H2O 💧 and Tokyo 東京 is the capital of Japan 🇯🇵.",
             "tenant_id": "unicode_tenant",
         }
+        headers = AuthTestFactory.auth_headers(tenant_id="unicode_tenant")
         res = client.post(
             "/v1/verify",
             json=payload,
-            headers={"X-Tenant-ID": "unicode_tenant", "X-API-Key": "dev_key_default"},
+            headers=headers,
         )
         assert res.status_code == 200
         data = res.json()
@@ -77,10 +81,11 @@ class TestGatewayEdgeCases:
             "response": "SELECT * FROM users WHERE id = '1' OR '1'='1';",
             "tenant_id": "sqli_tenant",
         }
+        headers = AuthTestFactory.auth_headers(tenant_id="sqli_tenant")
         res = client.post(
             "/v1/verify",
             json=payload,
-            headers={"X-Tenant-ID": "sqli_tenant", "X-API-Key": "dev_key_default"},
+            headers=headers,
         )
         assert res.status_code == 200
         data = res.json()

@@ -5,10 +5,10 @@ from typing import Any
 
 import httpx
 
+from db.redis import RedisCacheService, default_redis_cache_service
 from models.deberta.verifier import DeBERTaNLIVerifier
 from shared.config import get_settings
 from shared.logging import get_logger
-from shared.schemas.audit import compute_sha256
 
 logger = get_logger("scs_worker")
 settings = get_settings()
@@ -22,16 +22,16 @@ class SCSWorker:
         verifier: DeBERTaNLIVerifier | None = None,
         sample_count: int = 5,
         temperature: float = 0.7,
+        cache_service: RedisCacheService | None = None,
     ) -> None:
         self.verifier = verifier or DeBERTaNLIVerifier()
         self.sample_count = sample_count
         self.temperature = temperature
-        self._cache: dict[str, float] = {}
+        self.cache_service = cache_service or default_redis_cache_service
 
     def get_cache_key(self, prompt: str, model_id: str, tenant_id: str) -> str:
         """Generate deterministic cache key: scs:{hash(prompt + model_id + tenant_id)}."""
-        raw = f"{prompt}:{model_id}:{tenant_id}"
-        return f"scs:{compute_sha256(raw)}"
+        return self.cache_service.get_scs_cache_key(tenant_id, model_id, prompt)
 
     def cluster_completions(self, completions: list[str]) -> list[list[str]]:
         """Group completions into semantic equivalence classes using bidirectional entailment."""
@@ -106,14 +106,25 @@ class SCSWorker:
 
     async def compute_scs_score(self, prompt: str, model_id: str, tenant_id: str = "default") -> tuple[float, bool]:
         """Compute SCS Semantic Entropy score for prompt. Returns (score, cache_hit)."""
-        cache_key = self.get_cache_key(prompt, model_id, tenant_id)
-        if cache_key in self._cache:
-            logger.debug("SCS cache hit", cache_key=cache_key)
-            return self._cache[cache_key], True
+        cached_data, is_hit = await self.cache_service.get_scs(
+            tenant_id=tenant_id,
+            model_id=model_id,
+            prompt=prompt,
+        )
+        if is_hit and cached_data is not None:
+            score = float(cached_data.get("score", 0.0))
+            return score, True
 
         completions = await self.sample_llm_completions(prompt, model_id)
         clusters = self.cluster_completions(completions)
         score = self.compute_semantic_entropy(clusters, total_samples=len(completions))
 
-        self._cache[cache_key] = score
+        await self.cache_service.set_scs(
+            tenant_id=tenant_id,
+            model_id=model_id,
+            prompt=prompt,
+            score=score,
+            sample_count=len(completions),
+            clusters=clusters,
+        )
         return score, False

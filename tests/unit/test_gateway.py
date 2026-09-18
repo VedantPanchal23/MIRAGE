@@ -7,13 +7,16 @@ from fastapi.testclient import TestClient
 
 from gateway.main import app
 from gateway.middleware.circuit_breaker import get_all_circuit_statuses, reset_all_circuits
-from gateway.middleware.rate_limiter import SlidingWindowRateLimiter
+from gateway.middleware.rate_limiter import rate_limiter
+from tests.auth_factory import AuthTestFactory
 
 
 @pytest.fixture
 def client() -> TestClient:
-    """Provide a TestClient instance for the FastAPI application."""
-    return TestClient(app)
+    """Provide a TestClient instance authenticated for test_tenant."""
+    c = TestClient(app)
+    c.headers.update(AuthTestFactory.auth_headers(tenant_id="test_tenant"))
+    return c
 
 
 @pytest.mark.unit
@@ -101,14 +104,14 @@ class TestOpenAIProxyEndpoint:
 
 @pytest.mark.unit
 class TestRateLimiterAndCircuits:
-    def test_rate_limiter_exceeded(self) -> None:
-        limiter = SlidingWindowRateLimiter(limit_per_minute=2)
+    @pytest.mark.asyncio
+    async def test_rate_limiter_exceeded(self) -> None:
         tenant = "burst_tenant"
-        limiter.check_rate_limit(tenant)
-        limiter.check_rate_limit(tenant)
+        for _ in range(60):
+            await rate_limiter.check_rate_limit(tenant, tier="free")
         with pytest.raises(Exception) as exc_info:
-            limiter.check_rate_limit(tenant)
-        assert "Rate limit exceeded" in str(exc_info.value)
+            await rate_limiter.check_rate_limit(tenant, tier="free")
+        assert "429" in str(exc_info.value) or "Rate limit exceeded" in str(exc_info.value)
 
     def test_all_circuits_initialized(self) -> None:
         reset_all_circuits()

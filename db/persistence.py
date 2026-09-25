@@ -12,7 +12,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import session as db_session
-from db.models import AuditLogRecord, ClaimRecord, Tenant, VerificationSession
+from db.models import AuditLogRecord, AuditReport, ClaimRecord, OperatorAlert, Tenant, VerificationSession
 from shared.logging import get_logger
 from shared.schemas.audit import compute_sha256
 
@@ -505,6 +505,237 @@ class PostgresPersistenceService:
                 }
                 lines.append(json.dumps(d))
             return lines
+
+    async def get_session_with_claims(
+        self, tenant_id: str, session_id: str
+    ) -> tuple[VerificationSession | None, list[ClaimRecord]]:
+        """Fetch session and associated claims in a single query."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            stmt = select(VerificationSession).where(
+                VerificationSession.tenant_id == tenant_id,
+                VerificationSession.session_id == session_id,
+            )
+            sess = (await session.execute(stmt)).scalar_one_or_none()
+            if not sess:
+                return None, []
+
+            claim_stmt = (
+                select(ClaimRecord)
+                .where(ClaimRecord.tenant_id == tenant_id, ClaimRecord.session_id == session_id)
+                .order_by(ClaimRecord.created_at.asc())
+            )
+            claims = (await session.execute(claim_stmt)).scalars().all()
+            return sess, list(claims)
+
+    async def create_alert(
+        self,
+        tenant_id: str,
+        alert_type: str,
+        severity: str,
+        title: str,
+        description: str,
+        threshold: float | None = None,
+        current_value: float | None = None,
+    ) -> OperatorAlert:
+        """Create and persist an operator alert."""
+        alert_id = f"alt_{uuid.uuid4().hex[:12]}"
+        async with db_session.get_tenant_session(tenant_id) as session:
+            await self.ensure_tenant_exists(session, tenant_id)
+            alert = OperatorAlert(
+                alert_id=alert_id,
+                tenant_id=tenant_id,
+                alert_type=alert_type,
+                severity=severity,
+                title=title,
+                description=description,
+                threshold=threshold,
+                current_value=current_value,
+                status="active",
+                created_at=datetime.now(UTC),
+            )
+            session.add(alert)
+            await session.flush()
+            return alert
+
+    async def list_alerts(
+        self,
+        tenant_id: str,
+        status: str | None = None,
+        limit: int = 50,
+        offset: int = 0,
+    ) -> tuple[list[OperatorAlert], int, int]:
+        """List operator alerts for a tenant with counts for total and active."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            # Active alerts count
+            active_count_stmt = select(func.count(OperatorAlert.alert_id)).where(
+                OperatorAlert.tenant_id == tenant_id,
+                OperatorAlert.status == "active",
+            )
+            active_count = (await session.execute(active_count_stmt)).scalar() or 0
+
+            # Base query
+            query = select(OperatorAlert).where(OperatorAlert.tenant_id == tenant_id)
+            if status:
+                query = query.where(OperatorAlert.status == status.lower())
+
+            # Total filtered count
+            total_stmt = select(func.count()).select_from(query.subquery())
+            total = (await session.execute(total_stmt)).scalar() or 0
+
+            # Paged query
+            paged = query.order_by(OperatorAlert.created_at.desc()).offset(offset).limit(limit)
+            alerts = (await session.execute(paged)).scalars().all()
+            return list(alerts), total, active_count
+
+    async def acknowledge_alert(
+        self,
+        tenant_id: str,
+        alert_id: str,
+        operator_id: str | None = None,
+    ) -> OperatorAlert | None:
+        """Acknowledge an active operator alert."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            stmt = select(OperatorAlert).where(
+                OperatorAlert.tenant_id == tenant_id,
+                OperatorAlert.alert_id == alert_id,
+            )
+            alert = (await session.execute(stmt)).scalar_one_or_none()
+            if not alert:
+                return None
+
+            alert.status = "acknowledged"
+            alert.acknowledged_at = datetime.now(UTC)
+            alert.acknowledged_by = operator_id or "operator"
+            await session.flush()
+            return alert
+
+    async def resolve_alert(self, tenant_id: str, alert_id: str) -> OperatorAlert | None:
+        """Resolve an operator alert."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            stmt = select(OperatorAlert).where(
+                OperatorAlert.tenant_id == tenant_id,
+                OperatorAlert.alert_id == alert_id,
+            )
+            alert = (await session.execute(stmt)).scalar_one_or_none()
+            if not alert:
+                return None
+
+            alert.status = "resolved"
+            alert.resolved_at = datetime.now(UTC)
+            await session.flush()
+            return alert
+
+    async def create_report(
+        self,
+        tenant_id: str,
+        title: str,
+        start_date: datetime,
+        end_date: datetime,
+        model_id: str | None = None,
+        risk_tier: str | None = None,
+        idempotency_key: str | None = None,
+    ) -> AuditReport:
+        """Create and persist a pending audit report record."""
+        report_id = f"rep_{uuid.uuid4().hex[:12]}"
+        async with db_session.get_tenant_session(tenant_id) as session:
+            await self.ensure_tenant_exists(session, tenant_id)
+            report = AuditReport(
+                report_id=report_id,
+                tenant_id=tenant_id,
+                title=title,
+                start_date=start_date,
+                end_date=end_date,
+                model_id=model_id,
+                risk_tier=risk_tier,
+                status="PENDING",
+                summary={},
+                storage_key=None,
+                idempotency_key=idempotency_key,
+                created_at=datetime.now(UTC),
+            )
+            session.add(report)
+            await session.flush()
+            return report
+
+    async def get_report_by_id(self, tenant_id: str, report_id: str) -> AuditReport | None:
+        """Fetch audit report by ID enforcing tenant isolation."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            stmt = select(AuditReport).where(
+                AuditReport.tenant_id == tenant_id,
+                AuditReport.report_id == report_id,
+            )
+            return (await session.execute(stmt)).scalar_one_or_none()
+
+    async def get_report_by_idempotency_key(
+        self, tenant_id: str, idempotency_key: str, window_hours: int = 1
+    ) -> AuditReport | None:
+        """Check for existing recent report with matching idempotency key within time window."""
+        cutoff = datetime.now(UTC) - timedelta(hours=window_hours)
+        async with db_session.get_tenant_session(tenant_id) as session:
+            stmt = (
+                select(AuditReport)
+                .where(
+                    AuditReport.tenant_id == tenant_id,
+                    AuditReport.idempotency_key == idempotency_key,
+                    AuditReport.created_at >= cutoff,
+                    AuditReport.status.in_(["PENDING", "PROCESSING", "COMPLETED"]),
+                )
+                .order_by(AuditReport.created_at.desc())
+                .limit(1)
+            )
+            return (await session.execute(stmt)).scalar_one_or_none()
+
+    async def update_report_status(
+        self,
+        tenant_id: str,
+        report_id: str,
+        status: str,
+        summary: dict[str, Any] | None = None,
+        storage_key: str | None = None,
+    ) -> AuditReport | None:
+        """Update audit report status, summary metrics, and storage key."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            stmt = select(AuditReport).where(
+                AuditReport.tenant_id == tenant_id,
+                AuditReport.report_id == report_id,
+            )
+            report = (await session.execute(stmt)).scalar_one_or_none()
+            if not report:
+                return None
+
+            report.status = status
+            if summary is not None:
+                report.summary = summary
+            if storage_key is not None:
+                report.storage_key = storage_key
+            if status in ("COMPLETED", "FAILED"):
+                report.completed_at = datetime.now(UTC)
+
+            await session.flush()
+            return report
+
+    async def get_sessions_for_audit(
+        self,
+        tenant_id: str,
+        start_date: datetime,
+        end_date: datetime,
+        model_id: str | None = None,
+        risk_tier: str | None = None,
+    ) -> list[VerificationSession]:
+        """Fetch verification sessions within an audit date range with optional filtering."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            query = select(VerificationSession).where(
+                VerificationSession.tenant_id == tenant_id,
+                VerificationSession.created_at >= start_date,
+                VerificationSession.created_at <= end_date,
+            )
+            if model_id:
+                query = query.where(VerificationSession.model_id == model_id)
+            if risk_tier:
+                query = query.where(VerificationSession.risk_tier == risk_tier.upper())
+
+            query = query.order_by(VerificationSession.created_at.asc())
+            return list((await session.execute(query)).scalars().all())
 
 
 default_persistence_service = PostgresPersistenceService()

@@ -28,6 +28,8 @@ class Tenant(Base):
     )
 
     sessions: Mapped[list["VerificationSession"]] = relationship("VerificationSession", back_populates="tenant")
+    alerts: Mapped[list["OperatorAlert"]] = relationship("OperatorAlert", back_populates="tenant")
+    reports: Mapped[list["AuditReport"]] = relationship("AuditReport", back_populates="tenant")
 
 
 class VerificationSession(Base):
@@ -117,3 +119,62 @@ class AuditLogRecord(Base):
         nullable=False,
         index=True,
     )
+
+
+class OperatorAlert(Base):
+    """Operator notifications triggered by drift or operational metric breaches."""
+
+    __tablename__ = "operator_alerts"
+
+    alert_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    alert_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    severity: Mapped[str] = mapped_column(String(32), default="medium", nullable=False)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    threshold: Mapped[float | None] = mapped_column(Float, nullable=True)
+    current_value: Mapped[float | None] = mapped_column(Float, nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
+    )
+    acknowledged_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    acknowledged_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="alerts")
+
+
+class AuditReport(Base):
+    """Aggregated compliance and verification audit report metadata."""
+
+    __tablename__ = "audit_reports"
+
+    report_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    end_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    model_id: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    risk_tier: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False, index=True)
+    summary: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    storage_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
+    )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="reports")
+

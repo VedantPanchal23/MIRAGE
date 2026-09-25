@@ -19,7 +19,9 @@ from celery.exceptions import MaxRetriesExceededError, Reject
 from pydantic import ValidationError
 
 from analytics.drift import LongitudinalDriftTracker
+from analytics.pdf_service import default_pdf_generator
 from db.persistence import default_persistence_service
+from services.storage import default_storage_service
 from shared.logging import get_logger
 from shared.schemas import VerificationRequest
 from workers.celery_app import celery_app
@@ -265,3 +267,154 @@ def ingest_document_task(
             raise self.retry(exc=exc, countdown=5, max_retries=3) from exc
         except MaxRetriesExceededError as max_exc:
             raise Reject("Ingestion task retries exhausted", requeue=False) from max_exc
+
+
+@celery_app.task(
+    name="workers.tasks.generate_report_task",
+    bind=True,
+    max_retries=3,
+    acks_late=True,
+)  # type: ignore[untyped-decorator]
+def generate_report_task(
+    self: Any,
+    tenant_id: str,
+    report_id: str,
+    title: str,
+    start_date_iso: str,
+    end_date_iso: str,
+    model_id: str | None = None,
+    risk_tier: str | None = None,
+) -> dict[str, Any]:
+    """Asynchronous background compilation of multi-session compliance audit reports."""
+    logger.info("Executing async report generation task", report_id=report_id, tenant_id=tenant_id)
+    if not tenant_id or not report_id:
+        raise Reject("Invalid report parameters", requeue=False)
+
+    try:
+        start_date = datetime.fromisoformat(start_date_iso)
+        end_date = datetime.fromisoformat(end_date_iso)
+    except Exception as exc:
+        logger.error("Invalid date strings for report task", error=str(exc))
+        raise Reject(f"Malformed date strings: {exc}", requeue=False) from exc
+
+    try:
+        # 1. Update status to PROCESSING
+        _run_async(
+            default_persistence_service.update_report_status(
+                tenant_id=tenant_id,
+                report_id=report_id,
+                status="PROCESSING",
+            )
+        )
+
+        # 2. Query sessions in audit window
+        sessions = _run_async(
+            default_persistence_service.get_sessions_for_audit(
+                tenant_id=tenant_id,
+                start_date=start_date,
+                end_date=end_date,
+                model_id=model_id,
+                risk_tier=risk_tier,
+            )
+        )
+
+        total_sessions = len(sessions)
+        mean_hrs = float(sum(s.hrs_score for s in sessions) / total_sessions) if total_sessions > 0 else 0.0
+        tier_counts = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+        for s in sessions:
+            tier_upper = str(s.risk_tier).upper()
+            tier_counts[tier_upper] = tier_counts.get(tier_upper, 0) + 1
+        corrections = sum(1 for s in sessions if s.correction_applied)
+        correction_rate = float(corrections / total_sessions) if total_sessions > 0 else 0.0
+
+        summary = {
+            "total_sessions": total_sessions,
+            "mean_hrs": round(mean_hrs, 4),
+            "tier_counts": tier_counts,
+            "correction_rate": round(correction_rate, 4),
+        }
+
+        # 3. Format session sample for PDF
+        session_dicts = [
+            {
+                "session_id": s.session_id,
+                "created_at": s.created_at.isoformat() if s.created_at else "",
+                "model_id": s.model_id,
+                "hrs_score": s.hrs_score,
+                "risk_tier": s.risk_tier,
+                "correction_applied": s.correction_applied,
+            }
+            for s in sessions
+        ]
+
+        # 4. Generate PDF bytes
+        pdf_bytes = default_pdf_generator.generate_aggregate_audit_report_pdf(
+            report_id=report_id,
+            tenant_id=tenant_id,
+            title=title,
+            start_date=start_date,
+            end_date=end_date,
+            summary=summary,
+            sessions=session_dicts,
+            model_id=model_id,
+            risk_tier=risk_tier,
+        )
+
+        # 5. Store PDF in Object Storage
+        storage_key = f"{tenant_id}/{report_id}.pdf"
+        canonical_uri = default_storage_service.put_object(
+            bucket="mirage-audit",
+            key=storage_key,
+            data=pdf_bytes,
+            content_type="application/pdf",
+        )
+
+        # 6. Mark report COMPLETED in PostgreSQL
+        _run_async(
+            default_persistence_service.update_report_status(
+                tenant_id=tenant_id,
+                report_id=report_id,
+                status="COMPLETED",
+                summary=summary,
+                storage_key=canonical_uri,
+            )
+        )
+
+        logger.info(
+            "Audit report generation completed successfully",
+            report_id=report_id,
+            tenant_id=tenant_id,
+            total_sessions=total_sessions,
+        )
+        return {
+            "report_id": report_id,
+            "tenant_id": tenant_id,
+            "status": "COMPLETED",
+            "storage_key": canonical_uri,
+            "total_sessions": total_sessions,
+        }
+
+    except NON_RETRYABLE_EXCEPTIONS as fatal_exc:
+        _run_async(
+            default_persistence_service.update_report_status(
+                tenant_id=tenant_id,
+                report_id=report_id,
+                status="FAILED",
+            )
+        )
+        raise Reject(fatal_exc, requeue=False) from fatal_exc
+
+    except Exception as exc:
+        logger.error("Audit report generation task transient error", error=str(exc), report_id=report_id)
+        try:
+            raise self.retry(exc=exc, countdown=10, max_retries=3) from exc
+        except MaxRetriesExceededError as max_exc:
+            _run_async(
+                default_persistence_service.update_report_status(
+                    tenant_id=tenant_id,
+                    report_id=report_id,
+                    status="FAILED",
+                )
+            )
+            raise Reject("Report generation retries exhausted", requeue=False) from max_exc
+

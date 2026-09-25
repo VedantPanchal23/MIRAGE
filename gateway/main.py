@@ -9,16 +9,22 @@ from fastapi import FastAPI, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
+from fastapi.exceptions import RequestValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
+
 from db.mongo import MongoPersistenceError
 from db.persistence import DatabasePersistenceError
 from db.redis import RedisServiceError, default_redis_client_manager
 from gateway.middleware.pii import PIIDetectionMiddleware
 from gateway.middleware.security import HeaderSanitizationMiddleware, SecurityHeadersMiddleware
+from gateway.routes.alerts import router as alerts_router
 from gateway.routes.audit import router as audit_router
 from gateway.routes.dashboard import router as dashboard_router
 from gateway.routes.health import router as health_router
 from gateway.routes.knowledge_base import router as knowledge_base_router
 from gateway.routes.proxy import router as proxy_router
+from gateway.routes.reports import router as reports_router
+from gateway.routes.sessions import router as sessions_router
 from gateway.routes.stream import router as stream_router
 from gateway.routes.verify import router as verify_router
 from shared.config import get_settings
@@ -112,8 +118,54 @@ def create_app() -> FastAPI:
     app.include_router(dashboard_router)
     app.include_router(knowledge_base_router)
     app.include_router(audit_router)
+    app.include_router(sessions_router)
+    app.include_router(alerts_router)
+    app.include_router(reports_router)
 
-    # 6. Global Error Handlers
+    # 7. Global Error Handlers
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
+        trace_id = getattr(request.state, "trace_id", "unknown")
+        code_map = {
+            400: "BAD_REQUEST",
+            401: "UNAUTHORIZED",
+            403: "FORBIDDEN",
+            404: "NOT_FOUND",
+            409: "CONFLICT",
+            413: "PAYLOAD_TOO_LARGE",
+            422: "UNPROCESSABLE_ENTITY",
+            429: "RATE_LIMIT_EXCEEDED",
+            500: "INTERNAL_SERVER_ERROR",
+            503: "SERVICE_UNAVAILABLE",
+        }
+        error_code = code_map.get(exc.status_code, "ERROR")
+        content: dict[str, Any] = {
+            "detail": exc.detail,
+            "error": {
+                "code": error_code,
+                "message": str(exc.detail),
+                "trace_id": trace_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        }
+        headers = dict(exc.headers) if exc.headers else {}
+        return JSONResponse(status_code=exc.status_code, content=content, headers=headers)
+
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
+        trace_id = getattr(request.state, "trace_id", "unknown")
+        content: dict[str, Any] = {
+            "detail": exc.errors(),
+            "error": {
+                "code": "VALIDATION_ERROR",
+                "message": "Invalid request schema or parameters",
+                "details": exc.errors(),
+                "trace_id": trace_id,
+                "timestamp": datetime.now(UTC).isoformat(),
+            },
+        }
+        return JSONResponse(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, content=content)
+
     @app.exception_handler(DatabasePersistenceError)
     async def database_persistence_exception_handler(request: Request, exc: DatabasePersistenceError) -> JSONResponse:
         trace_id = getattr(request.state, "trace_id", "unknown")
@@ -122,6 +174,7 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
+                "detail": "Authoritative database persistence is unavailable. Verification transaction aborted.",
                 "error": {
                     "code": "SERVICE_DEGRADED",
                     "message": "Authoritative database persistence is unavailable. Verification transaction aborted.",
@@ -140,6 +193,7 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
+                "detail": "Authoritative trace persistence is unavailable. Verification transaction aborted.",
                 "error": {
                     "code": "SERVICE_DEGRADED",
                     "message": "Authoritative trace persistence is unavailable. Verification transaction aborted.",
@@ -158,6 +212,7 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             content={
+                "detail": "Rate limiting service is unavailable. Request rejected for system stability.",
                 "error": {
                     "code": "SERVICE_DEGRADED",
                     "message": "Rate limiting service is unavailable. Request rejected for system stability.",
@@ -177,10 +232,12 @@ def create_app() -> FastAPI:
         return JSONResponse(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             content={
+                "detail": "An internal error occurred during verification.",
                 "error": {
                     "code": "INTERNAL_SERVER_ERROR",
                     "message": "An internal error occurred during verification.",
                     "trace_id": trace_id,
+                    "timestamp": datetime.now(UTC).isoformat(),
                 }
             },
         )

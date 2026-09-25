@@ -27,6 +27,8 @@ class Permission(StrEnum):
     AUDIT_EXPORT = "audit:export"
     CIRCUITS_MANAGE = "circuits:manage"
     KB_WRITE = "kb:write"
+    KB_READ = "kb:read"
+    ALERTS_ACKNOWLEDGE = "alerts:acknowledge"
 
 
 # Role-to-Permissions Access Matrix (Security & Access Document §13.2)
@@ -40,6 +42,8 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.AUDIT_EXPORT,
         Permission.CIRCUITS_MANAGE,
         Permission.KB_WRITE,
+        Permission.KB_READ,
+        Permission.ALERTS_ACKNOWLEDGE,
     },
     Role.TENANT_ADMIN: {
         Permission.VERIFY_WRITE,
@@ -49,17 +53,22 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.AUDIT_READ,
         Permission.AUDIT_EXPORT,
         Permission.KB_WRITE,
+        Permission.KB_READ,
+        Permission.ALERTS_ACKNOWLEDGE,
     },
     Role.OPERATOR: {
         Permission.DASHBOARD_READ,
         Permission.AUDIT_READ,
         Permission.CIRCUITS_MANAGE,
+        Permission.KB_READ,
+        Permission.ALERTS_ACKNOWLEDGE,
     },
     Role.AUDITOR: {
         Permission.VERIFY_READ,
         Permission.DASHBOARD_READ,
         Permission.AUDIT_READ,
         Permission.AUDIT_EXPORT,
+        Permission.KB_READ,
     },
     Role.API_CLIENT: {
         Permission.VERIFY_WRITE,

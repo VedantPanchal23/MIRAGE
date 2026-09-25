@@ -62,6 +62,20 @@ task_queues = [
         },
         durable=True,
     ),
+    Queue(
+        "mirage.reports",
+        default_exchange,
+        routing_key="report.task",
+        queue_arguments={
+            "x-queue-type": "quorum",
+            "x-dead-letter-exchange": "mirage.dlx",
+            "x-dead-letter-routing-key": "report.dlq",
+            "x-max-length": 2000,
+            "x-overflow": "reject-publish",
+            "x-delivery-limit": 5,
+        },
+        durable=True,
+    ),
     # Dead-Letter Queues (DLQ)
     Queue(
         "mirage.verify.dlq",
@@ -90,6 +104,15 @@ task_queues = [
         },
         durable=True,
     ),
+    Queue(
+        "mirage.reports.dlq",
+        dead_letter_exchange,
+        routing_key="report.dlq",
+        queue_arguments={
+            "x-queue-type": "quorum",
+        },
+        durable=True,
+    ),
 ]
 
 celery_app = Celery(
@@ -113,8 +136,15 @@ celery_app.conf.update(
     task_acks_late=True,
     task_reject_on_worker_lost=True,
     task_default_delivery_mode="persistent",
+    broker_connection_retry_on_startup=False,
+    broker_connection_max_retries=1,
+    broker_connection_timeout=0.5,
     broker_transport_options={
         "confirm_publish": True,
+        "max_retries": 1,
+        "interval_start": 0.05,
+        "interval_step": 0.05,
+        "interval_max": 0.1,
     },
     worker_prefetch_multiplier=1,
     # Timeouts grounded in SLA (Technical Architecture §2.6, P95 < 3000ms, k=2 rewrites)
@@ -130,7 +160,19 @@ celery_app.conf.update(
         "workers.tasks.async_verify_task": {"queue": "mirage.verify", "routing_key": "verify.task"},
         "workers.tasks.recompute_drift_task": {"queue": "mirage.drift", "routing_key": "drift.task"},
         "workers.tasks.ingest_document_task": {"queue": "mirage.ingest", "routing_key": "ingest.task"},
+        "workers.tasks.generate_report_task": {"queue": "mirage.reports", "routing_key": "report.task"},
     },
 )
 
 celery_app.autodiscover_tasks(["workers.tasks"])
+
+
+def is_broker_reachable(timeout: float = 0.05) -> bool:
+    """Non-blocking socket probe to verify if RabbitMQ broker is actively accepting connections."""
+    import socket
+
+    try:
+        with socket.create_connection((settings.rabbitmq_host, settings.rabbitmq_port), timeout=timeout):
+            return True
+    except (OSError, TimeoutError):
+        return False

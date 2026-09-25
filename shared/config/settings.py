@@ -130,6 +130,17 @@ class Settings(BaseSettings):
     hrs_correction_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
     max_correction_retries: int = Field(default=2, ge=1, le=5)
 
+    # --------------------------------------------------------------------------
+    # Object Storage Configuration (ADR 0005)
+    # --------------------------------------------------------------------------
+    storage_driver: str = Field(default="local")  # "local" or "s3"
+    storage_local_root: str = Field(default="tmp/storage")
+    s3_bucket_name: str = Field(default="mirage-audit")
+    s3_endpoint_url: str | None = Field(default=None)
+    s3_region_name: str = Field(default="us-east-1")
+    aws_access_key_id: str | None = Field(default=None)
+    aws_secret_access_key: str | None = Field(default=None)
+
 
 @lru_cache
 def get_settings() -> Settings:

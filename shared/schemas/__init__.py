@@ -18,6 +18,20 @@ from shared.schemas.hrs import (
     SignalAttribution,
     determine_risk_tier,
 )
+from shared.schemas.alerts import (
+    AcknowledgeAlertRequest,
+    AlertsListResponse,
+    AlertSeverity,
+    AlertStatus,
+    OperatorAlertResponse,
+)
+from shared.schemas.error import ErrorDetail, ErrorEnvelope
+from shared.schemas.reports import (
+    GenerateReportRequest,
+    GenerateReportResponse,
+    ReportDetailResponse,
+    ReportStatus,
+)
 from shared.schemas.verification import (
     VerificationMetadata,
     VerificationRequest,
@@ -48,4 +62,15 @@ __all__ = [
     "VerificationRequest",
     "VerificationResponse",
     "VerificationStreamEvent",
+    "AlertStatus",
+    "AlertSeverity",
+    "OperatorAlertResponse",
+    "AcknowledgeAlertRequest",
+    "AlertsListResponse",
+    "ReportStatus",
+    "GenerateReportRequest",
+    "GenerateReportResponse",
+    "ReportDetailResponse",
+    "ErrorDetail",
+    "ErrorEnvelope",
 ]

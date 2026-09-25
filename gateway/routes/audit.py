@@ -49,6 +49,54 @@ async def get_compliance_report(
     return report
 
 
+@router.get("/report/{session_id}/pdf")
+async def get_compliance_report_pdf(
+    session_id: str,
+    tenant_id: str = Depends(require_permission(Permission.AUDIT_READ)),
+) -> Response:
+    """Generate and stream a single-session compliance verification certificate as PDF."""
+    from analytics.pdf_service import default_pdf_generator
+    from db.persistence import default_persistence_service
+
+    session_record = None
+    claims_records = []
+    try:
+        session_record, claims_records = await default_persistence_service.get_session_with_claims(
+            tenant_id=tenant_id, session_id=session_id
+        )
+    except Exception as exc:
+        logger.warning("Postgres lookup for session certificate fallback", error=str(exc))
+
+    if session_record:
+        session_data = {
+            "session_id": session_record.session_id,
+            "tenant_id": session_record.tenant_id,
+            "model_id": session_record.model_id,
+            "timestamp": session_record.created_at.isoformat() if session_record.created_at else "",
+            "hrs_score": session_record.hrs_score,
+            "risk_tier": session_record.risk_tier,
+            "correction_applied": session_record.correction_applied,
+            "claims": [
+                {
+                    "text": c.claim_text,
+                    "status": c.status,
+                    "risk_score": c.risk_score,
+                }
+                for c in claims_records
+            ],
+            "signal_attribution": claims_records[0].signal_attribution if claims_records else {},
+        }
+    else:
+        session_data = AuditService.generate_compliance_report(session_id=session_id)
+
+    pdf_bytes = default_pdf_generator.generate_session_certificate_pdf(session_data)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="certificate_{session_id}.pdf"'},
+    )
+
+
 @router.get("/export")
 async def export_tenant_audit_logs(
     tenant_id: str = Depends(require_permission(Permission.AUDIT_EXPORT)),

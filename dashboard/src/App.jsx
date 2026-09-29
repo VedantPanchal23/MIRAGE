@@ -14,6 +14,7 @@ import { OverviewView } from "./views/OverviewView";
 import { DriftView } from "./views/DriftView";
 import { SessionsView } from "./views/SessionsView";
 import { AlertsView } from "./views/AlertsView";
+import { LiveStreamView } from "./views/LiveStreamView";
 
 /**
  * Dashboard application shell managing navigation state, header actions, and view routing.
@@ -91,13 +92,7 @@ export function DashboardShell() {
         );
 
       case "stream":
-        return (
-          <PlaceholderView
-            title="Live WebSocket Verification Stream"
-            phase="P2.9"
-            description="Real-time WebSocket streaming verification for progressive LLM token streams and instant proposition evaluations."
-          />
-        );
+        return <LiveStreamView />;
 
       case "alerts":
         return (

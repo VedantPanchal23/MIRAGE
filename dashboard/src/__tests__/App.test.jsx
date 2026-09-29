@@ -281,7 +281,7 @@ describe("Dashboard Shell & Application Integration (App.test.jsx)", () => {
       // Clicking an authorized tab (Live Stream) displays the view without AccessDenied
       fireEvent.click(streamTab);
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-      expect(screen.getByText("Live WebSocket Verification Stream")).toBeInTheDocument();
+      expect(screen.getByRole("heading", { name: "Live Verification Stream" })).toBeInTheDocument();
     });
   });
 

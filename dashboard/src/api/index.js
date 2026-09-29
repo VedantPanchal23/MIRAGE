@@ -23,6 +23,10 @@ export {
 } from "./alerts";
 
 export {
+  getStreamWebSocketUrl,
+} from "./stream";
+
+export {
   getHealth,
   getReadiness,
 } from "./health";
@@ -40,6 +44,7 @@ export {
 
 import * as dashboard from "./dashboard";
 import * as alerts from "./alerts";
+import * as stream from "./stream";
 import * as health from "./health";
 import * as reports from "./reports";
 import { apiFetch, setApiToken, getApiToken, onUnauthorized, ApiError } from "./client";
@@ -52,6 +57,7 @@ export const api = {
   ApiError,
   dashboard,
   alerts,
+  stream,
   health,
   reports,
 };

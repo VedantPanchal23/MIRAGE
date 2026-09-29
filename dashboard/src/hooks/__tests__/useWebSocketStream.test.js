@@ -303,16 +303,17 @@ describe("useWebSocketStream Hook Unit Tests", () => {
     expect(result.current.claims.length).toBe(1);
     expect(result.current.claims[0].claim_id).toBe("c-001");
 
-    // 2. Server emits signals_computed
+    // 2. Server emits signals_computed (including all active signals: rav, scs, nli, ics, vgs)
     act(() => {
       ws.serverSend({
         event_type: "signals_computed",
-        signal_attribution: { rav: 0.05, scs: 0.02, nli: 0.01, vgs: 0.0 },
+        signal_attribution: { rav: 0.05, scs: 0.02, nli: 0.01, ics: 0.03, vgs: 0.0 },
         contradicted_claims: [],
       });
     });
 
     expect(result.current.signals.signalAttribution.rav).toBe(0.05);
+    expect(result.current.signals.signalAttribution.ics).toBe(0.03);
     expect(result.current.signals.contradictedClaims).toEqual([]);
 
     // 3. Server emits verification_complete

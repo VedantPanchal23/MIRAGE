@@ -427,21 +427,35 @@ export function LiveStreamView() {
 
             {signals ? (
               <div className="space-y-4">
-                {/* Signal attribution scores */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {Object.entries(signals.signalAttribution || {}).map(([key, val]) => (
-                    <div
-                      key={key}
-                      className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center"
-                    >
-                      <span className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
-                        {key}
-                      </span>
-                      <span className="text-base font-bold font-mono text-white">
-                        {typeof val === "number" ? val.toFixed(3) : String(val)}
-                      </span>
-                    </div>
-                  ))}
+                {/* Signal attribution scores across all active verification signals */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+                  {Object.entries(signals.signalAttribution || {})
+                    .sort(([a], [b]) => {
+                      const order = ["rav", "scs", "nli", "ics", "vgs"];
+                      const idxA = order.indexOf(a.toLowerCase());
+                      const idxB = order.indexOf(b.toLowerCase());
+                      if (idxA !== -1 && idxB !== -1) return idxA - idxB;
+                      if (idxA !== -1) return -1;
+                      if (idxB !== -1) return 1;
+                      return a.localeCompare(b);
+                    })
+                    .map(([key, val]) => (
+                      <div
+                        key={key}
+                        className="bg-slate-950 border border-slate-800 rounded-lg p-3 text-center"
+                      >
+                        <span className="block text-[10px] font-mono uppercase text-slate-400 mb-1">
+                          {key}
+                        </span>
+                        <span className="text-base font-bold font-mono text-white">
+                          {typeof val === "number"
+                            ? val.toFixed(3)
+                            : val === null || val === undefined
+                            ? "N/A"
+                            : String(val)}
+                        </span>
+                      </div>
+                    ))}
                 </div>
 
                 {/* Contradicted Claims Alert */}
@@ -470,7 +484,7 @@ export function LiveStreamView() {
                 {isStreaming && claims.length > 0 ? (
                   <span className="flex items-center justify-center space-x-2 text-emerald-400 animate-pulse">
                     <Activity className="w-4 h-4 animate-spin" />
-                    <span>Computing RAV, SCS, NLI, and VGS verification signals...</span>
+                    <span>Computing RAV, SCS, NLI, ICS, and VGS verification signals...</span>
                   </span>
                 ) : (
                   <span>Awaiting signal verification processing.</span>

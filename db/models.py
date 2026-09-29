@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +30,7 @@ class Tenant(Base):
     sessions: Mapped[list["VerificationSession"]] = relationship("VerificationSession", back_populates="tenant")
     alerts: Mapped[list["OperatorAlert"]] = relationship("OperatorAlert", back_populates="tenant")
     reports: Mapped[list["AuditReport"]] = relationship("AuditReport", back_populates="tenant")
+    kb_documents: Mapped[list["KBDocumentRecord"]] = relationship("KBDocumentRecord", back_populates="tenant")
 
 
 class VerificationSession(Base):
@@ -178,3 +179,33 @@ class AuditReport(Base):
 
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="reports")
 
+
+class KBDocumentRecord(Base):
+    """Knowledge base document metadata for deduplication and tenant isolation."""
+
+    __tablename__ = "kb_documents"
+    __table_args__ = (UniqueConstraint("tenant_id", "filename", name="uq_kb_documents_tenant_filename"),)
+
+    document_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    chunks_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    collection_name: Mapped[str] = mapped_column(String(128), default="default_kb", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="INDEXED", nullable=False)
+    generation: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+        index=True,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="kb_documents")

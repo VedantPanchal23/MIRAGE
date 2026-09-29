@@ -65,7 +65,7 @@ class TestPipelineIntegration:
 
         # 1. Upload document
         upload_res = client.post(
-            "/v1/knowledge-base/upload",
+            "/v1/knowledge-base/upload?sync=true",
             json=doc_payload,
             headers=kb_headers,
         )
@@ -93,7 +93,7 @@ class TestPipelineIntegration:
 
     def test_audit_chain_and_compliance_report_integration(self) -> None:
         """Verify cryptographic audit chain inspection and compliance certificate generation."""
-        audit_headers = AuthTestFactory.auth_headers(tenant_id="tenant_integration_audit", role=Role.AUDITOR)
+        audit_headers = AuthTestFactory.auth_headers(tenant_id="tenant_integration_audit", role=Role.OPERATOR)
 
         # 1. Verify chain
         chain_res = client.post(

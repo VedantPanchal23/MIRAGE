@@ -80,11 +80,12 @@ class CorrectionGraph:
     async def _node_retrieve_evidence(self, state: MirageAgentState) -> dict[str, Any]:
         """Node 2: Retrieve top evidence chunks from RAV for flagged claims."""
         evidence_map = dict(state.get("evidence_map", {}))
+        tenant_id = state.get("tenant_id")
         for claim in state.get("flagged_claims", []):
             claim_id = claim.get("claim_id", "")
             claim_text = claim.get("text", "")
             if not evidence_map.get(claim_id) and claim_text:
-                chunks = await self.rav_worker.search_evidence(claim_text, limit=3)
+                chunks = await self.rav_worker.search_evidence(claim_text, tenant_id=tenant_id, limit=3)
                 evidence_map[claim_id] = [c.content for c in chunks]
 
         return {"evidence_map": evidence_map}

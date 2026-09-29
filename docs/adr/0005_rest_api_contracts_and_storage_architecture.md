@@ -80,23 +80,70 @@ To satisfy `Technical_Architecture.md` §7.5 while supporting seamless local dev
 - **Persistence**: Persisted in PostgreSQL table `operator_alerts` with Row-Level Security (`ALTER TABLE operator_alerts ENABLE ROW LEVEL SECURITY`).
 
 ### 5. Knowledge Base Upload Queue Semantics & Duplicate Handling
-- **Queue Preservation**: In-process synchronous ingestion in `POST /v1/kb/upload` is eliminated. All uploads strictly enqueue `workers.tasks.ingest_document_task` to the durable RabbitMQ Quorum queue `mirage.ingest`.
+- **Queue Preservation**: In-process synchronous ingestion in `POST /v1/kb/upload` is strictly eliminated in production. All uploads strictly enqueue `workers.tasks.ingest_document_task` to the durable RabbitMQ Quorum queue `mirage.ingest`. Passing `sync=true` in production is rejected with `HTTP 400 Bad Request`.
 - **Payload & File Constraints**:
   - Maximum payload size: 10MB (enforced at gateway boundary; returns `HTTP 413 Payload Too Large`).
   - Supported formats: `.txt`, `.md`, `.pdf`, `.docx`.
   - Empty files or whitespace-only documents are rejected with `HTTP 400 Bad Request`.
-- **Duplicate Handling**: Document contents are hashed with SHA-256 (`content_hash`). If a document with the same filename and identical content hash already exists for the tenant, the gateway returns the existing document record (`HTTP 200 OK`) without re-indexing. If the content differs, the existing document chunks are purged and the new document is queued (`HTTP 202 Accepted`).
+- **Persistent Deduplication & Upload Atomicity Invariant**:
+  - Authoritative persistence in PostgreSQL table `kb_documents` with tenant-scoped Row-Level Security (`ALTER TABLE kb_documents ENABLE ROW LEVEL SECURITY`).
+  - Uniqueness invariant: `UniqueConstraint("tenant_id", "filename")` and Primary Key on `document_id`.
+  - Document contents are hashed with SHA-256 (`content_hash`).
+  - If a document with the same filename and identical `content_hash` already exists in PostgreSQL for the authenticated tenant:
+    - If `status == "INDEXED"`, the gateway returns the existing document record (`HTTP 200 OK`, `status: "duplicate"`) without re-indexing or enqueuing tasks.
+    - If `status == "PENDING"` (e.g. from an earlier unconfirmed publish), the gateway re-dispatches the ingestion task with the identical `generation` without burning a new generation sequence or creating duplicate rows.
+  - **Pre-Dispatch Visibility Invariant**: To prevent the dispatch-before-database race condition (where a worker consumes immediately from RabbitMQ before the PostgreSQL row exists), the API Gateway records the authoritative `PENDING` row with an assigned `generation` in PostgreSQL *before* dispatching the task to RabbitMQ.
+  - **Definitive Failure vs. Ambiguous Publish Outcome Classification**:
+    - **Definitive Failure** (pre-transmission failure, socket connection refused, DNS error, or unreachable probe before dispatch): Zero frames reached RabbitMQ; no message was or will ever be queued. The gateway executes a compensating rollback in PostgreSQL (restoring the previous `INDEXED` state, content hash, and generation if updating an existing document, or deleting the pending row if creating a new document), and returns `HTTP 503 Service Unavailable` with `Retry-After: 30`. Compensation is provably safe.
+    - **Ambiguous Publish Outcome** (publisher confirmation timeout, connection drop during confirm wait, or unverified operational failure after frame write): The message frame was transmitted across TCP and may already reside in the Quorum queue. The gateway **MUST NEVER** delete or revert the PostgreSQL `PENDING` record. Compensating deletion/reversion is strictly prohibited because the worker task may subsequently execute against the database. The gateway logs an ambiguous outcome warning and returns `HTTP 503 Service Unavailable` with `Retry-After: 30`.
+  - **Worker Reconciliation & Task Idempotency**:
+    - If an ambiguously published task was successfully queued, the worker executes against the retained `PENDING` record, indexes vectors under `{doc_id}_g{generation}_*`, commits `status = "INDEXED"`, and purges old generations.
+    - If an ambiguously published task is delivered multiple times (or re-enqueued by client retry), the worker detects `generation == current_generation and status == "INDEXED"` with matching content hash and returns `idempotent_duplicate: True` without duplicate vector processing.
+    - If a task executes and finds no record in PostgreSQL (`existing_rec is None`, e.g. following explicit document deletion or definitive compensation), the worker aborts with `status = "ABORTED"` without creating orphaned vector points.
+  - **Crash-Safe Generation-Based Vector Replacement**:
+    - Each document version is assigned a strictly monotonically increasing integer `generation`.
+    - Chunk IDs in Qdrant are namespaced by generation (`{doc_id}_g{generation}_c{idx:03d}`) and tagged with `generation` and `doc_generation` (`{doc_id}:g{generation}`) in payload metadata.
+    - When executing `ingest_document_task`, the Celery worker upserts the new generation's vectors into Qdrant *first* without deleting the previous generation.
+    - The worker transitions PostgreSQL to `INDEXED` conditional on `generation`.
+    - Old vector generations are purged from Qdrant *only after* the PostgreSQL transaction successfully commits.
+    - If a crash, timeout, or Qdrant write failure occurs prior to database commit, the previous valid generation in Qdrant and PostgreSQL remains 100% intact (zero data-loss risk).
+  - **Active-Generation Retrieval Invariant (Vector Visibility Guarantee)**:
+    - Once PostgreSQL declares generation $N$ as the authoritative indexed generation, retrieval must never return vectors belonging to generation $< N$, even if post-commit cleanup has not completed or permanently fails.
+    - In `workers/rav/worker.py:search_evidence`, retrieval queries PostgreSQL for all active `INDEXED` documents of the tenant and constructs an authoritative generation filter: `doc_generation in [f"{doc_id}:g{N}"]`.
+    - Qdrant queries strictly filter by `tenant_id` and `doc_generation in allowed_tokens`. A defense-in-depth post-filter additionally verifies that returned chunks match the authoritative generation before being returned to callers.
+    - Old generation cleanup is merely storage hygiene, not a correctness requirement.
+  - **Bounded Recovery of Ambiguous PENDING Uploads**:
+    - An ambiguous publish must not create a permanently stuck authoritative `PENDING` state.
+    - Bounded state reconciliation (`reconcile_stale_pending_kb_documents` and `reconcile_kb_pending_task`) probes vector presence for records remaining in `PENDING` longer than a stale threshold (default 300s):
+      - If vector points exist for `(tenant_id, document_id, generation)`, the record is promoted to `INDEXED`.
+      - If vector points do not exist, the record is transitioned to `FAILED` (orphaned pending upload; publish unconfirmed).
+    - Reconciliation is tenant-safe, preserves deterministic identities, never enqueues duplicate jobs, and never rolls back an already-indexed generation.
+  - **Out-of-Order Execution & Stale Task Prevention**:
+    - If concurrent divergent uploads for the same document execute out of order (e.g. Generation 2 runs before Generation 1), the worker checks PostgreSQL: if `doc.generation > task.generation`, the task is identified as superseded and discarded immediately without mutating PostgreSQL or storing stale vectors.
+  - **Ephemeral Vector Emulation Boundary**:
+    - The class-level `_shared_in_memory_docs` dictionary in `KnowledgeBaseIngestionService` is strictly an ephemeral test-only emulation used in local/CI environments lacking a live Qdrant container.
+    - It is never authoritative for production KB metadata, deduplication, identity, indexing state, or tenant isolation (which are all strictly governed by PostgreSQL `KBDocumentRecord` and RLS). In production (`ENVIRONMENT="production"`), Qdrant is mandatory and in-memory fallback is disabled.
+  - Concurrency is managed at the database engine level via PostgreSQL native `INSERT ... ON CONFLICT (tenant_id, filename) DO UPDATE`, preventing duplicate rows and race conditions across multiple gateway instances.
+- **Deterministic Document & Chunk Identity**:
+  - `doc_id` uses the full 256-bit SHA-256 digest: `doc_{sha256(tenant_id + ":" + filename)}` (68 characters), backed by the PostgreSQL `UniqueConstraint("tenant_id", "filename")`.
+  - Full 256-bit cryptographic digest provides robust collision resistance ($2^{128}$ birthday bound) while avoiding claims of mathematical impossibility.
+  - Retries of the same upload yield identical `doc_id` and do not produce duplicate logical documents.
+  - Identical content across different tenants produces distinct `doc_id` values and remains strictly isolated.
+  - Qdrant points are namespaced: `uuid5(NAMESPACE_DNS, f"{tenant_id}_{chunk_id}")`.
+- **Tenant-Safe Vector Deletion**:
+  - Qdrant deletion filter strictly scopes on both `tenant_id` and `document_id`.
+  - A tenant cannot delete another tenant's vector points even if guessing a document ID.
 - **Canonical Routing & Backward Compatibility**:
   - `POST /v1/kb/upload` is the primary canonical endpoint.
   - `GET /v1/kb/documents` and `DELETE /v1/kb/documents/{document_id}` are canonical aliases.
-  - Existing `/v1/knowledge-base/*` paths are preserved as backward-compatible routes.
+  - Existing `/v1/knowledge-base/*` paths are preserved as backward-compatible routes that follow identical queue and deduplication semantics.
 
 ### 6. RBAC Permission Mapping & Extensions
 - Permissions in `shared/schemas/auth.py` are extended minimally and semantically:
   - Add `Permission.ALERTS_ACKNOWLEDGE = "alerts:acknowledge"`.
     - Granted to: `Role.OPERATOR`, `Role.TENANT_ADMIN`, `Role.SUPER_ADMIN`.
   - Add `Permission.KB_READ = "kb:read"`.
-    - Granted to: `Role.OPERATOR`, `Role.AUDITOR`, `Role.VIEWER`, `Role.TENANT_ADMIN`, `Role.SUPER_ADMIN`.
+    - Granted to: `Role.OPERATOR`, `Role.TENANT_ADMIN`, `Role.SUPER_ADMIN`.
 - Existing permissions are reused for all other endpoints:
   - `GET /v1/sessions/{id}` $\to$ `Permission.VERIFY_READ` / `Permission.AUDIT_READ`.
   - `POST /v1/reports/generate` $\to$ `Permission.AUDIT_EXPORT`.

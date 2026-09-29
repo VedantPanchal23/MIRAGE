@@ -19,6 +19,7 @@ class CorrectionAgent:
         response_id: str,
         original_response: str,
         verified_claims: list[ClaimVerificationResult],
+        tenant_id: str | None = None,
     ) -> tuple[str, bool, int, float, bool]:
         """Trigger autonomous correction for contradicted or high-risk claims.
 
@@ -53,6 +54,7 @@ class CorrectionAgent:
             "Initiating LangGraph correction loop",
             response_id=response_id,
             flagged_claims_count=len(flagged),
+            tenant_id=tenant_id,
         )
 
         initial_state: MirageAgentState = {
@@ -66,6 +68,7 @@ class CorrectionAgent:
             "escalated": False,
             "final_response": original_response,
             "history": [],
+            "tenant_id": tenant_id,
         }
 
         final_state = await self.graph.correct(initial_state)

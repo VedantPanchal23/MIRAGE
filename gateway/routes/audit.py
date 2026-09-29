@@ -56,10 +56,11 @@ async def get_compliance_report_pdf(
 ) -> Response:
     """Generate and stream a single-session compliance verification certificate as PDF."""
     from analytics.pdf_service import default_pdf_generator
+    from db.models import ClaimRecord, VerificationSession
     from db.persistence import default_persistence_service
 
-    session_record = None
-    claims_records = []
+    session_record: VerificationSession | None = None
+    claims_records: list[ClaimRecord] = []
     try:
         session_record, claims_records = await default_persistence_service.get_session_with_claims(
             tenant_id=tenant_id, session_id=session_id

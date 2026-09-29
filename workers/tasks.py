@@ -9,10 +9,12 @@ Implements ADR 0003:
 
 import asyncio
 import concurrent.futures
+import hashlib
 import os
 import random
 import threading
 import time
+from datetime import datetime
 from typing import Any, cast
 
 from celery.exceptions import MaxRetriesExceededError, Reject
@@ -241,23 +243,137 @@ def recompute_drift_task(self: Any, tenant_id: str = "default_tenant") -> dict[s
     acks_late=True,
 )  # type: ignore[untyped-decorator]
 def ingest_document_task(
-    self: Any, filename: str, content: str, tenant_id: str, collection_name: str = "default_kb"
+    self: Any,
+    filename: str,
+    content: str,
+    tenant_id: str,
+    collection_name: str = "default_kb",
+    doc_id: str | None = None,
+    generation: int = 1,
 ) -> dict[str, Any]:
-    """Asynchronous task for processing and indexing large knowledge base uploads."""
-    logger.info("Executing async KB ingestion task", filename=filename, tenant_id=tenant_id)
+    """Asynchronous task for processing and indexing large knowledge base uploads under generation namespace."""
+    logger.info(
+        "Executing async KB ingestion task",
+        filename=filename,
+        tenant_id=tenant_id,
+        doc_id=doc_id,
+        generation=generation,
+    )
     if not filename or not content or not tenant_id:
         raise Reject("Invalid document ingestion parameters", requeue=False)
 
+    resolved_doc_id = doc_id or f"doc_{hashlib.sha256(f'{tenant_id}:{filename}'.encode()).hexdigest()}"
     service = KnowledgeBaseIngestionService()
     try:
+        # 1. Authoritative check in PostgreSQL:
+        # Guard against missing record, superseded generation, or duplicate delivery
+        if default_persistence_service is not None:
+            existing_rec = _run_async(default_persistence_service.get_kb_document_by_id(tenant_id, resolved_doc_id))
+            if existing_rec is None:
+                logger.warning(
+                    "KB document record not found in PostgreSQL; aborting ingestion task",
+                    document_id=resolved_doc_id,
+                    tenant_id=tenant_id,
+                )
+                return {
+                    "document_id": resolved_doc_id,
+                    "filename": filename,
+                    "status": "ABORTED",
+                    "reason": "Document record not found in PostgreSQL",
+                }
+
+            if existing_rec.generation > generation:
+                logger.warning(
+                    "Superseded document generation detected before indexing; discarding stale task",
+                    document_id=resolved_doc_id,
+                    task_generation=generation,
+                    current_generation=existing_rec.generation,
+                )
+                return {
+                    "document_id": resolved_doc_id,
+                    "filename": filename,
+                    "status": "superseded",
+                    "task_generation": generation,
+                    "current_generation": existing_rec.generation,
+                }
+
+            task_content_bytes = content.encode("utf-8") if isinstance(content, str) else content
+            task_content_hash = hashlib.sha256(task_content_bytes).hexdigest()
+            if (
+                existing_rec.generation == generation
+                and existing_rec.status == "INDEXED"
+                and existing_rec.content_hash == task_content_hash
+            ):
+                logger.info(
+                    "KB ingestion task duplicate delivery detected; document generation already INDEXED",
+                    document_id=resolved_doc_id,
+                    generation=generation,
+                    tenant_id=tenant_id,
+                )
+                return {
+                    "document_id": resolved_doc_id,
+                    "filename": filename,
+                    "status": "INDEXED",
+                    "generation": generation,
+                    "chunks_count": existing_rec.chunks_count,
+                    "idempotent_duplicate": True,
+                }
+
+        # 2. Ingest into vector store under generation namespace (non-destructive: does NOT delete old generation)
         result = _run_async(
             service.ingest_document(
                 filename=filename,
                 content=content,
                 tenant_id=tenant_id,
                 collection_name=collection_name,
+                doc_id=resolved_doc_id,
+                generation=generation,
             )
         )
+
+        content_hash = hashlib.sha256(content.encode() if isinstance(content, str) else content).hexdigest()
+
+        # 3. Transition PostgreSQL record to INDEXED conditional on generation
+        if default_persistence_service is not None:
+            try:
+                updated_rec = _run_async(
+                    default_persistence_service.update_kb_document_status(
+                        tenant_id=tenant_id,
+                        document_id=resolved_doc_id,
+                        chunks_count=result.get("chunks_count", 0),
+                        status="INDEXED",
+                        content_hash=content_hash,
+                        generation=generation,
+                    )
+                )
+                if updated_rec is None:
+                    # Superseded in PostgreSQL while ingesting vectors!
+                    logger.warning(
+                        "Document superseded in PostgreSQL while ingesting vectors; purging intermediate generation",
+                        document_id=resolved_doc_id,
+                        generation=generation,
+                    )
+                    service.purge_generation(
+                        tenant_id, resolved_doc_id, generation=generation, collection_name=collection_name
+                    )
+                    return {
+                        "document_id": resolved_doc_id,
+                        "filename": filename,
+                        "status": "superseded",
+                        "generation": generation,
+                    }
+            except Exception as db_exc:
+                logger.error("Could not update kb_document status in Postgres", error=str(db_exc))
+                raise db_exc
+
+        # 4. Old generation vector cleanup: executed ONLY after new generation is committed in PostgreSQL
+        service.purge_old_generations(
+            tenant_id=tenant_id,
+            document_id=resolved_doc_id,
+            keep_generation=generation,
+            collection_name=collection_name,
+        )
+
         return cast(dict[str, Any], result)
     except NON_RETRYABLE_EXCEPTIONS as fatal_exc:
         raise Reject(fatal_exc, requeue=False) from fatal_exc
@@ -270,10 +386,54 @@ def ingest_document_task(
 
 
 @celery_app.task(
+    name="workers.tasks.reconcile_kb_pending_task",
+    bind=True,
+    max_retries=1,
+    acks_late=True,
+)  # type: ignore[untyped-decorator]
+def reconcile_kb_pending_task(
+    _self: Any,
+    tenant_id: str,
+    stale_threshold_seconds: int = 300,
+) -> dict[str, Any]:
+    """Asynchronous background task to reconcile stale PENDING KB uploads.
+
+    Guarantees:
+    - Distinguishes genuinely active/published tasks from orphaned PENDING records
+    - Never rolls back a generation that has already been successfully indexed
+    - Never enqueues duplicate ingestion jobs
+    - Reconciles orphaned PENDING records to FAILED
+    """
+    logger.info("Executing KB pending reconciliation task", tenant_id=tenant_id)
+    if not tenant_id:
+        raise Reject("Invalid reconciliation parameters", requeue=False)
+
+    service = KnowledgeBaseIngestionService()
+    reconciled = _run_async(
+        default_persistence_service.reconcile_stale_pending_kb_documents(
+            tenant_id=tenant_id,
+            stale_threshold_seconds=stale_threshold_seconds,
+            qdrant_client=service.client,
+        )
+    )
+    logger.info(
+        "KB pending reconciliation completed",
+        tenant_id=tenant_id,
+        reconciled_count=len(reconciled),
+    )
+    return {
+        "tenant_id": tenant_id,
+        "reconciled_count": len(reconciled),
+        "reconciled_records": reconciled,
+    }
+
+
+@celery_app.task(
     name="workers.tasks.generate_report_task",
     bind=True,
     max_retries=3,
     acks_late=True,
+    ignore_result=True,
 )  # type: ignore[untyped-decorator]
 def generate_report_task(
     self: Any,
@@ -298,6 +458,23 @@ def generate_report_task(
         raise Reject(f"Malformed date strings: {exc}", requeue=False) from exc
 
     try:
+        # Pre-execution check: Guard against ambiguous dispatch or already-failed reports
+        existing_report = _run_async(default_persistence_service.get_report_by_id(tenant_id, report_id))
+        if existing_report is None:
+            logger.warning(
+                "Report record not found in PostgreSQL; aborting task",
+                report_id=report_id,
+                tenant_id=tenant_id,
+            )
+            return {"report_id": report_id, "status": "ABORTED", "reason": "Report not found"}
+        if existing_report.status == "FAILED":
+            logger.warning(
+                "Report record is marked FAILED in PostgreSQL; aborting task to prevent duplicate work",
+                report_id=report_id,
+                tenant_id=tenant_id,
+            )
+            return {"report_id": report_id, "status": "ABORTED", "reason": "Report marked FAILED"}
+
         # 1. Update status to PROCESSING
         _run_async(
             default_persistence_service.update_report_status(
@@ -417,4 +594,3 @@ def generate_report_task(
                 )
             )
             raise Reject("Report generation retries exhausted", requeue=False) from max_exc
-

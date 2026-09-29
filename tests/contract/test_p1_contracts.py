@@ -22,6 +22,7 @@ Validates:
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 import pytest
 from starlette.testclient import TestClient
@@ -64,7 +65,7 @@ class TestP1Contracts:
         """Verify GET /v1/sessions/{id} returns 200 and complete session schema."""
         tenant_id = f"t_sess_{uuid.uuid4().hex[:8]}"
         session_id = f"s_test_{uuid.uuid4().hex[:8]}"
-        headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.AUDITOR)
+        headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.OPERATOR)
 
         # Pre-seed session in PostgreSQL
         async def seed() -> None:
@@ -164,10 +165,10 @@ class TestP1Contracts:
         assert ack_404.json()["error"]["code"] == "NOT_FOUND"
 
     def test_operator_alerts_acknowledge_forbidden_403(self) -> None:
-        """Verify role without ALERTS_ACKNOWLEDGE (e.g. AUDITOR) is rejected with 403."""
+        """Verify role without ALERTS_ACKNOWLEDGE (e.g. VIEWER) is rejected with 403."""
         tenant_id = f"t_alt_403_{uuid.uuid4().hex[:8]}"
-        auditor_headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.AUDITOR)
-        res = client.post("/v1/alerts/alt_fake/acknowledge", headers=auditor_headers)
+        viewer_headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.VIEWER)
+        res = client.post("/v1/alerts/alt_fake/acknowledge", headers=viewer_headers)
         assert res.status_code == 403
         data = res.json()
         assert "error" in data
@@ -198,7 +199,11 @@ class TestP1Contracts:
             "end_date": end,
             "model_id": "llama-3.1-70b-versatile",
         }
-        res_gen = client.post("/v1/reports/generate", json=valid_req, headers=admin_headers)
+        with (
+            patch("workers.celery_app.is_broker_reachable", return_value=True),
+            patch("workers.tasks.generate_report_task.apply_async"),
+        ):
+            res_gen = client.post("/v1/reports/generate", json=valid_req, headers=admin_headers)
         assert res_gen.status_code == 202
         gen_data = res_gen.json()
         assert "report_id" in gen_data
@@ -239,7 +244,7 @@ class TestP1Contracts:
 
     def test_single_session_certificate_pdf_contract(self) -> None:
         """Verify GET /v1/audit/report/{session_id}/pdf streams valid PDF certificate."""
-        headers = AuthTestFactory.auth_headers(tenant_id="tenant_cert_test", role=Role.AUDITOR)
+        headers = AuthTestFactory.auth_headers(tenant_id="tenant_cert_test", role=Role.TENANT_ADMIN)
         res = client.get("/v1/audit/report/sess_cert_demo_01/pdf", headers=headers)
         assert res.status_code == 200
         assert res.headers["content-type"] == "application/pdf"
@@ -294,7 +299,12 @@ class TestP1Contracts:
             "content": "General relativity generalizes special relativity and refines Newton's law.",
             "collection_name": "physics_kb",
         }
-        res_async = client.post("/v1/kb/upload", json=async_payload, headers=headers)
+        with (
+            patch("gateway.routes.knowledge_base.is_broker_reachable", return_value=True),
+            patch("workers.tasks.ingest_document_task.apply_async") as mock_kb_task,
+        ):
+            mock_kb_task.return_value = MagicMock(id="task_kb_relativity_001")
+            res_async = client.post("/v1/kb/upload", json=async_payload, headers=headers)
         assert res_async.status_code == 202
         data_async = res_async.json()
         assert data_async["status"] == "enqueued"
@@ -351,8 +361,8 @@ class TestP1Contracts:
 
     def test_error_envelope_schema_conformance(self) -> None:
         """Verify unified ErrorEnvelope schema {error: {code, message, trace_id, timestamp}}."""
-        # 422 Unprocessable Entity
-        res_422 = client.post("/v1/reports/generate", json={"invalid_field": "test"}, headers=AuthTestFactory.auth_headers(role=Role.TENANT_ADMIN))
+        headers = AuthTestFactory.auth_headers(role=Role.TENANT_ADMIN)
+        res_422 = client.post("/v1/reports/generate", json={"invalid_field": "test"}, headers=headers)
         assert res_422.status_code == 422
         d_422 = res_422.json()
         assert "error" in d_422

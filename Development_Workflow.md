@@ -159,10 +159,13 @@ Stages:
 - **Style:** Max line length 120. Google-style docstrings.
 - **Contracts:** All public functions must have type hints and docstrings. All Pydantic models require field descriptions. All FastAPI endpoints must have exhaustive OpenAPI descriptions.
 
-### TypeScript/React (Dashboard)
-- **Formatter:** Prettier.
-- **Linter:** ESLint with React and TypeScript plugins.
-- **Architecture:** All components must be functional components utilizing TypeScript. All API calls must route through a centralized API client.
+### JavaScript/React 18 (Dashboard)
+
+* **Framework:** React 18 with Vite build tool.
+* **Language:** JavaScript (`.js`) and JSX (`.jsx`) exclusively. TypeScript (`.ts`/`.tsx`), the TypeScript compiler (`tsc`), and TypeScript ESLint plugins are strictly prohibited.
+* **Formatter:** Prettier.
+* **Linter:** ESLint with React plugin (`eslint-plugin-react`, `eslint-plugin-react-hooks`).
+* **Architecture:** All components must be functional components utilizing pure JavaScript and JSX. All API and WebSocket communication must route through a centralized API client module (`src/api/`).
 
 ### Docker
 - Multi-stage builds are mandatory to minimize image size.

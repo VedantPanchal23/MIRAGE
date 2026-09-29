@@ -12,7 +12,7 @@ class Role(StrEnum):
     SUPER_ADMIN = "super_admin"
     TENANT_ADMIN = "tenant_admin"
     OPERATOR = "operator"
-    AUDITOR = "auditor"
+    VIEWER = "viewer"
     API_CLIENT = "api_client"
 
 
@@ -63,12 +63,8 @@ ROLE_PERMISSIONS: dict[Role, set[Permission]] = {
         Permission.KB_READ,
         Permission.ALERTS_ACKNOWLEDGE,
     },
-    Role.AUDITOR: {
-        Permission.VERIFY_READ,
+    Role.VIEWER: {
         Permission.DASHBOARD_READ,
-        Permission.AUDIT_READ,
-        Permission.AUDIT_EXPORT,
-        Permission.KB_READ,
     },
     Role.API_CLIENT: {
         Permission.VERIFY_WRITE,

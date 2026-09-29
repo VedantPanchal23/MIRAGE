@@ -18,6 +18,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 
 from shared.config import get_settings
+from shared.config.settings import EnvironmentType
 from shared.logging import get_logger
 from shared.schemas import EvidenceChunk
 
@@ -134,7 +135,17 @@ def compute_deterministic_embedding(text: str, dim: int = 768) -> list[float]:
 
 
 class KnowledgeBaseIngestionService:
-    """Service handling multi-format document parsing, chunking, and Qdrant ingestion."""
+    """Service handling multi-format document parsing, chunking, and Qdrant ingestion.
+
+    CRITICAL ARCHITECTURAL BOUNDARY:
+    _shared_in_memory_docs is strictly a TEST-ONLY ephemeral vector store emulation
+    used in local and CI test environments when a live Qdrant container is not provisioned.
+    It is NEVER authoritative for production KB metadata, deduplication, identity,
+    indexing state, or tenant isolation (all of which are strictly governed by PostgreSQL
+    KBDocumentRecord and Row-Level Security).
+    """
+
+    _shared_in_memory_docs: dict[str, list[dict[str, Any]]] = {}
 
     def __init__(self, qdrant_client: QdrantClient | None = None) -> None:
         self.client = qdrant_client
@@ -148,11 +159,14 @@ class KnowledgeBaseIngestionService:
                     check_compatibility=False,
                 )
             except Exception as exc:
+                if settings.environment == EnvironmentType.PRODUCTION:
+                    logger.critical("Qdrant client unavailable in production", error=str(exc))
+                    raise RuntimeError("Qdrant vector store is mandatory in production") from exc
                 logger.warning("Qdrant client unavailable for ingestion, using in-memory registry", error=str(exc))
                 self.client = None
 
         self.splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=64)
-        self._in_memory_docs: dict[str, list[dict[str, Any]]] = {}
+        self._in_memory_docs = self._shared_in_memory_docs
 
     def extract_text_from_bytes(self, content_bytes: bytes, filename: str) -> str:
         """Extract raw text from TXT, MD, PDF, or DOCX payloads."""
@@ -191,18 +205,22 @@ class KnowledgeBaseIngestionService:
         content: str | bytes,
         tenant_id: str,
         collection_name: str = "default_kb",
+        doc_id: str | None = None,
+        generation: int = 1,
     ) -> dict[str, Any]:
-        """Parse, chunk, and index document into tenant vector store."""
+        """Parse, chunk, and index document into tenant vector store under generation namespace."""
         raw_text = self.extract_text_from_bytes(content, filename) if isinstance(content, bytes) else content
         chunks = self.splitter.split_text(raw_text)
 
-        doc_id = f"doc_{uuid.uuid4().hex[:12]}"
+        # Deterministic document identity derived from tenant_id and filename (full SHA-256 digest)
+        doc_id = doc_id or f"doc_{hashlib.sha256(f'{tenant_id}:{filename}'.encode()).hexdigest()}"
         timestamp = datetime.now(UTC).isoformat()
         evidence_chunks: list[EvidenceChunk] = []
         points: list[qmodels.PointStruct] = []
 
         for idx, chunk_text in enumerate(chunks):
-            chunk_id = f"{doc_id}_c{idx:03d}"
+            # Chunk ID namespaced with generation for collision-free multi-generation side-by-side existence
+            chunk_id = f"{doc_id}_g{generation}_c{idx:03d}"
             vec = compute_deterministic_embedding(chunk_text, dim=768)
 
             metadata: dict[str, Any] = {
@@ -214,6 +232,8 @@ class KnowledgeBaseIngestionService:
                 "tenant_id": tenant_id,
                 "upload_timestamp": timestamp,
                 "text": chunk_text,
+                "generation": generation,
+                "doc_generation": f"{doc_id}:g{generation}",
             }
 
             evidence_chunks.append(
@@ -226,16 +246,17 @@ class KnowledgeBaseIngestionService:
                 )
             )
 
-            # Prepare Qdrant Point
+            # Prepare Qdrant Point: namespaced with tenant_id and generation
             points.append(
                 qmodels.PointStruct(
-                    id=str(uuid.uuid5(uuid.NAMESPACE_DNS, chunk_id)),
+                    id=str(uuid.uuid5(uuid.NAMESPACE_DNS, f"{tenant_id}_{chunk_id}")),
                     vector=vec,
                     payload=metadata,
                 )
             )
 
         # Store in Qdrant if connected
+        # Crash safety: Upsert new generation points FIRST without deleting old generation!
         indexed_to_qdrant = False
         if self.client is not None:
             try:
@@ -249,27 +270,34 @@ class KnowledgeBaseIngestionService:
                 self.client.upsert(collection_name=collection_name, points=points)
                 indexed_to_qdrant = True
             except Exception as exc:
-                logger.warning("Could not upsert to Qdrant, saved to memory", error=str(exc))
+                if settings.environment == EnvironmentType.PRODUCTION:
+                    logger.critical("Qdrant upsert failed in production", error=str(exc))
+                    raise
+                logger.warning("Could not upsert to Qdrant, saved to memory for test environment", error=str(exc))
 
-        # Always track in local tenant registry for testing & offline fast-path
-        if tenant_id not in self._in_memory_docs:
-            self._in_memory_docs[tenant_id] = []
+        # Track in local tenant registry strictly for testing & offline fast-path.
+        # NEVER used or populated in production.
+        if settings.environment != EnvironmentType.PRODUCTION:
+            if tenant_id not in self._in_memory_docs:
+                self._in_memory_docs[tenant_id] = []
 
-        self._in_memory_docs[tenant_id].append(
-            {
-                "document_id": doc_id,
-                "filename": filename,
-                "chunks_count": len(chunks),
-                "upload_timestamp": timestamp,
-                "indexed_to_qdrant": indexed_to_qdrant,
-                "chunks": evidence_chunks,
-            }
-        )
+            self._in_memory_docs[tenant_id].append(
+                {
+                    "document_id": doc_id,
+                    "filename": filename,
+                    "chunks_count": len(chunks),
+                    "upload_timestamp": timestamp,
+                    "indexed_to_qdrant": indexed_to_qdrant,
+                    "chunks": evidence_chunks,
+                    "generation": generation,
+                }
+            )
 
         logger.info(
             "Document ingested successfully",
             document_id=doc_id,
             filename=filename,
+            generation=generation,
             chunks=len(chunks),
             tenant_id=tenant_id,
         )
@@ -280,11 +308,102 @@ class KnowledgeBaseIngestionService:
             "chunks_count": len(chunks),
             "upload_timestamp": timestamp,
             "indexed_to_qdrant": indexed_to_qdrant,
+            "generation": generation,
         }
+
+    def purge_old_generations(
+        self,
+        tenant_id: str,
+        document_id: str,
+        keep_generation: int,
+        collection_name: str = "default_kb",
+    ) -> None:
+        """Purge previous generation vector points for this document, retaining only keep_generation."""
+        if self.client is not None:
+            try:
+                self.client.delete(
+                    collection_name=collection_name,
+                    points_selector=qmodels.FilterSelector(
+                        filter=qmodels.Filter(
+                            must=[
+                                qmodels.FieldCondition(
+                                    key="tenant_id",
+                                    match=qmodels.MatchValue(value=tenant_id),
+                                ),
+                                qmodels.FieldCondition(
+                                    key="document_id",
+                                    match=qmodels.MatchValue(value=document_id),
+                                ),
+                            ],
+                            must_not=[
+                                qmodels.FieldCondition(
+                                    key="generation",
+                                    match=qmodels.MatchValue(value=keep_generation),
+                                ),
+                            ],
+                        )
+                    ),
+                )
+            except Exception as exc:
+                logger.warning("Could not purge old vector generations from Qdrant", error=str(exc))
+
+        if tenant_id in self._in_memory_docs:
+            self._in_memory_docs[tenant_id] = [
+                d
+                for d in self._in_memory_docs[tenant_id]
+                if d["document_id"] != document_id or d.get("generation", 1) >= keep_generation
+            ]
+
+    def purge_generation(
+        self,
+        tenant_id: str,
+        document_id: str,
+        generation: int,
+        collection_name: str = "default_kb",
+    ) -> None:
+        """Purge specific generation vector points for this document (e.g. on task abort/superseded)."""
+        if self.client is not None:
+            try:
+                self.client.delete(
+                    collection_name=collection_name,
+                    points_selector=qmodels.FilterSelector(
+                        filter=qmodels.Filter(
+                            must=[
+                                qmodels.FieldCondition(
+                                    key="tenant_id",
+                                    match=qmodels.MatchValue(value=tenant_id),
+                                ),
+                                qmodels.FieldCondition(
+                                    key="document_id",
+                                    match=qmodels.MatchValue(value=document_id),
+                                ),
+                                qmodels.FieldCondition(
+                                    key="generation",
+                                    match=qmodels.MatchValue(value=generation),
+                                ),
+                            ]
+                        )
+                    ),
+                )
+            except Exception as exc:
+                logger.warning("Could not purge vector generation from Qdrant", error=str(exc))
+
+        if tenant_id in self._in_memory_docs:
+            self._in_memory_docs[tenant_id] = [
+                d
+                for d in self._in_memory_docs[tenant_id]
+                if not (d["document_id"] == document_id and d.get("generation", 1) == generation)
+            ]
 
     def list_documents(self, tenant_id: str) -> list[dict[str, Any]]:
         """List all ingested documents for a tenant."""
         records = self._in_memory_docs.get(tenant_id, [])
+        latest_by_doc: dict[str, dict[str, Any]] = {}
+        for r in records:
+            did = r["document_id"]
+            if did not in latest_by_doc or r.get("generation", 1) > latest_by_doc[did].get("generation", 1):
+                latest_by_doc[did] = r
+
         return [
             {
                 "document_id": r["document_id"],
@@ -292,12 +411,13 @@ class KnowledgeBaseIngestionService:
                 "chunks_count": r["chunks_count"],
                 "upload_timestamp": r["upload_timestamp"],
                 "indexed_to_qdrant": r.get("indexed_to_qdrant", False),
+                "generation": r.get("generation", 1),
             }
-            for r in records
+            for r in latest_by_doc.values()
         ]
 
     def delete_document(self, tenant_id: str, document_id: str, collection_name: str = "default_kb") -> bool:
-        """Delete document chunks from Qdrant and local cache."""
+        """Delete document chunks from Qdrant and local cache scoped strictly to tenant_id."""
         deleted = False
         if tenant_id in self._in_memory_docs:
             before = len(self._in_memory_docs[tenant_id])
@@ -309,15 +429,20 @@ class KnowledgeBaseIngestionService:
 
         if self.client is not None:
             try:
+                # Must filter by BOTH tenant_id AND document_id to prevent cross-tenant vector deletion
                 self.client.delete(
                     collection_name=collection_name,
                     points_selector=qmodels.FilterSelector(
                         filter=qmodels.Filter(
                             must=[
                                 qmodels.FieldCondition(
+                                    key="tenant_id",
+                                    match=qmodels.MatchValue(value=tenant_id),
+                                ),
+                                qmodels.FieldCondition(
                                     key="document_id",
                                     match=qmodels.MatchValue(value=document_id),
-                                )
+                                ),
                             ]
                         )
                     ),

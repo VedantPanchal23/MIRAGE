@@ -22,8 +22,8 @@ Validates:
 import asyncio
 import uuid
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 from starlette.testclient import TestClient
@@ -68,7 +68,7 @@ class TestP1Security:
         asyncio.run(seed())
 
         # Tenant B attempts to access Tenant A's session
-        headers_b = AuthTestFactory.auth_headers(tenant_id=tenant_b, role=Role.AUDITOR)
+        headers_b = AuthTestFactory.auth_headers(tenant_id=tenant_b, role=Role.OPERATOR)
         res = client.get(f"/v1/sessions/{session_id}", headers=headers_b)
 
         # Must return 404 Not Found to prevent tenant existence enumeration
@@ -127,7 +127,7 @@ class TestP1Security:
 
         report_id = asyncio.run(seed_report())
 
-        headers_b = AuthTestFactory.auth_headers(tenant_id=tenant_b, role=Role.AUDITOR)
+        headers_b = AuthTestFactory.auth_headers(tenant_id=tenant_b, role=Role.TENANT_ADMIN)
 
         # 1. Details query must return 404
         get_res = client.get(f"/v1/reports/{report_id}", headers=headers_b)
@@ -179,8 +179,8 @@ class TestP1Security:
             res = client.post("/v1/alerts/alt_non_existent/acknowledge", headers=headers)
             assert res.status_code != 403, f"Role {role} was improperly denied 403"
 
-        # Roles denied: AUDITOR, API_CLIENT
-        for role in [Role.AUDITOR, Role.API_CLIENT]:
+        # Roles denied: VIEWER, API_CLIENT
+        for role in [Role.VIEWER, Role.API_CLIENT]:
             headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=role)
             res = client.post("/v1/alerts/alt_test/acknowledge", headers=headers)
             assert res.status_code == 403, f"Role {role} should have been denied 403"
@@ -196,8 +196,8 @@ class TestP1Security:
             res = client.post("/v1/kb/upload?sync=true", json=payload, headers=headers)
             assert res.status_code in {200, 201}, f"Role {role} was improperly denied: {res.status_code}"
 
-        # Roles denied: OPERATOR, AUDITOR, API_CLIENT
-        for role in [Role.OPERATOR, Role.AUDITOR, Role.API_CLIENT]:
+        # Roles denied: OPERATOR, VIEWER, API_CLIENT
+        for role in [Role.OPERATOR, Role.VIEWER, Role.API_CLIENT]:
             headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=role)
             res = client.post("/v1/kb/upload", json=payload, headers=headers)
             assert res.status_code == 403, f"Role {role} should have been denied 403"
@@ -209,17 +209,56 @@ class TestP1Security:
         end = datetime.now(UTC).isoformat()
         payload = {"title": "Test Report", "start_date": start, "end_date": end}
 
-        # Roles permitted: AUDITOR, TENANT_ADMIN, SUPER_ADMIN
-        for role in [Role.AUDITOR, Role.TENANT_ADMIN, Role.SUPER_ADMIN]:
+        # Roles permitted: TENANT_ADMIN, SUPER_ADMIN
+        for role in [Role.TENANT_ADMIN, Role.SUPER_ADMIN]:
             headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=role)
-            res = client.post("/v1/reports/generate", json=payload, headers=headers)
+            with (
+                patch("workers.celery_app.is_broker_reachable", return_value=True),
+                patch("workers.tasks.generate_report_task.apply_async"),
+            ):
+                res = client.post("/v1/reports/generate", json=payload, headers=headers)
             assert res.status_code == 202, f"Role {role} was denied report export: {res.status_code}"
 
-        # Roles denied: OPERATOR, API_CLIENT
-        for role in [Role.OPERATOR, Role.API_CLIENT]:
+        # Roles denied: OPERATOR, VIEWER, API_CLIENT
+        for role in [Role.OPERATOR, Role.VIEWER, Role.API_CLIENT]:
             headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=role)
             res = client.post("/v1/reports/generate", json=payload, headers=headers)
             assert res.status_code == 403, f"Role {role} should have been denied 403"
+
+    def test_all_five_canonical_roles_p1_matrix(self) -> None:
+        """Verify all five canonical roles (Security_Access §13.1) across all Phase P1 endpoints."""
+        tenant_id = f"t_5roles_{uuid.uuid4().hex[:8]}"
+        headers_by_role = {role: AuthTestFactory.auth_headers(tenant_id=tenant_id, role=role) for role in Role}
+
+        # 1. GET /v1/alerts (DASHBOARD_READ)
+        # Permitted: SUPER_ADMIN, TENANT_ADMIN, OPERATOR, VIEWER
+        # Denied: API_CLIENT
+        for r in [Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR, Role.VIEWER]:
+            assert client.get("/v1/alerts", headers=headers_by_role[r]).status_code == 200
+        assert client.get("/v1/alerts", headers=headers_by_role[Role.API_CLIENT]).status_code == 403
+
+        # 2. POST /v1/alerts/{id}/acknowledge (ALERTS_ACKNOWLEDGE)
+        # Permitted: SUPER_ADMIN, TENANT_ADMIN, OPERATOR
+        # Denied: VIEWER, API_CLIENT
+        for r in [Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR]:
+            assert client.post("/v1/alerts/fake/acknowledge", headers=headers_by_role[r]).status_code != 403
+        for r in [Role.VIEWER, Role.API_CLIENT]:
+            assert client.post("/v1/alerts/fake/acknowledge", headers=headers_by_role[r]).status_code == 403
+
+        # 3. GET /v1/kb/documents (KB_READ)
+        # Permitted: SUPER_ADMIN, TENANT_ADMIN, OPERATOR
+        # Denied: VIEWER, API_CLIENT
+        for r in [Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR]:
+            assert client.get("/v1/kb/documents", headers=headers_by_role[r]).status_code == 200
+        for r in [Role.VIEWER, Role.API_CLIENT]:
+            assert client.get("/v1/kb/documents", headers=headers_by_role[r]).status_code == 403
+
+        # 4. GET /v1/sessions/{id} (VERIFY_READ or AUDIT_READ)
+        # Permitted: SUPER_ADMIN, TENANT_ADMIN, OPERATOR (AUDIT_READ), API_CLIENT (VERIFY_READ)
+        # Denied: VIEWER
+        for r in [Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR, Role.API_CLIENT]:
+            assert client.get("/v1/sessions/nonexistent", headers=headers_by_role[r]).status_code != 403
+        assert client.get("/v1/sessions/nonexistent", headers=headers_by_role[Role.VIEWER]).status_code == 403
 
     # =========================================================================
     # 3. Header Sanitization & Privilege Escalation Resistance

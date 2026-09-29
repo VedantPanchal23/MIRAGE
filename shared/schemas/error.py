@@ -11,7 +11,9 @@ class ErrorDetail(BaseModel):
 
     code: str = Field(description="Machine-readable error code")
     message: str = Field(description="Human-readable explanation of the error")
-    details: dict[str, Any] | list[Any] | None = Field(default=None, description="Optional structured context or validation field errors")
+    details: dict[str, Any] | list[Any] | None = Field(
+        default=None, description="Optional structured context or validation field errors"
+    )
     trace_id: str | None = Field(default=None, description="Distributed OpenTelemetry trace ID")
     timestamp: str = Field(default_factory=lambda: datetime.now(UTC).isoformat(), description="ISO 8601 UTC timestamp")
 

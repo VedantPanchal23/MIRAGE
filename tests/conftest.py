@@ -270,9 +270,9 @@ def admin_auth_headers() -> dict[str, str]:
 
 
 @pytest.fixture
-def auditor_auth_headers() -> dict[str, str]:
-    """Provide valid Authorization Bearer headers for Auditor role."""
-    return AuthTestFactory.auth_headers(tenant_id="audit_tenant", role=Role.AUDITOR)
+def viewer_auth_headers() -> dict[str, str]:
+    """Provide valid Authorization Bearer headers for Viewer role."""
+    return AuthTestFactory.auth_headers(tenant_id="viewer_tenant", role=Role.VIEWER)
 
 
 @pytest.fixture

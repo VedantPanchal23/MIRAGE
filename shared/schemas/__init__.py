@@ -1,5 +1,12 @@
 """Shared schema exports."""
 
+from shared.schemas.alerts import (
+    AcknowledgeAlertRequest,
+    AlertSeverity,
+    AlertsListResponse,
+    AlertStatus,
+    OperatorAlertResponse,
+)
 from shared.schemas.audit import AuditLogEntry, compute_sha256
 from shared.schemas.auth import ROLE_PERMISSIONS, AuthContext, Permission, Role
 from shared.schemas.claims import (
@@ -11,6 +18,7 @@ from shared.schemas.claims import (
     EvidenceChunk,
     VerificationStatus,
 )
+from shared.schemas.error import ErrorDetail, ErrorEnvelope
 from shared.schemas.hrs import (
     ConformalInterval,
     HRSResult,
@@ -18,14 +26,6 @@ from shared.schemas.hrs import (
     SignalAttribution,
     determine_risk_tier,
 )
-from shared.schemas.alerts import (
-    AcknowledgeAlertRequest,
-    AlertsListResponse,
-    AlertSeverity,
-    AlertStatus,
-    OperatorAlertResponse,
-)
-from shared.schemas.error import ErrorDetail, ErrorEnvelope
 from shared.schemas.reports import (
     GenerateReportRequest,
     GenerateReportResponse,

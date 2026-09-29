@@ -4,12 +4,12 @@ import time
 from collections.abc import AsyncGenerator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
+from typing import Any
 
 from fastapi import FastAPI, Request, Response, status
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-
-from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from db.mongo import MongoPersistenceError
@@ -136,7 +136,7 @@ def create_app() -> FastAPI:
             422: "UNPROCESSABLE_ENTITY",
             429: "RATE_LIMIT_EXCEEDED",
             500: "INTERNAL_SERVER_ERROR",
-            503: "SERVICE_UNAVAILABLE",
+            503: "SERVICE_DEGRADED",
         }
         error_code = code_map.get(exc.status_code, "ERROR")
         content: dict[str, Any] = {
@@ -181,7 +181,7 @@ def create_app() -> FastAPI:
                     "details": {"error": str(exc)},
                     "trace_id": trace_id,
                     "timestamp": datetime.now(UTC).isoformat(),
-                }
+                },
             },
         )
 
@@ -200,7 +200,7 @@ def create_app() -> FastAPI:
                     "details": {"error": str(exc)},
                     "trace_id": trace_id,
                     "timestamp": datetime.now(UTC).isoformat(),
-                }
+                },
             },
         )
 
@@ -219,7 +219,7 @@ def create_app() -> FastAPI:
                     "details": {"error": str(exc)},
                     "trace_id": trace_id,
                     "timestamp": datetime.now(UTC).isoformat(),
-                }
+                },
             },
             headers={"Retry-After": "10"},
         )
@@ -238,7 +238,7 @@ def create_app() -> FastAPI:
                     "message": "An internal error occurred during verification.",
                     "trace_id": trace_id,
                     "timestamp": datetime.now(UTC).isoformat(),
-                }
+                },
             },
         )
 

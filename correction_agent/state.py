@@ -1,6 +1,6 @@
 """Correction State: State definition for LangGraph correction state machine."""
 
-from typing import Any, TypedDict
+from typing import Any, NotRequired, TypedDict
 
 
 class MirageAgentState(TypedDict):
@@ -16,3 +16,4 @@ class MirageAgentState(TypedDict):
     escalated: bool
     final_response: str
     history: list[dict[str, Any]]
+    tenant_id: NotRequired[str | None]

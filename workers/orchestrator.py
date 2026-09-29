@@ -161,6 +161,7 @@ class VerificationOrchestrator:
                 rav_tasks = [
                     self.rav_worker.search_evidence(
                         query=c.text,
+                        tenant_id=request.tenant_id,
                         collection_name=request.knowledge_base_id or "default_kb",
                     )
                     for c in claims

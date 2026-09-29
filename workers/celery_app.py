@@ -160,6 +160,7 @@ celery_app.conf.update(
         "workers.tasks.async_verify_task": {"queue": "mirage.verify", "routing_key": "verify.task"},
         "workers.tasks.recompute_drift_task": {"queue": "mirage.drift", "routing_key": "drift.task"},
         "workers.tasks.ingest_document_task": {"queue": "mirage.ingest", "routing_key": "ingest.task"},
+        "workers.tasks.reconcile_kb_pending_task": {"queue": "mirage.ingest", "routing_key": "ingest.task"},
         "workers.tasks.generate_report_task": {"queue": "mirage.reports", "routing_key": "report.task"},
     },
 )
@@ -176,3 +177,51 @@ def is_broker_reachable(timeout: float = 0.05) -> bool:
             return True
     except (OSError, TimeoutError):
         return False
+
+
+def is_definitive_broker_failure(exc: BaseException) -> bool:
+    """Classify broker dispatch exception into definitive pre-transmission failure vs ambiguous outcome.
+
+    Returns:
+        True: Definitive failure where connection could not be established or DNS resolution failed.
+              Zero frames were transmitted to RabbitMQ; no message was or will ever be enqueued.
+              PostgreSQL compensation (reverting or deleting pending row) is provably safe.
+        False: Ambiguous outcome (e.g. timeout waiting for publisher confirmation, connection reset
+               or dropped during confirm wait, or unverified operational failure after frame write).
+               RabbitMQ may have already accepted and persisted the message into its Quorum queue.
+               PostgreSQL compensation is UNSAFE and must NOT be performed.
+    """
+    import errno
+    import socket
+
+    from kombu.exceptions import OperationalError as KombuOperationalError
+
+    # 1. Direct connection-refused or DNS resolution failure (pre-socket / pre-transmission)
+    if isinstance(exc, (ConnectionRefusedError, socket.gaierror, socket.herror)):
+        return True
+
+    # 2. Check errno for explicit connection failure
+    if isinstance(exc, OSError):
+        conn_refused_codes = {
+            errno.ECONNREFUSED,
+            getattr(errno, "WSAECONNREFUSED", 10061),
+            errno.EHOSTUNREACH,
+            errno.ENETUNREACH,
+        }
+        if exc.errno in conn_refused_codes:
+            return True
+
+    # 3. Kombu OperationalError wrapping connection failure
+    if isinstance(exc, KombuOperationalError):
+        cause = exc.__cause__ or exc.__context__
+        if cause is not None and is_definitive_broker_failure(cause):
+            return True
+        msg = str(exc).lower()
+        if "connection refused" in msg or "winerror 10061" in msg or "errno 111" in msg:
+            return True
+
+    # 4. Explicitly ambiguous categories default to False (AMBIGUOUS):
+    # - TimeoutError (Python TimeoutError, socket.timeout, kombu.exceptions.TimeoutError)
+    # - ConnectionResetError, BrokenPipeError (connection dropped during or after frame write)
+    # - Any other OperationalError (e.g. publisher confirm timeout, unexpected EOF)
+    return False

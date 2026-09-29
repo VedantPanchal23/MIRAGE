@@ -11,6 +11,7 @@ from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
+from db.models import ClaimRecord, VerificationSession
 from db.mongo import default_mongo_trace_service
 from db.persistence import default_persistence_service
 from gateway.middleware.auth import get_current_auth
@@ -29,27 +30,25 @@ async def get_session_by_id(
 ) -> dict[str, Any]:
     """Retrieve complete verification session details, claim assertions, and deep trace."""
     # Check permissions (VERIFY_READ, AUDIT_READ, or SUPER_ADMIN)
+    from shared.schemas.auth import ROLE_PERMISSIONS
+
+    allowed_perms = ROLE_PERMISSIONS.get(auth.role, set())
     if (
         auth.role != Role.SUPER_ADMIN
-        and Permission.VERIFY_READ not in auth.role.value
-        and Permission.AUDIT_READ not in auth.role.value
+        and Permission.VERIFY_READ not in allowed_perms
+        and Permission.AUDIT_READ not in allowed_perms
     ):
-        # Fallback to granular check if role mappings apply
-        from shared.schemas.auth import ROLE_PERMISSIONS
-
-        allowed_perms = ROLE_PERMISSIONS.get(auth.role, set())
-        if Permission.VERIFY_READ not in allowed_perms and Permission.AUDIT_READ not in allowed_perms:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Forbidden: Insufficient permissions to view session records",
-            )
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Insufficient permissions to view session records",
+        )
 
     tenant_id = auth.tenant_id
     logger.info("Retrieving session record", session_id=session_id, tenant_id=tenant_id)
 
     # 1. Authoritative PostgreSQL retrieval (Session + Claims)
-    session_record = None
-    claims_records = []
+    session_record: VerificationSession | None = None
+    claims_records: list[ClaimRecord] = []
     try:
         session_record, claims_records = await default_persistence_service.get_session_with_claims(
             tenant_id=tenant_id, session_id=session_id

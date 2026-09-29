@@ -21,7 +21,9 @@ class GenerateReportRequest(BaseModel):
     start_date: datetime = Field(description="Start timestamp of audit evaluation window")
     end_date: datetime = Field(description="End timestamp of audit evaluation window")
     model_id: str | None = Field(default=None, description="Optional filter by model identifier")
-    risk_tier: str | None = Field(default=None, description="Optional filter by risk tier (low, medium, high, critical)")
+    risk_tier: str | None = Field(
+        default=None, description="Optional filter by risk tier (low, medium, high, critical)"
+    )
 
 
 class GenerateReportResponse(BaseModel):

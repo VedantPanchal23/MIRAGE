@@ -39,7 +39,7 @@ gantt
 ### Phase P0.1: Cryptographic Authentication & Role-Based Access Control (RBAC)
 * **Deliverable**: Cryptographic JWT access token signing (HMAC-SHA256) and tenant API key hashing (`api_key_hash`).
 * **Security Controls**: Stripped client-injected headers (`X-Role`, `X-Tenant-ID`) at ASGI boundary via `HeaderSanitizationMiddleware`.
-* **Roles Enforced**: `ADMIN`, `AUDITOR`, `API_CLIENT`, `ANONYMOUS`.
+* **Roles Enforced**: `SUPER_ADMIN`, `TENANT_ADMIN`, `OPERATOR`, `VIEWER`, `API_CLIENT`.
 
 ### Phase P0.2: Authoritative Database Persistence & Row-Level Security
 * **Deliverable**: PostgreSQL 16 relational storage for sessions and claims; MongoDB 7.0 for unstructured traces.

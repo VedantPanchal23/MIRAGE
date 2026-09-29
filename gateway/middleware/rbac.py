@@ -1,7 +1,7 @@
 """Role-Based Access Control (RBAC) and Permission Enforcement Middleware.
 
 Implements Security & Access Document §13:
-- Roles: SUPER_ADMIN, TENANT_ADMIN, OPERATOR, AUDITOR, API_CLIENT
+- Roles: SUPER_ADMIN, TENANT_ADMIN, OPERATOR, VIEWER, API_CLIENT
 - Permission Matrix: VERIFY_WRITE, VERIFY_READ, DASHBOARD_READ, CONFIG_WRITE,
   AUDIT_READ, AUDIT_EXPORT, CIRCUITS_MANAGE, KB_WRITE
 - require_permission(...) FastAPI dependency

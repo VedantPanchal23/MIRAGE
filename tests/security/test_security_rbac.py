@@ -156,13 +156,13 @@ class TestSecurityAuthenticationAndRBAC:
 
     def test_role_comes_from_verified_jwt_claim(self) -> None:
         """Requirement 6: User privileges are derived strictly from JWT role claim."""
-        # Auditor role can query audit chain
-        auditor_token = create_access_token(tenant_id="tenant_audit", role=Role.AUDITOR)
-        res_auditor = client.post(
+        # Operator role can query audit chain
+        operator_token = create_access_token(tenant_id="tenant_audit", role=Role.OPERATOR)
+        res_operator = client.post(
             "/v1/audit/verify-chain",
-            headers={"Authorization": f"Bearer {auditor_token}"},
+            headers={"Authorization": f"Bearer {operator_token}"},
         )
-        assert res_auditor.status_code == 200
+        assert res_operator.status_code == 200
 
         # API Client role cannot query audit chain (403 Forbidden)
         client_token = create_access_token(tenant_id="tenant_audit", role=Role.API_CLIENT)
@@ -172,6 +172,15 @@ class TestSecurityAuthenticationAndRBAC:
         )
         assert res_client.status_code == 403
         assert "lacks permission 'audit:read'" in res_client.json()["detail"]
+
+        # Viewer role cannot query audit chain (403 Forbidden)
+        viewer_token = create_access_token(tenant_id="tenant_audit", role=Role.VIEWER)
+        res_viewer = client.post(
+            "/v1/audit/verify-chain",
+            headers={"Authorization": f"Bearer {viewer_token}"},
+        )
+        assert res_viewer.status_code == 403
+        assert "lacks permission 'audit:read'" in res_viewer.json()["detail"]
 
     def test_x_role_header_cannot_elevate_privileges(self) -> None:
         """Requirement 7 & 8: Client passing X-Role: super_admin CANNOT elevate privileges."""
@@ -189,19 +198,44 @@ class TestSecurityAuthenticationAndRBAC:
         assert "Access denied" in res.json()["detail"]
         assert "api_client" in res.json()["detail"]
 
-    def test_forged_x_role_ignored_for_auditor_token(self) -> None:
-        """Requirement 8b: Legitimate auditor token with forged X-Role: super_admin still evaluated as auditor."""
-        auditor_token = create_access_token(tenant_id="tenant_sec_01", role=Role.AUDITOR)
-        # Auditor is permitted AUDIT_READ and AUDIT_EXPORT
+    def test_forged_x_role_ignored_for_tenant_admin_token(self) -> None:
+        """Requirement 8b: Legitimate admin token with forged X-Role: api_client still evaluated as admin."""
+        admin_token = create_access_token(tenant_id="tenant_sec_01", role=Role.TENANT_ADMIN)
+        # Tenant Admin is permitted AUDIT_READ and AUDIT_EXPORT
         res = client.get(
             "/v1/audit/export",
             headers={
-                "Authorization": f"Bearer {auditor_token}",
+                "Authorization": f"Bearer {admin_token}",
                 "X-Role": "api_client",  # Trying to downgrade or spoof
             },
         )
-        # Auditor has AUDIT_EXPORT permission, so 200 OK
+        # Tenant Admin has AUDIT_EXPORT permission, so 200 OK
         assert res.status_code == 200
+
+    def test_viewer_role_permissions_strictly_enforced(self) -> None:
+        """Security & Access §13.1 & §13.2: Viewer has read-only dashboard access; denied mutations and audit export."""
+        viewer_token = create_access_token(tenant_id="tenant_viewer_sec", role=Role.VIEWER)
+        viewer_headers = {"Authorization": f"Bearer {viewer_token}"}
+
+        # 1. Allowed: View alerts / dashboard metrics (DASHBOARD_READ)
+        res_alerts = client.get("/v1/alerts", headers=viewer_headers)
+        assert res_alerts.status_code == 200
+
+        # 2. Denied: Query audit chain (AUDIT_READ)
+        res_chain = client.post("/v1/audit/verify-chain", headers=viewer_headers)
+        assert res_chain.status_code == 403
+
+        # 3. Denied: Export audit logs (AUDIT_EXPORT)
+        res_export = client.get("/v1/audit/export", headers=viewer_headers)
+        assert res_export.status_code == 403
+
+        # 4. Denied: Call verification API (VERIFY_WRITE)
+        res_verify = client.post(
+            "/v1/verify",
+            json={"prompt": "Test", "response": "Test"},
+            headers=viewer_headers,
+        )
+        assert res_verify.status_code == 403
 
     def test_operator_cannot_call_verify_write(self) -> None:
         """Requirement 8c: Operator role lacks verify:write per Security & Access Document §13.2."""

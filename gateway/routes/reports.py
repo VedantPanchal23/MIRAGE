@@ -8,19 +8,17 @@ Implements Technical Architecture §7.5, §8.2, PRD FR-AUD-01..04, and ADR 0005:
 """
 
 import hashlib
-from datetime import UTC, datetime
-from typing import Annotated, Any
+from datetime import datetime
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
-from analytics.audit_service import AuditService
 from analytics.pdf_service import default_pdf_generator
 from db.persistence import default_persistence_service
-from gateway.middleware.auth import get_current_auth
 from gateway.middleware.rbac import require_permission
 from services.storage import ObjectNotFoundError, default_storage_service
 from shared.logging import get_logger
-from shared.schemas.auth import AuthContext, Permission
+from shared.schemas.auth import Permission
 from shared.schemas.reports import (
     GenerateReportRequest,
     GenerateReportResponse,
@@ -86,7 +84,18 @@ async def generate_audit_report(
     except Exception as exc:
         logger.warning("Idempotency lookup warning, proceeding with creation", error=str(exc))
 
-    # 3. Create PENDING report record in PostgreSQL
+    # 3. Check message broker reachability before creating records
+    from workers.celery_app import is_broker_reachable
+
+    if not is_broker_reachable():
+        logger.error("RabbitMQ broker unreachable before report dispatch", tenant_id=tenant_id)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Message broker is unavailable. Report compilation cannot be scheduled.",
+            headers={"Retry-After": "30"},
+        )
+
+    # 4. Create PENDING report record in PostgreSQL
     try:
         report = await default_persistence_service.create_report(
             tenant_id=tenant_id,
@@ -102,31 +111,50 @@ async def generate_audit_report(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Authoritative persistence unavailable to enqueue report",
+            headers={"Retry-After": "30"},
         ) from exc
 
-    # 4. Dispatch Celery task to RabbitMQ Quorum queue
-    from workers.celery_app import is_broker_reachable
-
-    if is_broker_reachable():
+    # 5. Dispatch Celery task to RabbitMQ Quorum queue with publisher confirms
+    try:
+        generate_report_task.apply_async(
+            kwargs={
+                "tenant_id": tenant_id,
+                "report_id": report.report_id,
+                "title": request.title,
+                "start_date_iso": request.start_date.isoformat(),
+                "end_date_iso": request.end_date.isoformat(),
+                "model_id": request.model_id,
+                "risk_tier": request.risk_tier,
+            },
+            queue="mirage.reports",
+            routing_key="report.task",
+            retry=False,
+            ignore_result=True,
+        )
+    except Exception as exc:
+        logger.error(
+            "Celery broker dispatch failed; marking report as FAILED",
+            report_id=report.report_id,
+            error=str(exc),
+        )
         try:
-            generate_report_task.apply_async(
-                kwargs={
-                    "tenant_id": tenant_id,
-                    "report_id": report.report_id,
-                    "title": request.title,
-                    "start_date_iso": request.start_date.isoformat(),
-                    "end_date_iso": request.end_date.isoformat(),
-                    "model_id": request.model_id,
-                    "risk_tier": request.risk_tier,
-                },
-                queue="mirage.reports",
-                routing_key="report.task",
-                retry=False,
+            await default_persistence_service.update_report_status(
+                tenant_id=tenant_id,
+                report_id=report.report_id,
+                status="FAILED",
+                summary={"error": f"Broker dispatch failure: {str(exc)}"},
             )
-        except Exception as exc:
-            logger.info("Celery broker dispatch warning, report remains in PENDING state", error=str(exc))
-    else:
-        logger.info("Celery broker offline, report queued in PENDING state")
+        except Exception as update_exc:
+            logger.error(
+                "Failed to update report status to FAILED after dispatch failure",
+                report_id=report.report_id,
+                error=str(update_exc),
+            )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Message broker dispatch failed. Report compilation could not be scheduled.",
+            headers={"Retry-After": "30"},
+        ) from exc
 
     return GenerateReportResponse(
         report_id=report.report_id,

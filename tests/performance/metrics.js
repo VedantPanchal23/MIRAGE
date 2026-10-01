@@ -46,6 +46,48 @@ export function recordHttp5xx(is5xx) {
   mirageHttp5xx.add(is5xx);
 }
 
+// Scenario 5: Noisy Neighbor Isolated Telemetry
+export const mirageTenantADuration = new Trend('tenant_a_duration', true);
+export const mirageTenantBDuration = new Trend('tenant_b_duration', true);
+export const mirageTenantAReqs = new Counter('tenant_a_reqs_total');
+export const mirageTenantBReqs = new Counter('tenant_b_reqs_total');
+export const mirageTenantASuccess = new Rate('tenant_a_success_rate');
+export const mirageTenantBSuccess = new Rate('tenant_b_success_rate');
+export const mirageTenantA429 = new Rate('tenant_a_429_rate');
+export const mirageTenantB429 = new Rate('tenant_b_429_rate');
+
+export function recordTenantAMetrics(duration, success, is429) {
+  mirageTenantADuration.add(duration);
+  mirageTenantAReqs.add(1);
+  mirageTenantASuccess.add(success);
+  mirageTenantA429.add(is429);
+}
+
+export function recordTenantBMetrics(duration, success, is429) {
+  mirageTenantBDuration.add(duration);
+  mirageTenantBReqs.add(1);
+  mirageTenantBSuccess.add(success);
+  mirageTenantB429.add(is429);
+}
+
+// Scenario 6: SCS Cache Telemetry
+export const mirageScsCacheHitRate = new Rate('scs_cache_hit_rate');
+export const mirageScsCacheHits = new Counter('scs_cache_hits_total');
+export const mirageScsCacheMisses = new Counter('scs_cache_misses_total');
+export const mirageCacheHitDuration = new Trend('cache_hit_duration', true);
+export const mirageCacheMissDuration = new Trend('cache_miss_duration', true);
+
+export function recordCacheMetrics(isHit, duration) {
+  mirageScsCacheHitRate.add(isHit);
+  if (isHit) {
+    mirageScsCacheHits.add(1);
+    mirageCacheHitDuration.add(duration);
+  } else {
+    mirageScsCacheMisses.add(1);
+    mirageCacheMissDuration.add(duration);
+  }
+}
+
 /**
  * Standard k6 summary callback: generates clean JSON and text summaries.
  *
@@ -91,6 +133,58 @@ export function createSummaryHandler(scenarioName) {
       },
     };
 
+    // Scenario 5: Tenant Isolation Breakdown
+    if (data.metrics.tenant_a_reqs_total || data.metrics.tenant_b_reqs_total) {
+      const aReqs = data.metrics.tenant_a_reqs_total ? data.metrics.tenant_a_reqs_total.values.count : 0;
+      const bReqs = data.metrics.tenant_b_reqs_total ? data.metrics.tenant_b_reqs_total.values.count : 0;
+      const aDuration = data.metrics.tenant_a_duration ? data.metrics.tenant_a_duration.values : {};
+      const bDuration = data.metrics.tenant_b_duration ? data.metrics.tenant_b_duration.values : {};
+      const aSuccess = data.metrics.tenant_a_success_rate ? data.metrics.tenant_a_success_rate.values.rate : 0;
+      const bSuccess = data.metrics.tenant_b_success_rate ? data.metrics.tenant_b_success_rate.values.rate : 0;
+      const a429 = data.metrics.tenant_a_429_rate ? data.metrics.tenant_a_429_rate.values.rate : 0;
+      const b429 = data.metrics.tenant_b_429_rate ? data.metrics.tenant_b_429_rate.values.rate : 0;
+
+      summaryReport.tenant_isolation_breakdown = {
+        tenant_a_noisy: {
+          requests: aReqs,
+          p50_ms: Number((aDuration.med || 0).toFixed(2)),
+          p95_ms: Number((aDuration['p(95)'] || 0).toFixed(2)),
+          success_rate_pct: Number((aSuccess * 100).toFixed(2)),
+          rate_limited_429_rate_pct: Number((a429 * 100).toFixed(2)),
+        },
+        tenant_b_control: {
+          requests: bReqs,
+          p50_ms: Number((bDuration.med || 0).toFixed(2)),
+          p95_ms: Number((bDuration['p(95)'] || 0).toFixed(2)),
+          success_rate_pct: Number((bSuccess * 100).toFixed(2)),
+          rate_limited_429_rate_pct: Number((b429 * 100).toFixed(2)),
+        },
+        workload_ratio_a_to_b: bReqs > 0 ? Number((aReqs / bReqs).toFixed(2)) : 'N/A',
+      };
+    }
+
+    // Scenario 6: SCS Cache Performance
+    if (data.metrics.scs_cache_hit_rate) {
+      const hitRateVal = data.metrics.scs_cache_hit_rate.values.rate || 0;
+      const hitsCount = data.metrics.scs_cache_hits_total ? data.metrics.scs_cache_hits_total.values.count : 0;
+      const missesCount = data.metrics.scs_cache_misses_total ? data.metrics.scs_cache_misses_total.values.count : 0;
+      const hitDuration = data.metrics.cache_hit_duration ? data.metrics.cache_hit_duration.values : {};
+      const missDuration = data.metrics.cache_miss_duration ? data.metrics.cache_miss_duration.values : {};
+
+      summaryReport.cache_performance = {
+        cache_hit_rate_pct: Number((hitRateVal * 100).toFixed(2)),
+        cache_hits_count: hitsCount,
+        cache_misses_count: missesCount,
+        total_cache_lookups: hitsCount + missesCount,
+        hit_latency_p50_ms: Number((hitDuration.med || 0).toFixed(2)),
+        miss_latency_p50_ms: Number((missDuration.med || 0).toFixed(2)),
+        latency_reduction_factor: (hitDuration.med && missDuration.med && hitDuration.med > 0)
+          ? Number((missDuration.med / hitDuration.med).toFixed(2))
+          : 'N/A',
+        governing_target_met: hitRateVal >= 0.90,
+      };
+    }
+
     const outputPath = __ENV.MIRAGE_REPORT_FILE || `results/${scenarioName}_summary.json`;
 
     return {
@@ -102,7 +196,7 @@ export function createSummaryHandler(scenarioName) {
 
 function formatTextSummary(report) {
   const bar = '='.repeat(70);
-  return `
+  let text = `
 ${bar}
   MIRAGE PERFORMANCE TEST EXECUTION: ${report.scenario.toUpperCase()}
 ${bar}
@@ -127,6 +221,28 @@ ${bar}
   Application Telemetry:
     - Mean Calibrated HRS:       ${report.verification_telemetry.mean_hrs}
     - Total Claims Evaluated:    ${report.verification_telemetry.claims_evaluated}
-${bar}
 `;
+
+  if (report.tenant_isolation_breakdown) {
+    const tb = report.tenant_isolation_breakdown;
+    text += `
+  Tenant Isolation Breakdown (Scenario 5):
+    - Workload Ratio (A:B):   ${tb.workload_ratio_a_to_b}x
+    - Tenant A (Burst):       ${tb.tenant_a_noisy.requests} reqs, P50: ${tb.tenant_a_noisy.p50_ms} ms, P95: ${tb.tenant_a_noisy.p95_ms} ms, Success: ${tb.tenant_a_noisy.success_rate_pct}%, 429: ${tb.tenant_a_noisy.rate_limited_429_rate_pct}%
+    - Tenant B (Control):     ${tb.tenant_b_control.requests} reqs, P50: ${tb.tenant_b_control.p50_ms} ms, P95: ${tb.tenant_b_control.p95_ms} ms, Success: ${tb.tenant_b_control.success_rate_pct}%, 429: ${tb.tenant_b_control.rate_limited_429_rate_pct}%
+`;
+  }
+
+  if (report.cache_performance) {
+    const cp = report.cache_performance;
+    text += `
+  SCS Cache Telemetry (Scenario 6):
+    - Cache Hit Rate:         ${cp.cache_hit_rate_pct}% (Governing Target > 90%: ${cp.governing_target_met ? 'MET' : 'NOT MET'})
+    - Cache Hits / Misses:    ${cp.cache_hits_count} / ${cp.cache_misses_count} (Total: ${cp.total_cache_lookups})
+    - Latency (Hit vs Miss):  ${cp.hit_latency_p50_ms} ms vs ${cp.miss_latency_p50_ms} ms (Speedup: ${cp.latency_reduction_factor}x)
+`;
+  }
+
+  text += `${bar}\n`;
+  return text;
 }

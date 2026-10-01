@@ -59,6 +59,18 @@ export const BENCHMARK_PAYLOADS = [
       'The speed of light in vacuum is exactly 299,792,458 meters per second. ' +
       'According to special relativity, this constant c is invariant across all inertial reference frames and establishes the universal cosmic speed limit.',
   },
+  {
+    prompt: 'Describe the principles of quantum superposition and quantum entanglement.',
+    response:
+      'Quantum superposition allows a physical system to exist simultaneously in a linear combination of orthogonal states. ' +
+      'Entanglement is a non-local correlation between particles such that the quantum state of each particle cannot be described independently.',
+  },
+  {
+    prompt: 'Explain the mechanism of CRISPR-Cas9 targeted genome editing.',
+    response:
+      'CRISPR-Cas9 utilizes a single guide RNA to direct the Cas9 endonuclease to a complementary target DNA sequence adjacent to a PAM motif. ' +
+      'The Cas9 enzyme introduces a double-strand break, which is subsequently repaired by cellular non-homologous end joining or homology-directed repair.',
+  },
 ];
 
 /**

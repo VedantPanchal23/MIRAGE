@@ -1,0 +1,50 @@
+[
+  {
+    "name": "mirage_redis",
+    "listen": "0.0.0.0:26379",
+    "upstream": "redis:6379",
+    "enabled": true
+  },
+  {
+    "name": "mirage_qdrant",
+    "listen": "0.0.0.0:26333",
+    "upstream": "qdrant:6333",
+    "enabled": true
+  },
+  {
+    "name": "mirage_postgres",
+    "listen": "0.0.0.0:25432",
+    "upstream": "postgres:5432",
+    "enabled": true
+  },
+  {
+    "name": "mirage_rabbitmq",
+    "listen": "0.0.0.0:25672",
+    "upstream": "rabbitmq:5672",
+    "enabled": true
+  },
+  {
+    "name": "mirage_nli",
+    "listen": "0.0.0.0:28085",
+    "upstream": "torchserve:8085",
+    "enabled": true
+  },
+  {
+    "name": "mirage_llava",
+    "listen": "0.0.0.0:28086",
+    "upstream": "tgi:8086",
+    "enabled": true
+  },
+  {
+    "name": "mirage_flan_t5",
+    "listen": "0.0.0.0:28087",
+    "upstream": "flan-t5:8087",
+    "enabled": true
+  },
+  {
+    "name": "mirage_upstream_llm",
+    "listen": "0.0.0.0:28088",
+    "upstream": "api.groq.com:443",
+    "enabled": true
+  }
+]

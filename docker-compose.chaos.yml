@@ -1,0 +1,58 @@
+# ==============================================================================
+# MIRAGE Chaos Engineering & Network Fault-Injection Topology (P3.3)
+#
+# Extends docker-compose.yml for chaos testing:
+# - Toxiproxy pinned to release version: ghcr.io/shopify/toxiproxy:2.11.0
+# - Isolated to internal backend network (backend_net)
+# - Management API & proxy ports bound exclusively to 127.0.0.1 (never exposed publicly)
+# - Initial proxy configuration pre-seeded from ./docker/toxiproxy.json
+# ==============================================================================
+
+services:
+  toxiproxy:
+    image: ghcr.io/shopify/toxiproxy:2.11.0
+    container_name: mirage-toxiproxy
+    restart: "no"
+    networks:
+      - backend_net
+    command: ["-host=0.0.0.0", "-config=/etc/toxiproxy.json"]
+    volumes:
+      - ./docker/toxiproxy.json:/etc/toxiproxy.json:ro
+    ports:
+      # Management REST API (strictly localhost-bound)
+      - "127.0.0.1:8474:8474"
+      # Proxied dependency ports (strictly localhost-bound)
+      - "127.0.0.1:26379:26379"  # Redis proxy
+      - "127.0.0.1:26333:26333"  # Qdrant proxy
+      - "127.0.0.1:25432:25432"  # PostgreSQL proxy
+      - "127.0.0.1:25672:25672"  # RabbitMQ proxy
+      - "127.0.0.1:28085:28085"  # NLI model server proxy
+      - "127.0.0.1:28086:28086"  # LLaVA model server proxy
+      - "127.0.0.1:28087:28087"  # FLAN-T5 server proxy
+      - "127.0.0.1:28088:28088"  # Upstream LLM proxy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1:8474/version || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+      start_period: 2s
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+        reservations:
+          cpus: "0.1"
+          memory: 64M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+networks:
+  backend_net:

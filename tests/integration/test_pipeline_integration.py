@@ -125,8 +125,14 @@ class TestPipelineIntegration:
 
     def test_websocket_stream_progressive_events_integration(self) -> None:
         """Test real-time WebSocket connection and event lifecycle."""
+        token = AuthTestFactory.valid_jwt(tenant_id="tenant_ws_test", role=Role.API_CLIENT)
         with client.websocket_connect("/v1/verify/stream") as ws:
-            # 1. Receive connection established event
+            # 1. Receive connection challenge
+            challenge = ws.receive_json()
+            assert challenge["event_type"] == "connection_pending_auth"
+
+            # 2. First message: Authenticate with JWT token
+            ws.send_json({"action": "authenticate", "token": token})
             init_event = ws.receive_json()
             assert init_event["event_type"] == "connection_established"
             assert "trace_id" in init_event

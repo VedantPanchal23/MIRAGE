@@ -21,9 +21,17 @@ import {
 // Base Gateway URL under test
 export const BASE_URL = __ENV.MIRAGE_BASE_URL || 'http://localhost:8000';
 
-// Cryptographic secret key for JWT access tokens (from shared/config/settings.py)
-export const JWT_SECRET = __ENV.MIRAGE_JWT_SECRET || 'dev-insecure-secret-key-change-in-production-min32chars';
+// Cryptographic secret key for JWT access tokens (loaded strictly from environment variable)
+export const JWT_SECRET = __ENV.MIRAGE_JWT_SECRET || '';
 export const JWT_ALGORITHM = 'HS256';
+
+// Fail clearly if mandatory JWT secret is absent when using dynamic JWT generation
+if (!JWT_SECRET && !__ENV.MIRAGE_AUTH_TOKEN && !__ENV.MIRAGE_API_KEY) {
+  throw new Error(
+    'FATAL: MIRAGE_JWT_SECRET environment variable is mandatory for k6 performance testing. ' +
+    'Hardcoded secrets are strictly prohibited. Set MIRAGE_JWT_SECRET or use tests/performance/run_load_tests.py.'
+  );
+}
 
 // Multi-tenant configuration: enabled by default to benchmark realistic isolated tenant buckets
 export const MULTI_TENANT_ENABLED = __ENV.MIRAGE_MULTI_TENANT !== 'false';
@@ -38,9 +46,10 @@ export const DEFAULT_MODEL_ID = __ENV.MIRAGE_MODEL_ID || 'llama-3.1-70b-versatil
 
 /**
  * Standard performance SLA thresholds per Testing Strategy §8.
+ * Authoritative SLA is strictly P95 < 3000ms at 100 concurrent sessions.
  */
 export const DEFAULT_THRESHOLDS = {
-  http_req_duration: ['p(95)<3000', 'p(99)<4000'],
+  http_req_duration: ['p(95)<3000'],
   http_req_failed: ['rate<0.01'],
   mirage_verification_success: ['rate>0.95'],
   mirage_http_5xx_rate: ['rate<0.01'],

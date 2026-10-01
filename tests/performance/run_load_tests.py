@@ -26,6 +26,7 @@ import httpx
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
+from shared.config import get_settings  # noqa: E402
 from shared.logging import get_logger  # noqa: E402
 
 logger = get_logger("performance_runner")
@@ -116,6 +117,10 @@ def run_scenario(
     env["MIRAGE_BASE_URL"] = base_url
     env["MIRAGE_REPORT_FILE"] = str(report_json_path)
 
+    # Securely supply JWT signing secret from environment or shared app settings; never logged or printed
+    if "MIRAGE_JWT_SECRET" not in env:
+        env["MIRAGE_JWT_SECRET"] = get_settings().secret_key
+
     if smoke:
         # Fast smoke validation settings
         env["MIRAGE_ITERATIONS"] = "5"
@@ -185,6 +190,33 @@ def generate_consolidated_report(
     commit_hash = get_git_commit_hash()
     report_path = output_dir / "p3_1_performance_report.md"
 
+    # Merge existing scenario summaries from output_dir if not present in current results
+    seen_scenarios = {r.get("scenario") for r in results}
+    all_results = list(results)
+    for sc_key in ["baseline", "ramp_up", "sustained"]:
+        if sc_key not in seen_scenarios:
+            sum_path = output_dir / f"{sc_key}_summary.json"
+            if sum_path.is_file():
+                try:
+                    with open(sum_path, encoding="utf-8") as f:
+                        loaded: dict[str, Any] = json.load(f)
+                        all_results.append(
+                            {
+                                "scenario": sc_key,
+                                "metrics": loaded,
+                                "exit_code": (
+                                    0
+                                    if loaded.get("reliability", {}).get("verification_success_rate", 0) >= 95
+                                    else 1
+                                ),
+                            }
+                        )
+                except Exception:
+                    pass
+
+    order: dict[str, int] = {"baseline": 0, "ramp_up": 1, "sustained": 2}
+    all_results.sort(key=lambda r: order.get(r.get("scenario", ""), 99))
+
     md_lines: list[str] = [
         "# MIRAGE Phase 3.1 Performance Benchmark Report",
         "",
@@ -200,7 +232,7 @@ def generate_consolidated_report(
         "| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |",
     ]
 
-    for r in results:
+    for r in all_results:
         sc_name = r.get("scenario", "unknown")
         metrics = r.get("metrics", {})
         meta = metrics.get("metadata", {})

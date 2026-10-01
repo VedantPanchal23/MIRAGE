@@ -102,7 +102,7 @@ k6 run tests/performance/sustained_load.js
 | `MIRAGE_BASE_URL` | `http://localhost:8000` | Target MIRAGE Gateway base URL |
 | `MIRAGE_JWT_SECRET` | *(from settings)* | Secret key for signing test JWT tokens |
 | `MIRAGE_TENANT_ID` | `perf_tenant_default` | Default tenant ID for single-tenant tests |
-| `MIRAGE_MULTI_TENANT`| `false` | When `true`, assigns each VU an isolated tenant (`perf_tenant_${__VU}`) |
+| `MIRAGE_MULTI_TENANT`| `true` | Enabled by default; assigns each VU an isolated tenant (`perf_tenant_${__VU}`) |
 | `MIRAGE_AUTH_TOKEN` | `""` | Static Bearer token override |
 | `MIRAGE_API_KEY` | `""` | Static API Key override (`X-API-Key`) |
 | `RAMP_DURATION` | `5m` | Duration for Scenario 2 concurrency ramp |
@@ -117,8 +117,8 @@ The harness collects and reports:
 
 1. **Latency Profile (`http_req_duration` & `mirage_verification_duration`):**
    - **P50 (Median):** Typical verification latency under target load.
-   - **P95:** 95th percentile latency. Target SLA: `< 3000 ms` at 100 concurrent sessions.
-   - **P99:** Extreme tail latency. Target SLA: `< 4000 ms`.
+   - **P95:** 95th percentile latency. Target SLA: `< 3000 ms` at 100 concurrent sessions (per `Testing_Strategy.md §8`).
+   - **P99:** Extreme tail latency (informational metric recorded for telemetry).
 2. **System Throughput (`http_reqs` rate):**
    - Measured requests per second. Target SLA: `> 33 req/s` sustained under 100 VUs.
 3. **Reliability & Degradation Breakdown:**

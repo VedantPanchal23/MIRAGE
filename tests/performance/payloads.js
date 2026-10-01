@@ -77,7 +77,7 @@ export function getVerificationPayload(iteration = 0, tenantId = 'perf_tenant', 
     response: template.response,
     tenant_id: tenantId,
     model_id: modelId,
-    session_id: `perf_sess_${tenantId}_${Date.now()}_${iteration}`,
+    session_id: `s_${Math.random().toString(36).slice(2, 10)}_${Date.now()}_${iteration}`,
     auto_correct: false, // Performance baseline measures verification pipeline latency without correction loop overhead
   };
 }

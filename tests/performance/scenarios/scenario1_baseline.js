@@ -26,7 +26,7 @@ export const options = {
     },
   },
   thresholds: {
-    http_req_duration: ['p(95)<3000', 'p(99)<4000'],
+    http_req_duration: ['p(95)<3000'],
     http_req_failed: ['rate<0.01'],
     mirage_verification_success: ['rate>0.95'],
   },

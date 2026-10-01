@@ -265,9 +265,7 @@ def run_scenario(
 
     if scenario_key == "cache_warm":
         delta_hits = post_metrics.get("scs_cache_hits_total", 0.0) - pre_metrics.get("scs_cache_hits_total", 0.0)
-        delta_misses = (
-            post_metrics.get("scs_cache_misses_total", 0.0) - pre_metrics.get("scs_cache_misses_total", 0.0)
-        )
+        delta_misses = post_metrics.get("scs_cache_misses_total", 0.0) - pre_metrics.get("scs_cache_misses_total", 0.0)
         result_data["prometheus_telemetry"] = {
             "pre": pre_metrics,
             "post": post_metrics,
@@ -311,9 +309,7 @@ def generate_p3_1_report(
                                 "scenario": sc_key,
                                 "metrics": loaded,
                                 "exit_code": (
-                                    0
-                                    if loaded.get("reliability", {}).get("verification_success_rate", 0) >= 95
-                                    else 1
+                                    0 if loaded.get("reliability", {}).get("verification_success_rate", 0) >= 95 else 1
                                 ),
                             }
                         )

@@ -70,14 +70,20 @@ export function recordTenantBMetrics(duration, success, is429) {
   mirageTenantB429.add(is429);
 }
 
-// Scenario 6: SCS Cache Telemetry
+// Scenario 6: Primary Cache Workload Metrics
 export const mirageScsCacheHitRate = new Rate('scs_cache_hit_rate');
 export const mirageScsCacheHits = new Counter('scs_cache_hits_total');
 export const mirageScsCacheMisses = new Counter('scs_cache_misses_total');
 export const mirageCacheHitDuration = new Trend('cache_hit_duration', true);
 export const mirageCacheMissDuration = new Trend('cache_miss_duration', true);
 
-export function recordCacheMetrics(isHit, duration) {
+// Scenario 6: Cross-Tenant Isolation Metrics (tracked strictly separate from primary cache workload)
+export const mirageCrossTenantChecks = new Counter('cross_tenant_checks_total');
+export const mirageCrossTenantMisses = new Counter('cross_tenant_misses_total');
+export const mirageCrossTenantHits = new Counter('cross_tenant_hits_total');
+export const mirageCrossTenantIsolationRate = new Rate('cross_tenant_isolation_rate');
+
+export function recordPrimaryCacheMetrics(isHit, duration) {
   mirageScsCacheHitRate.add(isHit);
   if (isHit) {
     mirageScsCacheHits.add(1);
@@ -86,6 +92,22 @@ export function recordCacheMetrics(isHit, duration) {
     mirageScsCacheMisses.add(1);
     mirageCacheMissDuration.add(duration);
   }
+}
+
+export function recordCrossTenantMetrics(isHit) {
+  mirageCrossTenantChecks.add(1);
+  if (isHit) {
+    mirageCrossTenantHits.add(1);
+    mirageCrossTenantIsolationRate.add(0); // isolation violated
+  } else {
+    mirageCrossTenantMisses.add(1);
+    mirageCrossTenantIsolationRate.add(1); // isolation preserved
+  }
+}
+
+// Backward compatibility helper
+export function recordCacheMetrics(isHit, duration) {
+  recordPrimaryCacheMetrics(isHit, duration);
 }
 
 /**
@@ -163,7 +185,7 @@ export function createSummaryHandler(scenarioName) {
       };
     }
 
-    // Scenario 6: SCS Cache Performance
+    // Scenario 6: SCS Cache Performance & Isolation Accounting
     if (data.metrics.scs_cache_hit_rate) {
       const hitRateVal = data.metrics.scs_cache_hit_rate.values.rate || 0;
       const hitsCount = data.metrics.scs_cache_hits_total ? data.metrics.scs_cache_hits_total.values.count : 0;
@@ -171,7 +193,32 @@ export function createSummaryHandler(scenarioName) {
       const hitDuration = data.metrics.cache_hit_duration ? data.metrics.cache_hit_duration.values : {};
       const missDuration = data.metrics.cache_miss_duration ? data.metrics.cache_miss_duration.values : {};
 
+      const crossChecks = data.metrics.cross_tenant_checks_total ? data.metrics.cross_tenant_checks_total.values.count : 0;
+      const crossMisses = data.metrics.cross_tenant_misses_total ? data.metrics.cross_tenant_misses_total.values.count : 0;
+      const crossHits = data.metrics.cross_tenant_hits_total ? data.metrics.cross_tenant_hits_total.values.count : 0;
+      const isolationRate = data.metrics.cross_tenant_isolation_rate ? data.metrics.cross_tenant_isolation_rate.values.rate : 1.0;
+
       summaryReport.cache_performance = {
+        primary_cache_workload: {
+          total_requests: hitsCount + missesCount,
+          cache_hits_count: hitsCount,
+          cache_misses_count: missesCount,
+          cache_hit_rate_pct: Number((hitRateVal * 100).toFixed(2)),
+          hit_latency_p50_ms: Number((hitDuration.med || 0).toFixed(2)),
+          miss_latency_p50_ms: Number((missDuration.med || 0).toFixed(2)),
+          latency_reduction_factor: (hitDuration.med && missDuration.med && hitDuration.med > 0)
+            ? Number((missDuration.med / hitDuration.med).toFixed(2))
+            : 'N/A',
+          governing_target_met: hitRateVal >= 0.90,
+        },
+        cross_tenant_isolation_workload: {
+          total_checks: crossChecks,
+          cross_tenant_misses: crossMisses,
+          cross_tenant_hits: crossHits,
+          isolation_rate_pct: Number((isolationRate * 100).toFixed(2)),
+          cross_tenant_leakage_detected: crossHits > 0,
+        },
+        // Flat aliases for backwards compatibility with existing summary consumers
         cache_hit_rate_pct: Number((hitRateVal * 100).toFixed(2)),
         cache_hits_count: hitsCount,
         cache_misses_count: missesCount,

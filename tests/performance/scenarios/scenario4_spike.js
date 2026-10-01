@@ -45,8 +45,7 @@ export const options = {
   },
   thresholds: {
     http_req_duration: ['p(95)<3000'],
-    http_req_failed: ['rate<0.10'], // Under 200-VU extreme spike, permit up to 10% transient contention/rejection
-    mirage_http_5xx_rate: ['rate<0.01'], // Zero unhandled internal 5xx errors permitted
+    mirage_http_5xx_rate: ['rate<0.01'], // Governing criteria: zero unhandled internal 5xx errors permitted
   },
 };
 

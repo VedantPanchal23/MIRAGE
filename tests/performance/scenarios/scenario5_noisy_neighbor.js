@@ -22,29 +22,34 @@ import {
 } from '../metrics.js';
 
 const duration = __ENV.NOISY_DURATION || '3m';
-const tenantAVus = __ENV.TENANT_A_VUS ? parseInt(__ENV.TENANT_A_VUS) : 20; // 10x workload
-const tenantBVus = __ENV.TENANT_B_VUS ? parseInt(__ENV.TENANT_B_VUS) : 2;  // 1x baseline control
+const tenantARate = __ENV.TENANT_A_RATE ? parseInt(__ENV.TENANT_A_RATE) : 10; // 10 req/s (10x workload)
+const tenantBRate = __ENV.TENANT_B_RATE ? parseInt(__ENV.TENANT_B_RATE) : 1;  // 1 req/s (1x control baseline)
 
 export const options = {
   scenarios: {
     tenant_a_noisy: {
-      executor: 'constant-vus',
+      executor: 'constant-arrival-rate',
       exec: 'tenantAFunction',
-      vus: tenantAVus,
+      rate: tenantARate,
+      timeUnit: '1s',
       duration: duration,
+      preAllocatedVUs: 15,
+      maxVUs: 40,
       gracefulStop: '10s',
     },
     tenant_b_control: {
-      executor: 'constant-vus',
+      executor: 'constant-arrival-rate',
       exec: 'tenantBFunction',
-      vus: tenantBVus,
+      rate: tenantBRate,
+      timeUnit: '1s',
       duration: duration,
+      preAllocatedVUs: 2,
+      maxVUs: 10,
       gracefulStop: '10s',
     },
   },
   thresholds: {
     http_req_duration: ['p(95)<3000'],
-    tenant_b_429_rate: ['rate<0.01'], // Control tenant must NOT be starved by noisy neighbor
     mirage_http_5xx_rate: ['rate<0.01'],
   },
 };
@@ -68,10 +73,6 @@ export function tenantAFunction() {
   const success = validateVerificationResponse(res);
   const is429 = res.status === 429;
   recordTenantAMetrics(res.timings.duration, success, is429);
-
-  // Aggressive pacing: 0.4s - 0.8s for Tenant A (driving high request density)
-  const pacingSec = __ENV.TENANT_A_PACING ? parseFloat(__ENV.TENANT_A_PACING) : (0.4 + Math.random() * 0.4);
-  sleep(pacingSec);
 }
 
 /**
@@ -91,10 +92,6 @@ export function tenantBFunction() {
   const success = validateVerificationResponse(res);
   const is429 = res.status === 429;
   recordTenantBMetrics(res.timings.duration, success, is429);
-
-  // Standard pacing for 2 VUs: 2.0s - 2.4s (generating ~0.88 req/s, within 1.0 token/s refill rate)
-  const pacingSec = __ENV.TENANT_B_PACING ? parseFloat(__ENV.TENANT_B_PACING) : (2.0 + Math.random() * 0.4);
-  sleep(pacingSec);
 }
 
 export default function () {

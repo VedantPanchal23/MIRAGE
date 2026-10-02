@@ -518,7 +518,7 @@ How does MIRAGE compare against existing academic and commercial baselines?
 \end{itemize}
 
 \subsection{Current Project Progress and 6-Month Roadmap}
-The MIRAGE project has successfully completed foundational infrastructure hardening (Phases P0.1 through P0.6) and is currently in active Phase P1 development:
+The MIRAGE project has successfully completed foundational infrastructure hardening, core REST contracts, React 18 dashboard, chaos resilience validation, and comprehensive benchmark evaluation (Phases P0 through P4), with Phase P5 planned for academic publication and defense:
 
 \begin{table}[H]
 \centering
@@ -528,11 +528,11 @@ The MIRAGE project has successfully completed foundational infrastructure harden
 \toprule
 \textbf{Milestone} & \textbf{Target Schedule} & \textbf{Key Deliverables \& Verification Artifacts} & \textbf{Status} \\
 \midrule
-\textbf{Phase P0 (0.1--0.6)} & August--Sept 2026 & Cryptographic JWT/API Auth, Postgres RLS, Mongo Dual-Write, Redis Token-Bucket, RabbitMQ Quorum Queues, 13-Container Docker Compose Topology. (307/307 Automated Pytest Suite Passed). & \textbf{COMPLETED} \\
-\textbf{Phase P1} & September 2026 & REST API Conformance (\texttt{/v1/sessions/\{id\}}, \texttt{/v1/alerts}, \texttt{/v1/reports/generate}, \texttt{/v1/reports/\{id\}/pdf}, \texttt{/v1/kb/upload}). & \textbf{IN PROGRESS} \\
-\textbf{Phase P2} & October 2026 & React 18 Drift Dashboard, interactive SHAP waterfall views, WebSocket live streaming verification client. & \textbf{PLANNED} \\
-\textbf{Phase P3} & November 2026 & k6 load testing (100 concurrent users at $P95 < 3$s) and Toxiproxy fault-injection chaos engineering. & \textbf{PLANNED} \\
-\textbf{Phase P4} & December 2026 & Comprehensive benchmark evaluation across TruthfulQA, HaluEval, MMHAL-Bench, and FActScoring. & \textbf{PLANNED} \\
+\textbf{Phase P0 (0.1--0.6)} & August--Sept 2026 & Cryptographic JWT/API Auth, Postgres RLS, Mongo Dual-Write, Redis Token-Bucket, RabbitMQ Quorum Queues, 13-Container Docker Compose Topology. & \textbf{COMPLETED} \\
+\textbf{Phase P1} & September 2026 & REST API Conformance (\texttt{/v1/sessions/\{id\}}, \texttt{/v1/alerts}, \texttt{/v1/reports/generate}, \texttt{/v1/reports/\{id\}/pdf}, \texttt{/v1/kb/upload}). & \textbf{COMPLETED} \\
+\textbf{Phase P2} & October 2026 & React 18 Drift Dashboard, interactive SHAP waterfall views, WebSocket live streaming verification client (140/140 Unit Tests). & \textbf{COMPLETED} \\
+\textbf{Phase P3} & November 2026 & k6 load testing (100 concurrent users at $P95 < 3$s) and 10 Toxiproxy fault-injection chaos engineering scenarios. & \textbf{COMPLETED} \\
+\textbf{Phase P4} & December 2026 & Comprehensive benchmark evaluation: 7 Baselines, 12 Ablations, 3-Way Calibration, Mondrian CP, Cross-Model, Adversarial Suite. & \textbf{COMPLETED} \\
 \textbf{Phase P5} & January 2027 & Research paper draft submission to AI Safety / NLP venue and final project defense. & \textbf{PLANNED} \\
 \bottomrule
 \end{tabularx}

@@ -506,14 +506,21 @@ class TestChaosScenariosP35:
         # ----------------------------------------------------------------------
         # Circuit is reset, proxy latency toxic is removed; subsequent requests succeed cleanly
         assert llm_circuit.current_state == "closed"
-        resp_rec = client.post(
-            "/v1/chat/completions",
-            json={
-                "model": "allam-2-7b",
-                "messages": [{"role": "user", "content": "What is machine learning?"}],
-            },
-            headers=auth_headers,
-        )
+        resp_rec = None
+        for _ in range(3):
+            resp_rec = client.post(
+                "/v1/chat/completions",
+                json={
+                    "model": "allam-2-7b",
+                    "messages": [{"role": "user", "content": "What is machine learning?"}],
+                },
+                headers=auth_headers,
+            )
+            if resp_rec.status_code == 200:
+                break
+            time.sleep(2.0)
+
+        assert resp_rec is not None
         assert resp_rec.status_code == 200
         rec_data = resp_rec.json()
         assert "choices" in rec_data

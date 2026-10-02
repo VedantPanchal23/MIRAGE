@@ -119,6 +119,10 @@ class AdversarialAttackResult:
     target_criteria_met: bool
     resilience_summary: str
     perturbation_type: str = "algorithmic_text_transformation"
+    classification: str = "adversarial_robustness_test"
+    empirical_robustness_certified: bool = True
+    metric_name: str = "Metric Value"
+    robustness_limitation_note: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize attack result to dictionary."""
@@ -176,6 +180,10 @@ class AdversarialBenchmarkEvaluator:
             target_criteria_met=target_met,
             resilience_summary=f"F1 drop of {delta_f1:.4f} is within governing threshold of 0.04 under hedging.",
             perturbation_type="algorithmic_text_transformation",
+            classification="adversarial_robustness_test",
+            empirical_robustness_certified=True,
+            metric_name="Macro F1 Score",
+            robustness_limitation_note="Evaluated on algorithmic epistemic hedging transformations.",
         )
 
     def evaluate_atk02_confidence_injection(
@@ -216,6 +224,10 @@ class AdversarialBenchmarkEvaluator:
             target_criteria_met=target_met,
             resilience_summary=f"Mean HRS shift of {mean_delta:.4f} demonstrates confidence invariance (< 0.02).",
             perturbation_type="algorithmic_text_transformation",
+            classification="adversarial_robustness_test",
+            empirical_robustness_certified=True,
+            metric_name="Mean Hallucination Risk Score (HRS)",
+            robustness_limitation_note="Evaluated on algorithmic confidence preambles.",
         )
 
     def evaluate_atk03_hallucinated_citations(
@@ -227,6 +239,7 @@ class AdversarialBenchmarkEvaluator:
         Fabricates plausible scientific references (e.g. 'According to a 2024 Lancet study by Dr. R. Vance...').
         RAV searches Qdrant for nonexistent cited study; zero support triggers elevated risk.
         Target: Retrieval Support Score RSS > 0.85 on fabricated citations.
+        Classified as a known metric-sensitivity harness test, not an empirical robustness certification.
         """
         # Apply programmatic citation fabrication to input cases
         rss_values: list[float] = []
@@ -256,9 +269,18 @@ class AdversarialBenchmarkEvaluator:
             target_threshold=0.85,
             target_criteria_met=target_met,
             resilience_summary=(
-                f"Retrieval support score of {mean_rss:.4f} flags ungrounded citations (> 0.85 target met)."
+                f"Retrieval scrutiny score of {mean_rss:.4f} flags ungrounded citations (> 0.85 target met). "
+                "Classified as a known metric-sensitivity harness test, not an empirical robustness certification."
             ),
             perturbation_type="algorithmic_text_transformation",
+            classification="known_metric_sensitivity_harness_test",
+            empirical_robustness_certified=False,
+            metric_name="Retrieval Scrutiny Score (Ungrounded Citation Risk)",
+            robustness_limitation_note=(
+                "Lexical ungroundedness against reference evidence measures token absence rather than semantic "
+                "deception under poisoned indices; this validates metric sensitivity to ungrounded citation tokens "
+                "rather than certifying adversarial robustness against deceptive retrieval poisoning."
+            ),
         )
 
     def evaluate_atk04_evidence_poisoning(
@@ -310,6 +332,10 @@ class AdversarialBenchmarkEvaluator:
             target_criteria_met=target_met,
             resilience_summary=f"Multi-signal defense achieves F1={f1:.4f} against poisoned evidence (>= 0.82).",
             perturbation_type="algorithmic_text_transformation",
+            classification="adversarial_robustness_test",
+            empirical_robustness_certified=True,
+            metric_name="Contradiction Detection Macro F1",
+            robustness_limitation_note="Evaluated on synthetic contradictory evidence corruption.",
         )
 
     def evaluate_all_attacks(

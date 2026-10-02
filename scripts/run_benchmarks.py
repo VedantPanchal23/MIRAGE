@@ -28,6 +28,7 @@ from benchmarks.ablations import AblationEvaluator
 from benchmarks.adversarial_bench import AdversarialBenchmarkEvaluator
 from benchmarks.baselines import BaselineEvaluator
 from benchmarks.calibration_bench import ThreeWayCalibrationBenchmark
+from benchmarks.certification_guard import BenchmarkCertificationGuard
 from benchmarks.conformal_bench import ConformalBenchmarkEvaluator
 from benchmarks.cross_model import CrossModelGeneralizationEvaluator
 from benchmarks.datasets import (
@@ -189,14 +190,46 @@ async def execute_phase4_benchmarks(args: argparse.Namespace) -> dict[str, Any]:
         report_payload["ablations"] = [a.to_dict() for a in a_results]
 
     # 5. 3-Way Calibration Benchmark & Cross-Domain Transfer
-    if args.benchmark in ("all", "calibration"):
-        logger.info("Running 3-Way Post-Hoc Calibration Benchmark...")
-        c_bench = ThreeWayCalibrationBenchmark(seed=args.seed)
-        raw_scores = [o.predicted_hrs for o in primary_outputs]
-        y_true = [c.ground_truth_label for c in primary_cases]
-        c_bench.fit_calibrators(raw_scores, y_true)
+    # Explicit separation of calibrator fitting data and held-out evaluation data to prevent leakage
+    n_total = len(primary_cases)
+    if n_total > 2:
+        n_fit = max(1, n_total // 2)
+        fit_cases = primary_cases[:n_fit]
+        eval_cases = primary_cases[n_fit:]
+        fit_outputs = primary_outputs[:n_fit]
+        eval_outputs = primary_outputs[n_fit:]
+    else:
+        fit_cases = primary_cases
+        eval_cases = primary_cases
+        fit_outputs = primary_outputs
+        eval_outputs = primary_outputs
 
-        cal_results = c_bench.evaluate_methods(raw_scores, y_true)
+    if args.benchmark in ("all", "calibration"):
+        logger.info("Running 3-Way Post-Hoc Calibration Benchmark (held-out evaluation)...")
+        c_bench = ThreeWayCalibrationBenchmark(seed=args.seed)
+        fit_raw_scores = [o.predicted_hrs for o in fit_outputs]
+        fit_y_true = [c.ground_truth_label for c in fit_cases]
+        eval_raw_scores = [o.predicted_hrs for o in eval_outputs]
+        eval_y_true = [c.ground_truth_label for c in eval_cases]
+
+        c_bench.fit_calibrators(fit_raw_scores, fit_y_true)
+
+        # In Tier 1 demonstration, held-out split is small; label as methodology smoke test only
+        is_smoke = len(eval_cases) < 50
+        eval_type = "methodology_smoke_test_only" if is_smoke else "held_out_evaluation"
+        split_note = (
+            f"Explicit held-out split (N_fit={len(fit_cases)}, N_eval={len(eval_cases)}). "
+            "Sized for methodology smoke testing only in Tier 1; true out-of-sample "
+            "generalization requires Tier 2 full corpus."
+        )
+
+        cal_results = c_bench.evaluate_methods(
+            eval_scores=eval_raw_scores,
+            eval_y_true=eval_y_true,
+            evaluation_type=eval_type,
+            split_note=split_note,
+            fitting_sample_count=len(fit_cases),
+        )
         report_payload["calibration_3way"] = [c.to_dict() for c in cal_results]
 
         # Transfer to TruthfulQA zero-shot
@@ -210,10 +243,18 @@ async def execute_phase4_benchmarks(args: argparse.Namespace) -> dict[str, Any]:
     if args.benchmark in ("all", "conformal"):
         logger.info("Evaluating Mondrian Conformal Prediction Guarantees & Sizing Ablation...")
         cp_evaluator = ConformalBenchmarkEvaluator(seed=args.seed)
-        cp_summary = cp_evaluator.evaluate_conformal_guarantees(primary_cases, primary_outputs)
+        cp_summary = cp_evaluator.evaluate_conformal_guarantees(
+            cases=eval_cases if len(eval_cases) > 0 else primary_cases,
+            outputs=eval_outputs if len(eval_outputs) > 0 else primary_outputs,
+        )
         report_payload["conformal_guarantees"] = cp_summary.to_dict()
 
-        sizing_res = cp_evaluator.run_calibration_sizing_ablation(primary_cases, primary_outputs)
+        sizing_res = cp_evaluator.run_calibration_sizing_ablation(
+            cases=fit_cases if len(fit_cases) > 0 else primary_cases,
+            outputs=fit_outputs if len(fit_outputs) > 0 else primary_outputs,
+            eval_cases=eval_cases if len(eval_cases) > 0 else None,
+            eval_outputs=eval_outputs if len(eval_outputs) > 0 else None,
+        )
         report_payload["calibration_sizing_ablation"] = [s.to_dict() for s in sizing_res]
 
     # 7. Cross-Model Generalization Testing
@@ -230,33 +271,37 @@ async def execute_phase4_benchmarks(args: argparse.Namespace) -> dict[str, Any]:
         adv_results = adv_evaluator.evaluate_all_attacks(primary_cases, primary_outputs)
         report_payload["adversarial_robustness"] = [a.to_dict() for a in adv_results]
 
-    # 9. Verify Section 17 Target Criteria Acceptance
+    # 9. Verify Section 17 Target Criteria Acceptance & Audit Certification Gate
     all_targets_passed = True
     for d_name, d_res in dataset_results.items():
         if not d_res.pass_criteria_met:
             all_targets_passed = False
             logger.warning("Dataset benchmark failed target criteria", dataset=d_name)
 
-    # Scientific status distinction:
-    # Tier 1 functional demonstration suite passes engineering tests,
-    # but academic certification remains pending full corpus execution (Tier 2).
-    report_payload["overall_status"] = (
-        "TIER_1_DEMONSTRATION_PASSED (ACADEMIC_CERTIFICATION_PENDING)" if all_targets_passed else "FAILED"
-    )
-
-    # Convenient aliases & Section 17 Target Compliance Summary
+    # Convenient aliases
     report_payload["calibration"] = report_payload["calibration_3way"]
     report_payload["conformal"] = report_payload["conformal_guarantees"]
     report_payload["cross_model"] = report_payload["cross_model_generalization"]
     report_payload["adversarial"] = report_payload["adversarial_robustness"]
+
+    # Machine-checkable benchmark certification guard
+    guard = BenchmarkCertificationGuard()
+    guard_result = guard.audit_certification_readiness(report_payload)
+    report_payload["certification_gate"] = guard_result.to_dict()
+    report_payload["overall_status"] = guard_result.status
+
     report_payload["section_17_compliance"] = {
         "tier_1_functional_demonstration_passed": all_targets_passed,
-        "academic_certification_status": "PENDING_LARGE_SCALE_EXECUTION",
+        "academic_certification_status": guard_result.status,
+        "is_certified": guard_result.is_certified,
+        "tier_1_readiness": guard_result.tier_1_readiness,
+        "tier_2_readiness": guard_result.tier_2_readiness,
         "sample_size_audit": {
             "total_demonstration_samples": len(all_cases),
             "sufficient_for_asymptotic_guarantees": False,
             "caveat": (
-                "Curated split (N=30) validates pipeline execution; statistical certification requires N >= 1,000."
+                "Curated split (N=30) validates pipeline execution; statistical certification "
+                "requires full academic corpora per literature specifications."
             ),
         },
         "halueval_f1_passed": report_payload.get("datasets", {}).get("HaluEval", {}).get("pass_criteria_met", True),
@@ -421,6 +466,33 @@ def print_cli_summary_tables(report: dict[str, Any]) -> None:
                 "PASS" if adv.get("target_criteria_met") else "FAIL",
             ]
             print(format_table_row(row, widths))
+
+    # 6. Certification Readiness Audit Table
+    if report.get("certification_gate"):
+        cg = report["certification_gate"]
+        print("\n### 6. Academic Certification Gate Audit (BenchmarkCertificationGuard)")
+        print(
+            f"Status: {cg.get('status')} | Certified: {cg.get('is_certified')} | "
+            f"Tier 1 Ready: {cg.get('tier_1_readiness')} | Tier 2 Ready: {cg.get('tier_2_readiness')}"
+        )
+        print(f"Summary: {cg.get('summary')}")
+        col_names = ["Gate Check", "Status", "Description"]
+        widths = [28, 8, 64]
+        print(format_table_row(col_names, widths))
+        print("|" + "|".join(["-" * (w + 2) for w in widths]) + "|")
+
+        for check_name, check_data in cg.get("gate_checks", {}).items():
+            row = [
+                check_name,
+                "PASS" if check_data.get("passed") else "BLOCKED",
+                str(check_data.get("description", ""))[:64],
+            ]
+            print(format_table_row(row, widths))
+
+        if cg.get("unmet_prerequisites"):
+            print("\nOutstanding Tier 2 Prerequisites for Academic Certification:")
+            for idx, prereq in enumerate(cg["unmet_prerequisites"], start=1):
+                print(f"  {idx}. {prereq}")
 
     print("\n" + "=" * 105 + "\n")
 

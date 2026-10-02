@@ -5,7 +5,7 @@ from Benchmarking_Evaluation.md §4:
 - B1: Raw LLM Output (Unverified Generation Prior)
 - B2: Heuristic-Lexical Proxy for SelfCheckGPT-BERTScore (Wang et al., EMNLP 2023)
 - B3: Heuristic-NLI Proxy for SelfCheckGPT-NLI (Wang et al., EMNLP 2023)
-- B4: Evidence-Overlap Heuristic for FACTSCORE (Min et al., EMNLP 2023)
+- B4: Evidence-Overlap Heuristic Proxy for FACTSCORE (Min et al., EMNLP 2023)
 - B5: Cosine-Similarity Proxy for CLIP-only (Radford et al., ICML 2021)
 - B6: Architectural Ablation (Uncalibrated Meta-Learner without Isotonic Regression)
 - B7: Methodological Variant (Standard Marginal Split Conformal Prediction)
@@ -117,7 +117,7 @@ class BaselineEvaluator:
                 predictions.append(risk)
 
             elif baseline_id == "B4":
-                # B4: Evidence-Overlap Heuristic for FACTSCORE
+                # B4: Evidence-Overlap Heuristic Proxy for FACTSCORE
                 # Literature: Min et al., 'FActScore: Fine-grained Atomic Evaluation of Factual Precision', EMNLP 2023.
                 # Implementation: Token overlap heuristic against provided reference evidence chunks.
                 if case.reference_evidence:
@@ -211,7 +211,7 @@ class BaselineEvaluator:
                 "Cross-consistency NLI score simulation without live multi-sample LLM calls",
             ),
             "B4": (
-                "B4: Evidence-Overlap Heuristic for FACTSCORE",
+                "B4: Evidence-Overlap Heuristic Proxy for FACTSCORE",
                 "Retrieval Proxy",
                 "Heuristic Proxy",
                 "Min et al. (EMNLP 2023)",

@@ -99,7 +99,7 @@ gantt
 * **Adversarial Robustness Testing Suite (`benchmarks/adversarial_bench.py`)**: Evaluated via programmatic algorithmic text transformations against epistemic hedging (ATK-01), confidence manipulation (ATK-02), fake citations (ATK-03), and poisoned retrieval contexts (ATK-04).
 * **Statistical Significance Engine (`benchmarks/significance.py`)**: Paired bootstrap hypothesis testing, McNemar's tests, 95% bootstrap CIs, and Cohen's $d$.
 * **Reproducibility CLI & Vector SVGs**: One-click runner `scripts/run_benchmarks.py` exporting auditable JSON reports (`results/benchmark_report_p4.json`) and 6 publication SVGs rendered into `docs/figures/`.
-* **Academic Certification Status**: Tier 1 functional validation passed in CI; final empirical certification against governing Section 17 asymptotic criteria requires Tier 2 execution on full external academic corpora ($N \ge 1,000$).
+* **Academic Certification Status**: Tier 1 functional validation complete (`TIER_1_HARNESS_COMPLETE`); automated machine-checkable `BenchmarkCertificationGuard` active with 6 gate checks; Phase P4 status is **NOT APPROVED for full scientific certification pending Tier 2 execution on full external academic corpora** (HaluEval: 10,000; TruthfulQA: 817; FActScore: 183 / 3,200 atomic facts; MMHAL-Bench: 96).
 
 ---
 
@@ -121,6 +121,6 @@ gantt
 | **Phase P1** | September 2026 | Full REST API Conformance (`/v1/sessions/{id}`, `/v1/alerts`, `/v1/reports`, `/v1/kb/upload`, S3/Local abstraction). | **COMPLETED** |
 | **Phase P2** | October 2026 | React 18 Drift Dashboard, interactive SHAP waterfall views, WebSocket streaming UI (140/140 Tests). | **COMPLETED** |
 | **Phase P3** | November 2026 | k6 load testing (100 users, $P95 < 3$s) and 10 Toxiproxy chaos resilience scenarios. | **COMPLETED** |
-| **Phase P4** | December 2026 | 7 Baselines/Proxies, 12 Ablations, 3-Way Calibration, Mondrian CP, Cross-Model Sim, Adversarial Suite, CLI & SVGs. | **COMPLETED (Harness & Tier 1) / PENDING (Tier 2 Corpus)** |
+| **Phase P4** | December 2026 | 7 Baselines/Proxies, 12 Ablations, 3-Way Calibration (Held-Out), Mondrian CP (Sizing Semantics), Cross-Model Sim, Adversarial Suite (ATK-03 Decoupled), Certification Guard, CLI & SVGs. | **TIER 1 HARNESS COMPLETE / PENDING TIER 2 CORPUS (NOT APPROVED FOR CERTIFICATION)** |
 | **Phase P5** | January 2027 | Full-scale corpus execution, research paper draft submission, and final capstone project defense. | **PLANNED** |
 

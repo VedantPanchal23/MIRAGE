@@ -1,7 +1,7 @@
 # ADR 0006: Phase P4 Comprehensive Benchmark Evaluation Architecture & Statistical Methodology
 
 ## Status
-Ratified (Tier 1 Demonstration Implemented / Tier 2 Full Academic Corpus Pending)
+Ratified (Tier 1 Harness Verified / Machine-Checkable Certification Guard Active / Tier 2 Full Academic Corpus Pending)
 
 ## Context
 Phase P4 focuses on implementing the complete empirical evaluation and statistical validation framework mandated by `Benchmarking_Evaluation.md` (v2.1.0), `PRD.md` (FR-HRS-01..06, FR-AUD-01..04), `Testing_Strategy.md` §4, §10, §13, and `docs/first_review/implementation_status_and_future_roadmap.md` §4 & §5.
@@ -18,21 +18,32 @@ To establish scientific validity while maintaining rigorous honesty regarding ex
 
 ## Decisions
 
-### 1. Two-Tier Evaluation Architecture
-To avoid inflated scientific certification claims while ensuring reproducible automated validation, Phase P4 adopts a clear two-tier evaluation framework:
+### 1. Two-Tier Evaluation Architecture & Machine-Checkable Certification Guard
+To eliminate scientific over-claiming while ensuring reproducible automated validation, Phase P4 establishes an auditable two-tier architecture governed by an automated `BenchmarkCertificationGuard`:
 
 - **Tier 1: Curated Demonstration Suite ($N=30$)**:
-  - Purpose: Functional verification of the full MIRAGE pipeline (`VerificationOrchestrator`), end-to-end database transactions, RLS enforcement, audit hashing, and testing of evaluation math.
-  - Composition: 10 HaluEval cases, 8 TruthfulQA cases, 4 FActScore cases, 8 MMHAL-Bench cases.
-  - Baselines: Literature baseline methods are implemented as **explicit heuristic proxies** and architectural variants.
-  - Cross-Model: Evaluated via **controlled stylistic perturbation simulation**.
-  - Status: **Fully Implemented and Verified in CI/Automated Testing**.
-  - Limitation: Sample size $N=30$ is intentionally insufficient for asymptotic statistical bounds ($\ge 94\%$ finite-sample coverage guarantees at $\alpha=0.05$ require $N \ge 1,000$).
+  - **Purpose**: Functional verification of the full MIRAGE pipeline (`VerificationOrchestrator`), end-to-end database transactions, RLS enforcement, audit hashing, and testing of evaluation math.
+  - **Composition**: 10 HaluEval cases, 8 TruthfulQA cases, 4 FActScore cases, 8 MMHAL-Bench cases.
+  - **Baselines**: Literature baseline methods are implemented as **explicit heuristic proxies** (B2–B5) and architectural variants (B6–B7).
+  - **Cross-Model**: Evaluated via **controlled stylistic perturbation simulation**.
+  - **Status**: **Fully Implemented and Verified in CI/Automated Testing** (`TIER_1_HARNESS_COMPLETE`).
+  - **Limitation**: Sample size $N=30$ is intentionally insufficient for asymptotic statistical bounds ($\ge 94\%$ finite-sample coverage guarantees at $\alpha=0.05$ require $N \ge 1,000$).
+  - **Certification**: Explicitly blocked from emitting `CERTIFIED` status.
 
 - **Tier 2: Full Academic Corpus Execution ($N \ge 1,000$)**:
-  - Purpose: Large-scale empirical evaluation on full academic corpora (HaluEval 10,000, TruthfulQA 817, FActScore 183, MMHAL-Bench 96).
-  - Requirements: External batch downloads, GPU cluster allocation for full DeBERTa/LLaVA batch inference, live LLM API token generation across model families.
-  - Status: **Pending Full-Scale Academic Corpus Execution**.
+  - **Purpose**: Large-scale empirical evaluation on full academic corpora matching literature specifications.
+  - **Native Requirements**: HaluEval (10,000 instances), TruthfulQA (817 instances), FActScore (183 instances / 3,200 atomic facts), MMHAL-Bench (96 instances).
+  - **Prerequisites**: External batch downloads, GPU cluster allocation for full DeBERTa/LLaVA batch inference, live LLM API token generation across model families.
+  - **Status**: **Pending Full-Scale Academic Corpus Execution** (`TIER_2_ACADEMIC_CERTIFIED`).
+
+- **Automated Certification Guard (`BenchmarkCertificationGuard`)**:
+  - Automatically evaluates every report payload against 6 machine-checkable gates:
+    1. `no_fixture_datasets`: All datasets must be `external_academic_corpus`.
+    2. `native_sample_size_adequacy`: Must meet native corpus size thresholds (HaluEval: 10,000; TruthfulQA: 817; FActScore: 183; MMHAL: 96).
+    3. `calibration_separation`: Evaluated on held-out split; rejects `methodology_smoke_test_only` and fitting leakage.
+    4. `live_generator_execution`: Zero stylistic perturbation simulation.
+    5. `baseline_qualification`: B2–B5 must have explicit `Heuristic Proxy` fidelity and naming.
+    6. `adversarial_decoupling`: ATK-03 must acknowledge metric-sensitivity coupling and report uncertified empirical robustness.
 
 ### 2. Baseline Comparison Implementations & Scientific Fidelity (B1–B7)
 To ensure academic honesty, baseline comparisons are explicitly categorized by implementation fidelity:
@@ -40,10 +51,10 @@ To ensure academic honesty, baseline comparisons are explicitly categorized by i
 | Baseline ID | Name | Implementation Fidelity | Reference / Literature Citation | Notes / Deviations |
 |-------------|------|------------------------|--------------------------------|-------------------|
 | **B1** | Raw LLM Output | Baseline Prior | Empirical Prior | Uncalibrated generation prior without verification |
-| **B2** | SelfCheckGPT (BERTScore) | Heuristic Proxy | Wang et al. (EMNLP 2023) | Jaccard token overlap heuristic proxy across prompt/response |
-| **B3** | SelfCheckGPT (NLI) | Heuristic Proxy | Wang et al. (EMNLP 2023) | Consistency score simulation without live multi-sample LLM calls |
-| **B4** | FACTSCORE | Heuristic Proxy | Min et al. (EMNLP 2023) | Word-level token overlap heuristic against provided evidence |
-| **B5** | CLIP-only Visual Grounding | Heuristic Proxy | Radford et al. (ICML 2021) | Image-text similarity proxy without fine-grained VQA grounding |
+| **B2** | SelfCheckGPT (BERTScore) Heuristic Proxy | Heuristic Proxy | Wang et al. (EMNLP 2023) | Jaccard token overlap heuristic proxy across prompt/response |
+| **B3** | SelfCheckGPT (NLI) Heuristic Proxy | Heuristic Proxy | Wang et al. (EMNLP 2023) | Consistency score simulation without live multi-sample LLM calls |
+| **B4** | FACTSCORE Heuristic Proxy | Heuristic Proxy | Min et al. (EMNLP 2023) | Word-level token overlap heuristic against provided evidence |
+| **B5** | CLIP-only Visual Grounding Heuristic Proxy | Heuristic Proxy | Radford et al. (ICML 2021) | Image-text similarity proxy without fine-grained VQA grounding |
 | **B6** | Uncalibrated Meta-Learner | Architectural Ablation | MIRAGE Meta-Learner | Raw LightGBM ensemble without post-hoc Isotonic Regression |
 | **B7** | Standard Split CP | Methodological Variant | Vovk (2005) / Angelopoulos (2021) | Marginal split conformal prediction without Mondrian conditioning |
 
@@ -64,19 +75,16 @@ The 12 ablation configurations isolate every signal component:
 
 Bonferroni correction sets the family-wise error rate threshold to $\alpha_{\text{adjusted}} = 0.05 / 12 \approx 0.00417$.
 
-### 4. 3-Way Post-Hoc Calibration & Reliability Analysis
-Evaluates probability calibration using 15 equal-frequency/equal-width bins:
-- **Isotonic Regression**: Non-parametric isotonic regression fitting monotonic piecewise-constant steps.
-- **Platt Scaling**: Parametric logistic sigmoid regression mapping raw score $s$ to calibrated probability $\sigma(As + B)$.
-- **Temperature Scaling**: Single parameter scaling $p = \sigma(s / T)$.
+### 4. 3-Way Post-Hoc Calibration & Data Separation
+Evaluates probability calibration using 15 equal-width bins across Isotonic Regression, Platt Scaling, and Temperature Scaling:
+- **Strict Data Separation**: Calibrator fitting data and evaluation data are strictly disjoint. In Tier 1 demonstration runs, the evaluation split is small ($N=5$) and explicitly labeled `methodology_smoke_test_only` to prevent training-error leakage from being reported as generalization.
+- **Cross-Domain Transfer**: Zero-shot transfer from HaluEval to TruthfulQA ($ECE \le 0.050$) tests distributional stability.
 
-Cross-benchmark transfer tests calibration trained on HaluEval against TruthfulQA and FActScore zero-shot.
-
-### 5. Mondrian Conformal Prediction & Calibration Sizing
+### 5. Mondrian Conformal Prediction & Calibration Sizing Semantics
 To evaluate non-asymptotic coverage validity without undercovering safety-critical tail hallucinations:
 - **Group-Conditional Nonconformity Quantile $\hat{q}_{k}$**:
   $$\hat{q}_k = \text{Quantile}\left( \left\{ s_i : i \in \mathcal{D}_{\text{cal}}, G(x_i) = k \right\}, \frac{\lceil (n_k + 1)(1 - \alpha) \rceil}{n_k} \right)$$
-- **Sizing Ablation**: Measures empirical coverage and mean interval width at $N \in \{250, 500, 1000, 2000\}$ using finite-sample bootstrap non-conformity quantile resampling.
+- **Disjoint Sizing Semantics**: Tracks `synthetic_calibration_resample_size` ($N_{\text{cal}} \in \{250, 500, 1000, 2000\}$) independently from `held_out_test_sample_count` ($N_{\text{test}}$). Labeled as `methodology_algorithm_test` to prevent resampled $N$ from being reported as actual corpus sample count.
 
 ### 6. Cross-Model Evaluation Reality
 Completions modeled after 3 distinct LLM architectures:
@@ -90,12 +98,12 @@ Protocol: In Tier 1, evaluated via controlled stylistic perturbation simulation 
 Four attack vectors evaluate robustness via programmatic algorithmic text transformations:
 - **ATK-01 (Epistemic Hedging)**: Injecting epistemic hedges ("It is hypothesized and widely discussed that..."). Target: $\Delta F_1 < 0.04$.
 - **ATK-02 (Overconfident Assertions)**: Injecting authoritative certainty ("It is an undisputed, universally accepted fact that..."). Target: $\Delta \text{HRS} < 0.02$.
-- **ATK-03 (Hallucinated Academic Citations)**: Injecting fabricated studies and DOIs. Target: Retrieval Support Score $> 0.85$.
+- **ATK-03 (Hallucinated Academic Citations)**: Injecting fabricated studies and DOIs. Metric: Retrieval Scrutiny Score (Ungrounded Citation Risk). Classified as a **known metric-sensitivity harness test**, noting that lexical ungroundedness against reference evidence measures token absence rather than certifying adversarial robustness against deceptive retrieval poisoning.
 - **ATK-04 (Corrupted/Poisoned Context)**: Poisoning retrieval chunks with contradicted facts. Target: Contradiction Detection $F_1 \ge 0.82$.
 
 ### 8. Reproducibility CLI & Vector SVGs
-- `scripts/run_benchmarks.py`: Provides deterministic, argument-driven CLI execution (`--benchmark all`, `--seed 42`) with fixed random seed, logging, formatted tabular summaries, and JSON serialization to `results/benchmark_report_p4.json`.
-- `scripts/generate_figures.py`: Generates 6 publication-ready vector SVGs in `docs/figures/`.
+- `scripts/run_benchmarks.py`: Provides deterministic, argument-driven CLI execution (`--benchmark all`, `--seed 42`) with fixed random seed, logging, formatted tabular summaries, machine-checkable certification audit table, and JSON serialization to `results/benchmark_report_p4.json`.
+- `scripts/generate_figures.py`: Generates 6 publication-ready vector SVGs in `docs/figures/`, with explicit "Heuristic Proxy" qualifiers on baseline curves.
 
 ---
 
@@ -104,9 +112,11 @@ Four attack vectors evaluate robustness via programmatic algorithmic text transf
 ### Positive
 - Auditable scientific provenance clearly distinguishing Tier 1 demonstration suite from Tier 2 full-scale academic corpus runs.
 - Elimination of ungrounded scientific claims, hardcoded arrays, and analytical approximations in favor of genuine empirical evaluation.
+- Machine-checkable certification guard prevents automated benchmark runs from prematurely emitting `CERTIFIED`.
 - Explicit documentation of baseline fidelities, simulation boundaries, and sample size constraints.
 - Complete reproducibility via deterministic CLI runner and scripted SVG rendering.
 
 ### Limitations & Current Status
-- Tier 1 provides functional and pipeline verification on $N=30$ cases.
+- Tier 1 provides functional and pipeline verification on $N=30$ cases with status `TIER_1_HARNESS_COMPLETE`.
 - Academic certification against governing Section 17 criteria requires full-scale execution on academic corpora ($N \ge 1,000$), currently pending external cluster and API resources.
+- Final Status: **P4 NOT APPROVED — Tier 1 harness complete; Tier 2 full academic-corpus execution pending**.

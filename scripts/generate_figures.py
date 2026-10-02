@@ -74,10 +74,20 @@ def generate_roc_pr_curves(output_path: Path) -> None:
 
     ax_roc.plot(fpr_grid, mirage_tpr, label="MIRAGE Full (AUROC = 0.941)", color="#2e6da4", linewidth=2.5)
     ax_roc.plot(
-        fpr_grid, factscore_tpr, label="FACTSCORE (AUROC = 0.792)", color="#f0ad4e", linestyle="--", linewidth=1.8
+        fpr_grid,
+        factscore_tpr,
+        label="FACTSCORE Heuristic Proxy (AUROC = 0.792)",
+        color="#f0ad4e",
+        linestyle="--",
+        linewidth=1.8,
     )
     ax_roc.plot(
-        fpr_grid, selfcheck_tpr, label="SelfCheckGPT (AUROC = 0.721)", color="#d9534f", linestyle=":", linewidth=1.8
+        fpr_grid,
+        selfcheck_tpr,
+        label="SelfCheckGPT Heuristic Proxy (AUROC = 0.721)",
+        color="#d9534f",
+        linestyle=":",
+        linewidth=1.8,
     )
     ax_roc.plot([0, 1], [0, 1], "k--", alpha=0.5)
     ax_roc.set_xlabel("False Positive Rate (FPR)", fontsize=11)
@@ -94,10 +104,20 @@ def generate_roc_pr_curves(output_path: Path) -> None:
 
     ax_pr.plot(recall_grid, mirage_prec, label="MIRAGE Full (AUPRC = 0.923)", color="#2e6da4", linewidth=2.5)
     ax_pr.plot(
-        recall_grid, factscore_prec, label="FACTSCORE (AUPRC = 0.764)", color="#f0ad4e", linestyle="--", linewidth=1.8
+        recall_grid,
+        factscore_prec,
+        label="FACTSCORE Heuristic Proxy (AUPRC = 0.764)",
+        color="#f0ad4e",
+        linestyle="--",
+        linewidth=1.8,
     )
     ax_pr.plot(
-        recall_grid, selfcheck_prec, label="SelfCheckGPT (AUPRC = 0.682)", color="#d9534f", linestyle=":", linewidth=1.8
+        recall_grid,
+        selfcheck_prec,
+        label="SelfCheckGPT Heuristic Proxy (AUPRC = 0.682)",
+        color="#d9534f",
+        linestyle=":",
+        linewidth=1.8,
     )
     ax_pr.set_xlabel("Recall", fontsize=11)
     ax_pr.set_ylabel("Precision", fontsize=11)

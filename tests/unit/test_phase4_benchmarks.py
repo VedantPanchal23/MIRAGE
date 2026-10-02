@@ -13,6 +13,7 @@ Validates:
 
 import tempfile
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pytest
@@ -34,6 +35,10 @@ from benchmarks.calibration_bench import (
     CrossDomainTransferResult,
     ThreeWayCalibrationBenchmark,
 )
+from benchmarks.certification_guard import (
+    BenchmarkCertificationGuard,
+    CertificationAuditResult,
+)
 from benchmarks.conformal_bench import (
     ConformalBenchmarkEvaluator,
     ConformalEvaluationSummary,
@@ -42,6 +47,12 @@ from benchmarks.conformal_bench import (
 from benchmarks.cross_model import (
     CrossModelGeneralizationEvaluator,
     ModelFamilyResult,
+)
+from benchmarks.datasets import (
+    FActScoreLoader,
+    HaluEvalLoader,
+    MMHALBenchLoader,
+    TruthfulQALoader,
 )
 from benchmarks.evaluator import (
     BenchmarkCase,
@@ -362,3 +373,176 @@ def test_run_all_benchmarks_cli() -> None:
         assert isinstance(compliance["halueval_f1_passed"], bool)
         assert isinstance(compliance["conformal_coverage_passed"], bool)
         assert isinstance(compliance["adversarial_robustness_passed"], bool)
+
+
+# ==============================================================================
+# 9. BenchmarkCertificationGuard & Scientific Integrity Tests
+# ==============================================================================
+
+
+def test_benchmark_certification_guard_blocks_fixtures() -> None:
+    """Verify BenchmarkCertificationGuard blocks CERTIFIED status when running on fixtures."""
+    guard = BenchmarkCertificationGuard()
+
+    # Report payload using curated demonstration fixtures
+    mock_payload = {
+        "datasets": {
+            "HaluEval": {"sample_count": 10},
+            "TruthfulQA": {"sample_count": 8},
+            "FActScore": {"sample_count": 4},
+            "MMHAL-Bench": {"sample_count": 8},
+        },
+        "dataset_provenance": {
+            "HaluEval": {"corpus_type": "curated_demonstration_split"},
+            "TruthfulQA": {"corpus_type": "curated_demonstration_split"},
+            "FActScore": {"corpus_type": "curated_demonstration_split"},
+            "MMHAL-Bench": {"corpus_type": "curated_demonstration_split"},
+        },
+        "baselines": [
+            {"baseline_id": "B1", "implementation_fidelity": "Baseline Prior", "baseline_name": "B1"},
+            {"baseline_id": "B2", "implementation_fidelity": "Heuristic Proxy", "baseline_name": "B2 Proxy"},
+            {"baseline_id": "B3", "implementation_fidelity": "Heuristic Proxy", "baseline_name": "B3 Proxy"},
+            {"baseline_id": "B4", "implementation_fidelity": "Heuristic Proxy", "baseline_name": "B4 Proxy"},
+            {"baseline_id": "B5", "implementation_fidelity": "Heuristic Proxy", "baseline_name": "B5 Proxy"},
+            {"baseline_id": "B6", "implementation_fidelity": "Architectural Ablation", "baseline_name": "B6"},
+            {"baseline_id": "B7", "implementation_fidelity": "Methodological Variant", "baseline_name": "B7"},
+        ],
+        "calibration_3way": [
+            {
+                "evaluation_type": "methodology_smoke_test_only",
+                "fitting_sample_count": 5,
+                "evaluation_sample_count": 5,
+            }
+        ],
+        "cross_model_generalization": [
+            {"model_name": "Llama", "evaluation_type": "Live API Generation"},
+            {"model_name": "Mixtral", "evaluation_type": "Live API Generation"},
+            {"model_name": "Gemma", "evaluation_type": "Live API Generation"},
+        ],
+        "adversarial_robustness": [
+            {
+                "attack_id": "ATK-03",
+                "empirical_robustness_certified": False,
+                "classification": "known_metric_sensitivity_harness_test",
+            }
+        ],
+    }
+
+    result = guard.audit_certification_readiness(mock_payload)
+    assert isinstance(result, CertificationAuditResult)
+    assert result.status == "TIER_1_HARNESS_COMPLETE"
+    assert result.is_certified is False
+    assert result.tier_1_readiness is True
+    assert result.tier_2_readiness is False
+    assert not result.gate_checks["no_fixture_datasets"]["passed"]
+    assert not result.gate_checks["native_sample_size_adequacy"]["passed"]
+    assert not result.gate_checks["calibration_separation"]["passed"]
+    assert len(result.unmet_prerequisites) >= 3
+
+
+def test_benchmark_certification_guard_detects_calibration_leakage() -> None:
+    """Verify BenchmarkCertificationGuard rejects reports where evaluation overlaps with fitting."""
+    guard = BenchmarkCertificationGuard()
+
+    leaked_payload = {
+        "datasets": {
+            "HaluEval": {"sample_count": 10000},
+            "TruthfulQA": {"sample_count": 817},
+            "FActScore": {"sample_count": 183},
+            "MMHAL-Bench": {"sample_count": 96},
+        },
+        "dataset_provenance": {
+            "HaluEval": {"corpus_type": "external_academic_corpus"},
+            "TruthfulQA": {"corpus_type": "external_academic_corpus"},
+            "FActScore": {"corpus_type": "external_academic_corpus"},
+            "MMHAL-Bench": {"corpus_type": "external_academic_corpus"},
+        },
+        "baselines": [
+            {"baseline_id": "B1", "implementation_fidelity": "Baseline Prior", "baseline_name": "B1"},
+            {"baseline_id": "B2", "implementation_fidelity": "Heuristic Proxy", "baseline_name": "B2 Proxy"},
+            {"baseline_id": "B3", "implementation_fidelity": "Heuristic Proxy", "baseline_name": "B3 Proxy"},
+            {"baseline_id": "B4", "implementation_fidelity": "Heuristic Proxy", "baseline_name": "B4 Proxy"},
+            {"baseline_id": "B5", "implementation_fidelity": "Heuristic Proxy", "baseline_name": "B5 Proxy"},
+            {"baseline_id": "B6", "implementation_fidelity": "Architectural Ablation", "baseline_name": "B6"},
+            {"baseline_id": "B7", "implementation_fidelity": "Methodological Variant", "baseline_name": "B7"},
+        ],
+        "calibration_3way": [
+            {
+                "evaluation_type": "held_out_evaluation",
+                "fitting_sample_count": 500,
+                "evaluation_sample_count": 0,  # Leakage indicator
+            }
+        ],
+        "cross_model_generalization": [
+            {"model_name": "Llama", "evaluation_type": "Live API Generation"},
+            {"model_name": "Mixtral", "evaluation_type": "Live API Generation"},
+            {"model_name": "Gemma", "evaluation_type": "Live API Generation"},
+        ],
+        "adversarial_robustness": [
+            {
+                "attack_id": "ATK-03",
+                "empirical_robustness_certified": False,
+                "classification": "known_metric_sensitivity_harness_test",
+            }
+        ],
+    }
+
+    result = guard.audit_certification_readiness(leaked_payload)
+    assert result.is_certified is False
+    assert not result.gate_checks["calibration_separation"]["passed"]
+
+
+def test_conformal_sizing_separate_test_count() -> None:
+    """Verify SizingAblationResult maintains separate calibration and test counts."""
+    cases, outputs = make_synthetic_benchmark_data(n=30, seed=42)
+    evaluator = ConformalBenchmarkEvaluator(seed=42)
+
+    cal_cases, test_cases = cases[:15], cases[15:]
+    cal_outs, test_outs = outputs[:15], outputs[15:]
+
+    results = evaluator.run_calibration_sizing_ablation(
+        cases=cal_cases,
+        outputs=cal_outs,
+        eval_cases=test_cases,
+        eval_outputs=test_outs,
+        sizes=[250, 500],
+    )
+
+    assert len(results) == 2
+    for r in results:
+        assert isinstance(r, SizingAblationResult)
+        assert r.held_out_test_sample_count == 15
+        assert r.synthetic_calibration_resample_size in (250, 500)
+        assert r.evaluation_type == "methodology_algorithm_test"
+        assert "N_cal=" in r.resampling_specification
+        assert "Tier 1 algorithm test" in r.limitation_note
+
+
+def test_atk03_metric_sensitivity_classification() -> None:
+    """Verify ATK-03 hallucinated citations is classified as metric sensitivity test."""
+    cases, _ = make_synthetic_benchmark_data(n=20, seed=42)
+    evaluator = AdversarialBenchmarkEvaluator(seed=42)
+
+    atk3 = evaluator.evaluate_atk03_hallucinated_citations(cases)
+    assert atk3.classification == "known_metric_sensitivity_harness_test"
+    assert atk3.empirical_robustness_certified is False
+    assert atk3.metric_name == "Retrieval Scrutiny Score (Ungrounded Citation Risk)"
+    assert "measures token absence rather than semantic deception" in atk3.robustness_limitation_note
+
+
+def test_dataset_loaders_native_sizes() -> None:
+    """Verify loaders publish literature-native academic corpus requirements and split targets."""
+    loaders: list[tuple[Any, str, int, int]] = [
+        (HaluEvalLoader(), "HaluEval", 10000, 10),
+        (TruthfulQALoader(), "TruthfulQA", 817, 8),
+        (FActScoreLoader(), "FActScore", 183, 4),
+        (MMHALBenchLoader(), "MMHAL-Bench", 96, 8),
+    ]
+
+    for loader, name, expected_native, expected_tier1 in loaders:
+        meta: dict[str, Any] = loader.dataset_metadata
+        assert meta["dataset_name"] == name
+        assert meta["native_academic_corpus_size"] == expected_native
+        assert meta["tier_2_target_sample_size"] == expected_native
+        assert meta["tier_1_sample_count"] == expected_tier1
+        assert meta["statistical_power"] == "insufficient_for_asymptotic_claims_in_tier_1"

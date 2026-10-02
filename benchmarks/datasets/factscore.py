@@ -4,6 +4,7 @@ Reference:
     Min et al., 'FActScore: Fine-grained Atomic Evaluation of Factual Precision in Long Form Text Generation', EMNLP 2023.
 """
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -62,11 +63,33 @@ CURATED_FACTSCORE_SAMPLES: list[dict[str, Any]] = [
 ]
 
 
+def get_factscore_fixture_fingerprint() -> str:
+    """Compute deterministic SHA-256 fingerprint of the curated FActScore fixture samples."""
+    serialized = json.dumps(CURATED_FACTSCORE_SAMPLES, sort_keys=True)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
 class FActScoreLoader:
     """Streams and loads FActScore biography evaluation cases."""
 
     def __init__(self, dataset_path: str | Path | None = None) -> None:
         self.dataset_path = Path(dataset_path) if dataset_path else None
+
+    @property
+    def dataset_metadata(self) -> dict[str, Any]:
+        """Provenance metadata for FActScore evaluation split."""
+        is_curated = not self.dataset_path or not self.dataset_path.exists()
+        return {
+            "dataset_name": "FActScore",
+            "version": "EMNLP 2023",
+            "corpus_type": "curated_demonstration_split" if is_curated else "external_academic_corpus",
+            "sample_count": len(CURATED_FACTSCORE_SAMPLES) if is_curated else "external_file",
+            "sha256_hash": get_factscore_fixture_fingerprint() if is_curated else "external_path",
+            "unit_of_evaluation": "atomic-claim and response-level (biography domain)",
+            "ground_truth_source": "Min et al. human-annotated Wikipedia atomic facts",
+            "license": "MIT License",
+            "academic_reference": "Min et al., 'FActScore: Fine-grained Atomic Evaluation of Factual Precision in Long Form Text Generation', EMNLP 2023.",
+        }
 
     def load_cases(self, limit: int | None = None) -> list[BenchmarkCase]:
         """Load benchmark cases from curated sample or external file."""

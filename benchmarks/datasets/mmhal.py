@@ -5,6 +5,8 @@ Reference:
     and the MMHAL-Bench Benchmark', 2023.
 """
 
+import hashlib
+import json
 from collections.abc import Sequence
 from typing import Any
 
@@ -96,11 +98,33 @@ CURATED_MMHAL_SAMPLES: list[dict[str, Any]] = [
 ]
 
 
+def get_mmhal_fixture_fingerprint() -> str:
+    """Compute deterministic SHA-256 fingerprint of the curated MMHAL-Bench fixture samples."""
+    serialized = json.dumps(CURATED_MMHAL_SAMPLES, sort_keys=True)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
 class MMHALBenchLoader:
     """Loader for MMHAL-Bench multimodal hallucination benchmark."""
 
     def __init__(self, raw_samples: Sequence[dict[str, Any]] | None = None) -> None:
         self.samples = raw_samples or CURATED_MMHAL_SAMPLES
+
+    @property
+    def dataset_metadata(self) -> dict[str, Any]:
+        """Provenance metadata for MMHAL-Bench evaluation split."""
+        is_curated = self.samples == CURATED_MMHAL_SAMPLES
+        return {
+            "dataset_name": "MMHAL-Bench",
+            "version": "Sun et al. 2023",
+            "corpus_type": "curated_demonstration_split" if is_curated else "custom_split",
+            "sample_count": len(self.samples),
+            "sha256_hash": get_mmhal_fixture_fingerprint() if is_curated else "custom_samples",
+            "unit_of_evaluation": "multimodal question-answering with synthetic image fixtures",
+            "ground_truth_source": "Sun et al. MMHAL-Bench image-grounded queries",
+            "license": "Apache-2.0",
+            "academic_reference": "Sun et al., 'Aligning Large Multimodal Models with Factually Constrained RLHF and the MMHAL-Bench Benchmark', 2023.",
+        }
 
     def load_cases(self, limit: int | None = None) -> list[BenchmarkCase]:
         """Convert MMHAL-Bench samples into standardized BenchmarkCase instances."""

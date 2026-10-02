@@ -4,6 +4,7 @@ Reference:
     Lin et al., 'TruthfulQA: Measuring How Models Mimic Human Falsehoods', ACL 2022.
 """
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -98,11 +99,33 @@ CURATED_TRUTHFULQA_SAMPLES: list[dict[str, Any]] = [
 ]
 
 
+def get_truthfulqa_fixture_fingerprint() -> str:
+    """Compute deterministic SHA-256 fingerprint of the curated TruthfulQA fixture samples."""
+    serialized = json.dumps(CURATED_TRUTHFULQA_SAMPLES, sort_keys=True)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
 class TruthfulQALoader:
     """Streams and loads TruthfulQA benchmark instances for zero-shot generalization testing."""
 
     def __init__(self, dataset_path: str | Path | None = None) -> None:
         self.dataset_path = Path(dataset_path) if dataset_path else None
+
+    @property
+    def dataset_metadata(self) -> dict[str, Any]:
+        """Provenance metadata for TruthfulQA evaluation split."""
+        is_curated = not self.dataset_path or not self.dataset_path.exists()
+        return {
+            "dataset_name": "TruthfulQA",
+            "version": "ACL 2022",
+            "corpus_type": "curated_demonstration_split" if is_curated else "external_academic_corpus",
+            "sample_count": len(CURATED_TRUTHFULQA_SAMPLES) if is_curated else "external_file",
+            "sha256_hash": get_truthfulqa_fixture_fingerprint() if is_curated else "external_path",
+            "unit_of_evaluation": "example-level (adversarial false assertions vs factual answers)",
+            "ground_truth_source": "Lin et al. TruthfulQA benchmark human validated falsehoods",
+            "license": "Apache-2.0",
+            "academic_reference": "Lin et al., 'TruthfulQA: Measuring How Models Mimic Human Falsehoods', ACL 2022.",
+        }
 
     def load_cases(self, limit: int | None = None) -> list[BenchmarkCase]:
         """Load benchmark cases from curated sample or from external file."""

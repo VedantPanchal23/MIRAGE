@@ -4,6 +4,7 @@ Reference:
     Li et al., 'HaluEval: A Large-Scale Hallucination Evaluation Benchmark for LLMs', EMNLP 2023.
 """
 
+import hashlib
 import json
 from pathlib import Path
 from typing import Any
@@ -119,11 +120,33 @@ CURATED_HALUEVAL_SAMPLES: list[dict[str, Any]] = [
 ]
 
 
+def get_halueval_fixture_fingerprint() -> str:
+    """Compute deterministic SHA-256 fingerprint of the curated HaluEval fixture samples."""
+    serialized = json.dumps(CURATED_HALUEVAL_SAMPLES, sort_keys=True)
+    return hashlib.sha256(serialized.encode("utf-8")).hexdigest()
+
+
 class HaluEvalLoader:
     """Streams and loads HaluEval benchmark cases."""
 
     def __init__(self, dataset_path: str | Path | None = None) -> None:
         self.dataset_path = Path(dataset_path) if dataset_path else None
+
+    @property
+    def dataset_metadata(self) -> dict[str, Any]:
+        """Provenance metadata for HaluEval evaluation split."""
+        is_curated = not self.dataset_path or not self.dataset_path.exists()
+        return {
+            "dataset_name": "HaluEval",
+            "version": "EMNLP 2023",
+            "corpus_type": "curated_demonstration_split" if is_curated else "external_academic_corpus",
+            "sample_count": len(CURATED_HALUEVAL_SAMPLES) if is_curated else "external_file",
+            "sha256_hash": get_halueval_fixture_fingerprint() if is_curated else "external_path",
+            "unit_of_evaluation": "example-level (dialogue, qa, summarization)",
+            "ground_truth_source": "HaluEval 2023 human & LLM-annotated hallucination benchmark",
+            "license": "MIT License",
+            "academic_reference": "Li et al., 'HaluEval: A Large-Scale Hallucination Evaluation Benchmark for LLMs', EMNLP 2023.",
+        }
 
     def load_cases(self, limit: int | None = None) -> list[BenchmarkCase]:
         """Load benchmark cases from curated sample or from external file."""

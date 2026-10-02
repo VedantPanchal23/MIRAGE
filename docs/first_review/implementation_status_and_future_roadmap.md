@@ -89,15 +89,17 @@ gantt
 * k6 distributed performance benchmarking validating sub-3000ms P95 latency and >33 req/s throughput under 100 concurrent users.
 * Reusable Toxiproxy network fault-injection harness validating all 10 chaos scenarios (Redis kill, Qdrant kill, NLI/LLaVA/FLAN-T5 offline, RabbitMQ partition, PostgreSQL offline, LLM latency injection, and container failure recovery) with zero unhandled 500 crashes and deterministic graceful degradation.
 
-### Phase P4: Comprehensive Benchmark Evaluation & Scientific Certification (COMPLETED)
-* **7 Published Baselines (`benchmarks/baselines.py`)**: Rigorously evaluated against Raw LLM, SelfCheckGPT-BERTScore, SelfCheckGPT-NLI, FACTSCORE, CLIP-only, Uncalibrated Ensemble, and Standard Split CP.
-* **12-Configuration Systematic Ablation Study (`benchmarks/ablations.py`)**: Full ablation analysis with Bonferroni correction isolating RAV, SCS, NLI, VGS, ICS, and SE signals.
+### Phase P4: Comprehensive Benchmark Evaluation Framework (HARNESS & TIER 1 COMPLETED / TIER 2 FULL CORPUS PENDING)
+* **Tier 1 Demonstration Suite ($N=30$)**: Fully functional execution through live MIRAGE pipeline (`VerificationOrchestrator`), PostgreSQL RLS, audit log hashing, and LightGBM meta-learner.
+* **7 Literature Baselines & Heuristic Proxies (`benchmarks/baselines.py`)**: Evaluated against Raw LLM Prior (B1), SelfCheckGPT-BERTScore Proxy (B2), SelfCheckGPT-NLI Proxy (B3), FACTSCORE Proxy (B4), CLIP-only Proxy (B5), Uncalibrated Meta-Learner (B6), and Standard Marginal Split CP (B7).
+* **12-Configuration Systematic Ablation Study (`benchmarks/ablations.py`)**: Full ablation analysis with Bonferroni multiple-comparison correction isolating RAV, SCS, NLI, VGS, ICS, and SE signals.
 * **3-Way Post-Hoc Calibration Benchmark (`benchmarks/calibration_bench.py`)**: Isotonic Regression vs. Platt Scaling vs. Temperature Scaling across 15-bin ECE/MCE/Brier and cross-domain transfer to TruthfulQA and FActScore.
-* **Mondrian Group-Conditional Conformal Prediction (`benchmarks/conformal_bench.py`)**: Guaranteed valid coverage ($\ge 94.5\%$ marginal, $\ge 93.5\%$ conditional) across 4 risk tiers and 5 claim types, plus calibration sizing ablation ($N \in \{250, 500, 1000, 2000\}$).
-* **Cross-Model Generalization Testing (`benchmarks/cross_model.py`)**: Verified invariance across Llama 3.1 70B, Mixtral 8x7B, and Gemma 2 27B ($F_1 > 0.85$, $\text{ECE} < 0.050$).
-* **Adversarial Robustness Testing Suite (`benchmarks/adversarial_bench.py`)**: Validated resilience against epistemic hedging ($\Delta F_1 < 0.04$), confidence manipulation, fake academic citations, and poisoned retrieval contexts.
-* **Statistical Significance Engine (`benchmarks/significance.py`)**: 10,000-resample paired bootstrap hypothesis testing, McNemar's tests, 95% bootstrap CIs, and Cohen's $d$.
-* **Reproducibility CLI & Vector SVGs**: One-click runner `scripts/run_benchmarks.py` and 6 publication SVGs rendered into `docs/figures/`.
+* **Mondrian Group-Conditional Conformal Prediction (`benchmarks/conformal_bench.py`)**: Evaluated across 4 risk tiers and 5 claim types, plus calibration sizing ablation ($N \in \{250, 500, 1000, 2000\}$) using finite-sample bootstrap non-conformity quantiles.
+* **Cross-Model Generalization Testing (`benchmarks/cross_model.py`)**: Evaluated via controlled stylistic perturbation simulation modeling Llama 3.1 70B, Mixtral 8x7B, and Gemma 2 27B generator nuance.
+* **Adversarial Robustness Testing Suite (`benchmarks/adversarial_bench.py`)**: Evaluated via programmatic algorithmic text transformations against epistemic hedging (ATK-01), confidence manipulation (ATK-02), fake citations (ATK-03), and poisoned retrieval contexts (ATK-04).
+* **Statistical Significance Engine (`benchmarks/significance.py`)**: Paired bootstrap hypothesis testing, McNemar's tests, 95% bootstrap CIs, and Cohen's $d$.
+* **Reproducibility CLI & Vector SVGs**: One-click runner `scripts/run_benchmarks.py` exporting auditable JSON reports (`results/benchmark_report_p4.json`) and 6 publication SVGs rendered into `docs/figures/`.
+* **Academic Certification Status**: Tier 1 functional validation passed in CI; final empirical certification against governing Section 17 asymptotic criteria requires Tier 2 execution on full external academic corpora ($N \ge 1,000$).
 
 ---
 
@@ -105,6 +107,7 @@ gantt
 
 ### Phase P5: Research Paper Submission & Final Project Defense (January 2027)
 * Finalizing academic manuscript: *"MIRAGE: Calibrated Multi-Signal Verification and Autonomous Remediation Middleware for Production LLMs"*.
+* Executing Tier 2 full-scale academic corpus runs ($N \ge 1,000$) on external GPU compute.
 * Target submission: High-impact AI Safety / NLP workshop or conference.
 * Final presentation, faculty audit, and capstone engineering defense.
 
@@ -118,5 +121,6 @@ gantt
 | **Phase P1** | September 2026 | Full REST API Conformance (`/v1/sessions/{id}`, `/v1/alerts`, `/v1/reports`, `/v1/kb/upload`, S3/Local abstraction). | **COMPLETED** |
 | **Phase P2** | October 2026 | React 18 Drift Dashboard, interactive SHAP waterfall views, WebSocket streaming UI (140/140 Tests). | **COMPLETED** |
 | **Phase P3** | November 2026 | k6 load testing (100 users, $P95 < 3$s) and 10 Toxiproxy chaos resilience scenarios. | **COMPLETED** |
-| **Phase P4** | December 2026 | 7 Baselines, 12 Ablations, 3-Way Calibration, Mondrian CP, Cross-Model, Adversarial Suite, Bootstrap Tests, CLI & SVGs. | **COMPLETED** |
-| **Phase P5** | January 2027 | Research paper draft submission and final capstone project defense. | **PLANNED** |
+| **Phase P4** | December 2026 | 7 Baselines/Proxies, 12 Ablations, 3-Way Calibration, Mondrian CP, Cross-Model Sim, Adversarial Suite, CLI & SVGs. | **COMPLETED (Harness & Tier 1) / PENDING (Tier 2 Corpus)** |
+| **Phase P5** | January 2027 | Full-scale corpus execution, research paper draft submission, and final capstone project defense. | **PLANNED** |
+

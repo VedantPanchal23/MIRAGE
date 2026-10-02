@@ -183,6 +183,14 @@ def test_baseline_evaluator_execution() -> None:
 
     for res in results:
         assert isinstance(res, BaselineResult)
+        assert res.implementation_fidelity in (
+            "Baseline Prior",
+            "Heuristic Proxy",
+            "Architectural Ablation",
+            "Methodological Variant",
+        )
+        assert res.literature_citation != ""
+        assert res.algorithm_details != ""
         assert 0.0 <= res.classification_metrics.get("macro_f1", 0.0) <= 1.0
         assert 0.0 <= res.ece <= 1.0
         assert 0.0 <= res.brier_score <= 1.0
@@ -263,6 +271,7 @@ def test_conformal_benchmark_evaluator() -> None:
     for s in sizing:
         assert isinstance(s, SizingAblationResult)
         assert s.calibration_size in (250, 500, 1000, 2000)
+        assert s.quantile_estimation_method == "bootstrap_non_conformity_quantile"
         assert 0.0 <= s.empirical_coverage <= 1.0
 
 
@@ -286,6 +295,7 @@ def test_cross_model_generalization_evaluator() -> None:
 
     for r in results:
         assert isinstance(r, ModelFamilyResult)
+        assert r.evaluation_type == "Controlled Stylistic Perturbation Simulation"
         assert r.target_f1_met is True
         assert r.target_ece_met is True
 
@@ -303,21 +313,25 @@ def test_adversarial_benchmark_evaluator() -> None:
     atk1 = evaluator.evaluate_atk01_hedged_phrasing(cases, outputs)
     assert isinstance(atk1, AdversarialAttackResult)
     assert atk1.attack_id == "ATK-01"
+    assert atk1.perturbation_type == "algorithmic_text_transformation"
     assert atk1.target_criteria_met is True
 
     atk2 = evaluator.evaluate_atk02_confidence_injection(cases, outputs)
     assert isinstance(atk2, AdversarialAttackResult)
     assert atk2.attack_id == "ATK-02"
+    assert atk2.perturbation_type == "algorithmic_text_transformation"
     assert atk2.target_criteria_met is True
 
     atk3 = evaluator.evaluate_atk03_hallucinated_citations(cases)
     assert isinstance(atk3, AdversarialAttackResult)
     assert atk3.attack_id == "ATK-03"
+    assert atk3.perturbation_type == "algorithmic_text_transformation"
     assert atk3.target_criteria_met is True
 
     atk4 = evaluator.evaluate_atk04_evidence_poisoning(cases, outputs)
     assert isinstance(atk4, AdversarialAttackResult)
     assert atk4.attack_id == "ATK-04"
+    assert atk4.perturbation_type == "algorithmic_text_transformation"
     assert atk4.target_criteria_met is True
 
     all_attacks = evaluator.evaluate_all_attacks(cases, outputs)

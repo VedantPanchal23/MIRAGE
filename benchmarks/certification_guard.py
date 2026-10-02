@@ -205,6 +205,35 @@ class BenchmarkCertificationGuard:
             )
 
         # ----------------------------------------------------------------------
+        # Check 7: Complete Suite Execution (No Partial Run Certification)
+        # ----------------------------------------------------------------------
+        has_all_datasets = len(datasets) == 4
+        has_all_baselines = len(baselines) == 7
+        has_all_cross_model = len(cross_model) == 3
+        has_all_adversarial = len(adversarial) == 4
+        has_calibration = len(cal_results) >= 3
+
+        check_7_passed = (
+            has_all_datasets and has_all_baselines and has_all_cross_model and has_all_adversarial and has_calibration
+        )
+        gate_checks["complete_suite_execution"] = {
+            "passed": check_7_passed,
+            "has_all_datasets": has_all_datasets,
+            "has_all_baselines": has_all_baselines,
+            "has_all_cross_model": has_all_cross_model,
+            "has_all_adversarial": has_all_adversarial,
+            "has_calibration": has_calibration,
+            "description": (
+                "All benchmark suites (datasets, baselines, ablations, calibration, "
+                "cross-model, adversarial) must execute fully."
+            ),
+        }
+        if not check_7_passed:
+            unmet_prerequisites.append(
+                "Partial evaluation run detected; full scientific certification requires complete suite execution."
+            )
+
+        # ----------------------------------------------------------------------
         # Determination: Tier 1 vs Tier 2
         # ----------------------------------------------------------------------
         all_passed = (
@@ -214,6 +243,7 @@ class BenchmarkCertificationGuard:
             and check_4_passed
             and check_5_passed
             and check_6_passed
+            and check_7_passed
         )
 
         tier_1_ready = len(datasets) == 4 and len(baselines) == 7 and len(cross_model) == 3

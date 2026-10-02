@@ -42,6 +42,7 @@ from benchmarks.evaluator import (
     BenchmarkResult,
     evaluate_benchmark_outputs,
 )
+from benchmarks.preflight import Tier2PreflightValidator, format_preflight_table
 from benchmarks.runner import BenchmarkRunner
 from shared.logging import get_logger
 
@@ -518,6 +519,18 @@ def main() -> None:
         default="all",
         help="Evaluation suite to execute (default: all)",
     )
+    parser.add_argument(
+        "--tier",
+        type=int,
+        choices=[1, 2],
+        default=1,
+        help="Evaluation tier (1: demonstration harness, 2: full academic execution)",
+    )
+    parser.add_argument(
+        "--preflight",
+        action="store_true",
+        help="Run Tier 2 preflight validation checks and exit",
+    )
     parser.add_argument("--limit", type=int, default=None, help="Optional case limit per benchmark")
     parser.add_argument("--concurrency", type=int, default=4, help="Concurrency workers (1-8)")
     parser.add_argument("--seed", type=int, default=42, help="Deterministic random seed (default: 42)")
@@ -528,6 +541,25 @@ def main() -> None:
     parser.add_argument("--mmhal-path", default=None, help="Optional external MMHAL-Bench path")
 
     args = parser.parse_args()
+
+    # Tier 2 preflight validation gate (must pass before inference starts)
+    if args.preflight or args.tier == 2:
+        validator = Tier2PreflightValidator(
+            halueval_path=args.halueval_path,
+            truthfulqa_path=args.truthfulqa_path,
+            factscore_path=args.factscore_path,
+            mmhal_path=args.mmhal_path,
+            output_dir=args.output_dir,
+            seed=args.seed,
+        )
+        preflight_result = validator.run_preflight()
+        print(format_preflight_table(preflight_result))
+        if not preflight_result.success:
+            print("ERROR: Tier 2 preflight validation failed. Academic execution halted (fail-closed).\n")
+            sys.exit(1)
+        if args.preflight:
+            sys.exit(0)
+
     report = asyncio.run(execute_phase4_benchmarks(args))
     print_cli_summary_tables(report)
 

@@ -58,6 +58,13 @@ from benchmarks.evaluator import (
     BenchmarkCase,
     BenchmarkOutput,
 )
+from benchmarks.manifest import (
+    build_manifest_payload,
+)
+from benchmarks.preflight import (
+    Tier2PreflightValidator,
+    format_preflight_table,
+)
 from benchmarks.significance import (
     apply_bonferroni_correction,
     compute_cohens_d,
@@ -546,3 +553,191 @@ def test_dataset_loaders_native_sizes() -> None:
         assert meta["tier_2_target_sample_size"] == expected_native
         assert meta["tier_1_sample_count"] == expected_tier1
         assert meta["statistical_power"] == "insufficient_for_asymptotic_claims_in_tier_1"
+
+
+def test_tier2_manifest_schema_and_integrity() -> None:
+    """Verify Tier 2 execution manifest adheres to all literature specifications and required attributes."""
+    manifest = build_manifest_payload()
+    assert manifest["manifest_version"] == "2.1.0-tier2-readiness"
+    assert manifest["protocol_status"] == "FROZEN"
+    assert len(manifest["manifest_sha256"]) == 64
+    assert manifest["total_experiments"] == 10
+
+    # Verify native corpora requirements
+    corpora = manifest["target_academic_corpora"]
+    assert corpora["HaluEval"]["native_samples"] == 10000
+    assert corpora["TruthfulQA"]["native_samples"] == 817
+    assert corpora["FActScore"]["native_samples"] == 183
+    assert corpora["MMHAL-Bench"]["native_samples"] == 96
+
+    # Verify live generator targets
+    live_models = manifest["target_live_generator_models"]
+    assert "meta-llama/Meta-Llama-3-70B-Instruct" in live_models
+    assert "mistralai/Mixtral-8x7B-Instruct-v0.1" in live_models
+    assert "google/gemma-2-27b-it" in live_models
+
+    # Verify hardware environment specification
+    hw = manifest["hardware_environment"]
+    assert "RTX 3050" in hw["local_gpu"]
+    assert hw["local_vram_mb"] == 6144
+
+    # Verify all 19 attributes on every experiment
+    required_keys = [
+        "experiment_id",
+        "benchmark_dataset",
+        "dataset_version",
+        "acquisition_source",
+        "expected_native_sample_count",
+        "actual_sample_count",
+        "split",
+        "deterministic_seed",
+        "calibration_count",
+        "test_count",
+        "model_checkpoint",
+        "provider_runtime",
+        "generation_parameters",
+        "benchmark_metric",
+        "acceptance_threshold",
+        "statistical_test",
+        "confidence_interval_method",
+        "required_hardware",
+        "expected_artifact_path",
+        "certification_gate_dependency",
+    ]
+    for exp in manifest["experiments"]:
+        for key in required_keys:
+            assert key in exp, f"Missing {key} in experiment {exp.get('experiment_id')}"
+
+
+def test_tier2_preflight_fails_closed_in_incomplete_environment() -> None:
+    """Verify Tier 2 preflight fails closed with actionable diagnostics in default environment."""
+    validator = Tier2PreflightValidator()
+    result = validator.run_preflight()
+
+    # Must fail closed
+    assert result.success is False
+    assert result.status == "PREFLIGHT_FAILED"
+    assert len(result.unmet_checks) > 0
+    assert "dataset_presence_and_fixtures" in result.unmet_checks
+    assert "native_sample_counts" in result.unmet_checks
+    assert "live_generator_credentials" in result.unmet_checks
+
+    # Verify diagnostics and remediations exist
+    assert len(result.diagnostics) >= 3
+    assert len(result.remediations) >= 3
+    assert any("HaluEval" in d for d in result.diagnostics)
+
+    # Formatted table renders correctly
+    table_text = format_preflight_table(result)
+    assert "PREFLIGHT BLOCKED" in table_text
+    assert "Accidental certification blocked (fail-closed)" in table_text
+
+
+def test_tier2_preflight_blocks_fixture_selection(tmp_path: Path) -> None:
+    """Verify preflight rejects any dataset path pointing to internal fixture files."""
+    fixture_dir = tmp_path / "fixtures"
+    fixture_dir.mkdir(parents=True, exist_ok=True)
+    fake_halueval = fixture_dir / "halueval_fixture.json"
+    fake_halueval.write_text("[]", encoding="utf-8")
+
+    validator = Tier2PreflightValidator(halueval_path=fake_halueval)
+    result = validator.run_preflight()
+    assert result.success is False
+    assert not result.checks["dataset_presence_and_fixtures"]["passed"]
+    assert "fixture" in result.checks["dataset_presence_and_fixtures"]["details"].lower()
+
+
+def test_certification_guard_blocks_partial_run() -> None:
+    """Verify BenchmarkCertificationGuard blocks partial benchmark runs from being certified."""
+    guard = BenchmarkCertificationGuard()
+
+    # Report missing adversarial and cross_model
+    partial_report: dict[str, Any] = {
+        "datasets": {
+            "HaluEval": {"sample_count": 10000},
+            "TruthfulQA": {"sample_count": 817},
+            "FActScore": {"sample_count": 183},
+            "MMHAL-Bench": {"sample_count": 96},
+        },
+        "dataset_provenance": {
+            "HaluEval": {"corpus_type": "external_academic_corpus"},
+            "TruthfulQA": {"corpus_type": "external_academic_corpus"},
+            "FActScore": {"corpus_type": "external_academic_corpus"},
+            "MMHAL-Bench": {"corpus_type": "external_academic_corpus"},
+        },
+        "baselines": [
+            {"baseline_id": "B1", "baseline_name": "B1", "implementation_fidelity": "Published Reference"},
+            {"baseline_id": "B2", "baseline_name": "B2 Proxy", "implementation_fidelity": "Heuristic Proxy"},
+            {"baseline_id": "B3", "baseline_name": "B3 Proxy", "implementation_fidelity": "Heuristic Proxy"},
+            {"baseline_id": "B4", "baseline_name": "B4 Proxy", "implementation_fidelity": "Heuristic Proxy"},
+            {"baseline_id": "B5", "baseline_name": "B5 Proxy", "implementation_fidelity": "Heuristic Proxy"},
+            {"baseline_id": "B6", "baseline_name": "B6", "implementation_fidelity": "Published Reference"},
+            {"baseline_id": "B7", "baseline_name": "B7", "implementation_fidelity": "Published Reference"},
+        ],
+        "cross_model_generalization": [],  # Missing!
+        "adversarial_robustness": [],  # Missing!
+        "calibration_3way": [{"method": "isotonic", "fitting_sample_count": 1000, "evaluation_sample_count": 1000}],
+    }
+
+    audit = guard.audit_certification_readiness(partial_report)
+    assert not audit.is_certified
+    assert audit.status == "TIER_1_HARNESS_COMPLETE"
+    assert not audit.gate_checks["complete_suite_execution"]["passed"]
+    assert any("Partial evaluation run detected" in p for p in audit.unmet_prerequisites)
+
+
+def test_certification_guard_blocks_simulated_generators_even_with_large_n() -> None:
+    """Verify BenchmarkCertificationGuard rejects simulation even if sample sizes are large."""
+    guard = BenchmarkCertificationGuard()
+
+    report: dict[str, Any] = {
+        "datasets": {
+            "HaluEval": {"sample_count": 10000},
+            "TruthfulQA": {"sample_count": 817},
+            "FActScore": {"sample_count": 183},
+            "MMHAL-Bench": {"sample_count": 96},
+        },
+        "dataset_provenance": {
+            "HaluEval": {"corpus_type": "external_academic_corpus"},
+            "TruthfulQA": {"corpus_type": "external_academic_corpus"},
+            "FActScore": {"corpus_type": "external_academic_corpus"},
+            "MMHAL-Bench": {"corpus_type": "external_academic_corpus"},
+        },
+        "baselines": [
+            {"baseline_id": "B1", "baseline_name": "B1", "implementation_fidelity": "Published Reference"},
+            {"baseline_id": "B2", "baseline_name": "B2 Proxy", "implementation_fidelity": "Heuristic Proxy"},
+            {"baseline_id": "B3", "baseline_name": "B3 Proxy", "implementation_fidelity": "Heuristic Proxy"},
+            {"baseline_id": "B4", "baseline_name": "B4 Proxy", "implementation_fidelity": "Heuristic Proxy"},
+            {"baseline_id": "B5", "baseline_name": "B5 Proxy", "implementation_fidelity": "Heuristic Proxy"},
+            {"baseline_id": "B6", "baseline_name": "B6", "implementation_fidelity": "Published Reference"},
+            {"baseline_id": "B7", "baseline_name": "B7", "implementation_fidelity": "Published Reference"},
+        ],
+        "cross_model_generalization": [
+            {"model_name": "Llama-3-70B-Instruct", "evaluation_type": "Stylistic Simulation (Temperature/Top-p)"},
+            {"model_name": "Mixtral-8x7B-Instruct", "evaluation_type": "Stylistic Simulation (Temperature/Top-p)"},
+            {"model_name": "Gemma-2-27B-IT", "evaluation_type": "Stylistic Simulation (Temperature/Top-p)"},
+        ],
+        "adversarial_robustness": [
+            {"attack_id": "ATK-01", "empirical_robustness_certified": True},
+            {"attack_id": "ATK-02", "empirical_robustness_certified": True},
+            {
+                "attack_id": "ATK-03",
+                "empirical_robustness_certified": False,
+                "classification": "known_metric_sensitivity_harness_test",
+            },
+            {"attack_id": "ATK-04", "empirical_robustness_certified": True},
+        ],
+        "calibration_3way": [
+            {"method": "isotonic", "fitting_sample_count": 1000, "evaluation_sample_count": 1000},
+            {"method": "platt", "fitting_sample_count": 1000, "evaluation_sample_count": 1000},
+            {"method": "temperature", "fitting_sample_count": 1000, "evaluation_sample_count": 1000},
+        ],
+    }
+
+    audit = guard.audit_certification_readiness(report)
+    assert not audit.is_certified
+    assert audit.status == "TIER_1_HARNESS_COMPLETE"
+    assert not audit.gate_checks["live_generator_execution"]["passed"]
+    assert any(
+        "Cross-model evaluation executed via stylistic perturbation simulation" in p for p in audit.unmet_prerequisites
+    )

@@ -105,6 +105,23 @@ Four attack vectors evaluate robustness via programmatic algorithmic text transf
 - `scripts/run_benchmarks.py`: Provides deterministic, argument-driven CLI execution (`--benchmark all`, `--seed 42`) with fixed random seed, logging, formatted tabular summaries, machine-checkable certification audit table, and JSON serialization to `results/benchmark_report_p4.json`.
 - `scripts/generate_figures.py`: Generates 6 publication-ready vector SVGs in `docs/figures/`, with explicit "Heuristic Proxy" qualifiers on baseline curves.
 
+### 9. Tier 2 Execution Manifest & Preflight Validation Engine
+To prepare for large-scale external academic benchmark runs without risking premature certification, Phase P4 establishes an auditable manifest and fail-closed preflight engine:
+- **Authoritative Execution Manifest (`benchmarks/manifest.py` & `benchmarks/tier2_manifest.json`)**:
+  - Encodes all 10 Tier 2 experiment specifications across 19 literature-defined parameters: benchmark/dataset, exact version, acquisition source, native sample count, actual count, split, seed, calibration count, test count, model/checkpoint, provider/runtime, generation parameters, benchmark metric, acceptance threshold, statistical test, confidence interval method, required hardware, expected artifact path, and certification-gate dependency.
+  - Seals the manifest with SHA-256 fingerprint (`status: FROZEN`).
+- **Fail-Closed Preflight Validation Engine (`benchmarks/preflight.py`)**:
+  - Executes comprehensive pre-inference verification before any Tier 2 evaluation can proceed:
+    1. Dataset presence and fixture rejection across all 4 external corpora.
+    2. Literature-native sample count verification (HaluEval: 10,000; TruthfulQA: 817; FActScore: 183; MMHAL: 96).
+    3. Live generator API credential verification (rejecting simulation).
+    4. Hardware runtime verification (detects NVIDIA GeForce RTX 3050 6GB Laptop GPU and verifies local verifier memory fit while noting remote inference requirement for 70B models).
+    5. Calibration/test split disjointness ($S_{\text{cal}} \cap S_{\text{test}} = \emptyset$).
+    6. Manifest SHA-256 immutability verification.
+    7. Clean/versioned output directory validation.
+    8. Git commit SHA auditable logging.
+  - Automatically halts execution with exit code 1 and actionable diagnostics if any prerequisite is unmet (`scripts/run_benchmarks.py --tier 2` or `--preflight`).
+
 ---
 
 ## Consequences

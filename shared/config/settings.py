@@ -72,7 +72,6 @@ class Settings(BaseSettings):
     redis_max_connections: int = Field(default=50)
     redis_socket_timeout: float = Field(default=2.0)
     redis_socket_connect_timeout: float = Field(default=2.0)
-    redis_rate_limit_fail_closed: bool = Field(default=True)
 
     # --------------------------------------------------------------------------
     # RabbitMQ & Celery (P0.5)

@@ -83,9 +83,10 @@ class PDFReportGenerator:
 
         # Header
         elements.append(Paragraph("MIRAGE Factual Consistency Certificate", title_style))
+        issued_ts = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
         elements.append(
             Paragraph(
-                f"Autonomous Multimodal Hallucination Verification Ledger &bull; Issued {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+                f"Autonomous Multimodal Hallucination Verification Ledger &bull; Issued {issued_ts}",
                 subtitle_style,
             )
         )
@@ -327,19 +328,21 @@ class PDFReportGenerator:
 
         # Document Header
         elements.append(Paragraph(f"MIRAGE Compliance Audit Report: {title}", title_style))
+        gen_ts = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
         elements.append(
             Paragraph(
-                f"Report ID: {report_id} &bull; Tenant: {tenant_id} &bull; Generated: {datetime.now(UTC).strftime('%Y-%m-%d %H:%M:%S UTC')}",
+                f"Report ID: {report_id} &bull; Tenant: {tenant_id} &bull; Generated: {gen_ts}",
                 subtitle_style,
             )
         )
         elements.append(HRFlowable(width="100%", thickness=1.5, color=colors.HexColor("#2563eb"), spaceAfter=12))
 
         # Scope Table
+        window_str = f"{start_date.strftime('%Y-%m-%d %H:%M')} to {end_date.strftime('%Y-%m-%d %H:%M')} UTC"
         scope_data = [
             [
                 Paragraph("<b>Audit Window:</b>", body_style),
-                Paragraph(f"{start_date.strftime('%Y-%m-%d %H:%M')} to {end_date.strftime('%Y-%m-%d %H:%M')} UTC", body_style),
+                Paragraph(window_str, body_style),
                 Paragraph("<b>Model Filter:</b>", body_style),
                 Paragraph(model_id or "All Models", body_style),
             ],
@@ -376,9 +379,10 @@ class PDFReportGenerator:
         crit_c = tier_counts.get("CRITICAL", 0)
         corr_rate = float(summary.get("correction_rate", 0.0)) * 100
 
+        hrs_status = "Within Target (<0.20)" if mean_hrs < 0.20 else "Elevated"
         summary_rows = [
             ["Metric", "Value", "Benchmark / Status"],
-            ["Mean Hallucination Risk (HRS)", f"{mean_hrs:.4f}", "Within Target (<0.20)" if mean_hrs < 0.20 else "Elevated"],
+            ["Mean Hallucination Risk (HRS)", f"{mean_hrs:.4f}", hrs_status],
             ["LOW Risk Sessions", str(low_c), "Compliant"],
             ["MEDIUM Risk Sessions", str(med_c), "Monitored"],
             ["HIGH Risk Sessions", str(high_c), "Requires Inspection" if high_c > 0 else "None"],
@@ -453,7 +457,8 @@ class PDFReportGenerator:
         report_sig = compute_sha256(raw_seal)
         cert_text = (
             f"<b>Cryptographic Audit Digest:</b> <font name='Courier'>{report_sig}</font><br/>"
-            f"<b>Ledger Verification:</b> Generated from authoritative PostgreSQL ledger records with Row-Level Security."
+            "<b>Ledger Verification:</b> Generated from authoritative PostgreSQL ledger records "
+            "with Row-Level Security."
         )
         cert_table = Table([[Paragraph(cert_text, code_style)]], colWidths=[530])
         cert_table.setStyle(

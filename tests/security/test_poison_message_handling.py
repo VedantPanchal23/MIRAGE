@@ -34,7 +34,7 @@ class TestPoisonMessageHandling:
         with pytest.raises(Reject) as exc_info:
             async_verify_task.run(
                 prompt="Valid prompt",
-                response=12345,  # type: ignore[arg-type]
+                response=12345,
                 tenant_id="default_tenant",
             )
 

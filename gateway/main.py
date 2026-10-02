@@ -54,8 +54,20 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("MIRAGE Gateway shutdown complete")
 
 
+DEV_CORS_ORIGINS: list[str] = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+]
+PROD_CORS_ORIGINS: list[str] = [
+    "https://dashboard.mirage-ai.internal",
+]
+
+
 def create_app() -> FastAPI:
     """FastAPI application factory."""
+    app_settings = get_settings()
     app = FastAPI(
         title="MIRAGE Factual Consistency Verification Gateway",
         description=(
@@ -64,8 +76,8 @@ def create_app() -> FastAPI:
         ),
         version="2.1.0",
         lifespan=lifespan,
-        docs_url="/docs",
-        redoc_url="/redoc",
+        docs_url="/docs" if app_settings.debug else None,
+        redoc_url="/redoc" if app_settings.debug else None,
     )
 
     # 1. Security Headers Middleware
@@ -75,9 +87,10 @@ def create_app() -> FastAPI:
     app.add_middleware(PIIDetectionMiddleware)
 
     # 3. CORS Middleware
+    allowed_origins = DEV_CORS_ORIGINS if app_settings.debug else PROD_CORS_ORIGINS
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"] if settings.debug else ["https://dashboard.mirage-ai.internal"],
+        allow_origins=allowed_origins,
         allow_credentials=True,
         allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
         allow_headers=["*"],

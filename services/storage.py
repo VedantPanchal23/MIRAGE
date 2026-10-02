@@ -4,6 +4,7 @@ Provides unified interface for storing compliance audit PDFs and reports
 in S3 or local filesystem abstraction without exposing raw filesystem paths to route handlers.
 """
 
+import json
 from abc import ABC, abstractmethod
 from pathlib import Path
 from typing import Any
@@ -94,7 +95,21 @@ class LocalStorageDriver(ObjectStorageService):
         target_path = self._resolve_path(bucket, key)
         target_path.parent.mkdir(parents=True, exist_ok=True)
         target_path.write_bytes(data)
-        logger.info("Stored object locally", bucket=bucket, key=key, size=len(data))
+
+        meta_payload = {
+            "content_type": content_type,
+            "metadata": metadata or {},
+        }
+        meta_path = target_path.with_suffix(target_path.suffix + ".meta.json")
+        meta_path.write_text(json.dumps(meta_payload), encoding="utf-8")
+
+        logger.info(
+            "Stored object locally",
+            bucket=bucket,
+            key=key,
+            size=len(data),
+            content_type=content_type,
+        )
         return f"s3://{bucket}/{key}"
 
     def get_object(self, bucket: str, key: str) -> tuple[bytes, str]:
@@ -102,23 +117,42 @@ class LocalStorageDriver(ObjectStorageService):
         if not target_path.exists():
             raise ObjectNotFoundError(f"Object s3://{bucket}/{key} not found")
         data = target_path.read_bytes()
-        content_type = "application/pdf" if key.endswith(".pdf") else "application/octet-stream"
+        meta_path = target_path.with_suffix(target_path.suffix + ".meta.json")
+        if meta_path.exists():
+            try:
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
+                content_type = str(meta.get("content_type", "application/octet-stream"))
+            except Exception:
+                content_type = "application/pdf" if key.endswith(".pdf") else "application/octet-stream"
+        else:
+            content_type = "application/pdf" if key.endswith(".pdf") else "application/octet-stream"
         return data, content_type
 
     def delete_object(self, bucket: str, key: str) -> bool:
         target_path = self._resolve_path(bucket, key)
+        meta_path = target_path.with_suffix(target_path.suffix + ".meta.json")
+        deleted = False
         if target_path.exists():
             target_path.unlink()
-            return True
-        return False
+            deleted = True
+        if meta_path.exists():
+            meta_path.unlink()
+        return deleted
 
     def object_exists(self, bucket: str, key: str) -> bool:
         target_path = self._resolve_path(bucket, key)
         return target_path.exists()
 
     def generate_presigned_url(self, bucket: str, key: str, expires_in: int = 3600) -> str:
-        # For local driver, returns internal download URI
+        # Validate that the object key path falls strictly within the bucket
+        _ = self._resolve_path(bucket, key)
         clean_key = key.lstrip("/\\")
+        logger.debug(
+            "Generated local download URI",
+            bucket=bucket,
+            key=clean_key,
+            expires_in=expires_in,
+        )
         return f"/v1/reports/{clean_key}/pdf"
 
 
@@ -132,18 +166,24 @@ class S3StorageDriver(ObjectStorageService):
         aws_access_key_id: str | None = None,
         aws_secret_access_key: str | None = None,
     ):
+        self.endpoint_url = endpoint_url
+        self.region_name = region_name
         try:
             import boto3
 
-            self.s3_client: Any = boto3.client(
-                "s3",
-                region_name=region_name,
-                endpoint_url=endpoint_url,
-                aws_access_key_id=aws_access_key_id,
-                aws_secret_access_key=aws_secret_access_key,
-            )
+            client_kwargs: dict[str, Any] = {
+                "region_name": region_name,
+            }
+            if endpoint_url:
+                client_kwargs["endpoint_url"] = endpoint_url
+            if aws_access_key_id:
+                client_kwargs["aws_access_key_id"] = aws_access_key_id
+            if aws_secret_access_key:
+                client_kwargs["aws_secret_access_key"] = aws_secret_access_key
+
+            self.s3_client: Any = boto3.client("s3", **client_kwargs)
         except Exception as exc:
-            logger.warning("Failed to initialize boto3 S3 client; falling back to uninitialized state", error=str(exc))
+            logger.warning("Failed to initialize boto3 S3 client; S3 operations will fail", error=str(exc))
             self.s3_client = None
 
     def put_object(

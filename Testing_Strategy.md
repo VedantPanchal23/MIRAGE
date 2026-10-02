@@ -202,7 +202,7 @@ Resilience verification utilizing `toxiproxy` and orchestrated container failure
 | **4** | LLaVA Server offline | System ignores visual grounding requirements for image claims. |
 | **5** | FLAN-T5 Server offline | System catches timeout, falls back to static Regex claim splitter. |
 | **6** | RabbitMQ Network Partition | Circuit breaker opens, HTTP 503 returned gracefully rather than hanging. |
-| **7** | PostgreSQL offline | Audit writes succeed to MongoDB, PG writes queued to memory/disk buffer. |
+| **7** | PostgreSQL offline | PostgreSQL is authoritative system of record; persistence failure aborts verification transaction with HTTP 503 SERVICE_DEGRADED. No partial persistence and zero in-memory or disk-buffer fallback. |
 | **8** | Upstream LLM API (Groq/OpenRouter) 10s Delay | Gateway circuit breaker fires instantly, HTTP 503 returned to client. |
 | **9** | 500ms Network Latency Addition | Parallel async executions absorb delay; E2E latency remains within standard SLA. |
 | **10** | Container OOM / Kill -9 | Docker/Kubernetes health checks identify dead pod, successfully restart < 5 seconds. |

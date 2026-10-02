@@ -58,7 +58,7 @@ def live_mongo_database() -> Generator[Any, None, None]:
     try:
         with MongoDbContainer("mongo:7.0", username="root", password="mirage_root_secret", dbname="admin") as mongo:
             root_url = mongo.get_connection_url()
-            root_client = pymongo.MongoClient(root_url)
+            root_client: pymongo.MongoClient[dict[str, Any]] = pymongo.MongoClient(root_url)
 
             # Create unprivileged application user on mirage_traces
             trace_db = root_client["mirage_traces"]
@@ -81,8 +81,9 @@ def live_mongo_database() -> Generator[Any, None, None]:
             os.environ["MONGO_DB"] = "mirage_traces"
 
             reset_default_mongo_service(uri=app_url, db_name="mirage_traces")
-            mongo.app_url = app_url
-            mongo.root_url = root_url
+            mongo_any: Any = mongo
+            mongo_any.app_url = app_url
+            mongo_any.root_url = root_url
 
             yield mongo
 
@@ -178,8 +179,9 @@ def live_redis_database() -> Generator[Any, None, None]:
                 password="mirage_redis_secret",
             )
 
-            r_cont.admin_port = port
-            r_cont.app_url = app_redis_url
+            r_cont_any: Any = r_cont
+            r_cont_any.admin_port = port
+            r_cont_any.app_url = app_redis_url
             yield r_cont
 
             # Teardown
@@ -240,10 +242,11 @@ def live_rabbitmq_broker() -> Generator[Any, None, None]:
                 except Exception:
                     time.sleep(1.0)
 
-            rmq.amqp_port = amqp_port
-            rmq.mgmt_port = mgmt_port
-            rmq.broker_url = broker_url
-            rmq.host = host
+            rmq_any: Any = rmq
+            rmq_any.amqp_port = amqp_port
+            rmq_any.mgmt_port = mgmt_port
+            rmq_any.broker_url = broker_url
+            rmq_any.host = host
 
             yield rmq
     except Exception as exc:

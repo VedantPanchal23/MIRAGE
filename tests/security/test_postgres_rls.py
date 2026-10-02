@@ -17,6 +17,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, select, text
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.exc import DBAPIError, ProgrammingError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from testcontainers.community.postgres import PostgresContainer
@@ -332,6 +333,7 @@ class TestPostgresRowLevelSecurity:
                     text("UPDATE verification_sessions SET hrs_score = 0.01 WHERE session_id = :sess"),
                     {"sess": sess_b},
                 )
+                assert isinstance(res, CursorResult)
                 assert res.rowcount == 0
 
         # Verify Tenant B row unchanged
@@ -387,6 +389,7 @@ class TestPostgresRowLevelSecurity:
                     text("DELETE FROM verification_sessions WHERE session_id = :sess"),
                     {"sess": sess_b},
                 )
+                assert isinstance(res, CursorResult)
                 assert res.rowcount == 0
 
         # Verify Tenant B row still exists

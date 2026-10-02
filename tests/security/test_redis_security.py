@@ -42,7 +42,7 @@ class TestRedisSecurity:
         with pytest.raises(AuthenticationError):
             await bad_client.ping()
 
-        await bad_client.aclose()
+        await bad_client.close()
 
     @pytest.mark.asyncio
     async def test_application_identity_allowed_commands(self, live_redis_database: Any) -> None:
@@ -84,9 +84,10 @@ class TestRedisSecurity:
             ("SAVE",),
         ]
 
+        raw_client: Any = client
         for cmd in prohibited_commands:
             with pytest.raises(NoPermissionError, match=r"(?i)(no permissions|has no permissions)"):
-                await client.execute_command(*cmd)
+                await raw_client.execute_command(*cmd)
 
     @pytest.mark.asyncio
     async def test_keyspace_boundary_denies_celery_and_unrelated_keys(self, live_redis_database: Any) -> None:

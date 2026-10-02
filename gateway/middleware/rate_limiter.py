@@ -48,7 +48,9 @@ class AsyncRateLimiter:
                 - X-RateLimit-Remaining
                 - X-RateLimit-Reset
                 - Retry-After
-            HTTPException(503): If Redis is unavailable, failing closed (SERVICE_DEGRADED).
+            RedisConnectionError / RedisServiceError: If Redis backend is unavailable or times out.
+                Fails closed for security; handled centrally by the API gateway's RedisServiceError
+                exception handler, which returns HTTP 503 SERVICE_DEGRADED with Retry-After: 10.
         """
         try:
             res = await self.backend.check_rate_limit(

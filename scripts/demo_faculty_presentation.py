@@ -15,9 +15,9 @@ Institute    : Chandubhai S. Patel Institute of Technology (CSPIT)
 
 import asyncio
 import os
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -66,7 +66,7 @@ class InMemoryDemoCache:
         score: float,
         sample_count: int,
         clusters: list[list[str]],
-        ttl: int = 3600,
+        _ttl: int = 3600,
     ) -> bool:
         key = self.get_scs_cache_key(tenant_id, model_id, prompt)
         self._cache[key] = {
@@ -85,8 +85,8 @@ def print_banner() -> None:
     print(CYAN + BOLD + "  MIRAGE: Multimodal Verification & Hallucination Mitigation Middleware" + RESET)
     print(BOLD + "  Official Faculty Review Demonstration -- Live Execution Engine" + RESET)
     print(f"  Investigators: {BOLD}Vedant Panchal (23AIML042){RESET} & {BOLD}Dax Virani (23AIML076){RESET}")
-    print(f"  Department   : Department of Artificial Intelligence & Machine Learning (AIML)")
-    print(f"  Institution  : Chandubhai S. Patel Institute of Technology (CSPIT)")
+    print("  Department   : Department of Artificial Intelligence & Machine Learning (AIML)")
+    print("  Institution  : Chandubhai S. Patel Institute of Technology (CSPIT)")
     print(CYAN + BOLD + "=" * 80 + RESET + "\n")
 
 
@@ -102,7 +102,7 @@ async def run_scenario(
     print(f"{CYAN}{BOLD}[*] DEMO SCENARIO {scenario_num}: {title}{RESET}")
     print(BOLD + "-" * 80 + RESET)
     print(f"{BOLD}[INPUT PROMPT]    :{RESET} {prompt}")
-    print(f"{BOLD}[MODEL GENERATION]:{RESET} \"{response}\"")
+    print(f'{BOLD}[MODEL GENERATION]:{RESET} "{response}"')
     print(f"{BOLD}[TENANT CONTEXT]  :{RESET} {tenant_id} {DIM}(Validated via Cryptographic JWT/RLS){RESET}")
     print(f"\n{DIM}>>> Initiating parallel asynchronous verification pipeline...{RESET}")
 
@@ -123,7 +123,7 @@ async def run_scenario(
         crit = getattr(c.claim.criticality, "value", str(c.claim.criticality))
         status_val = getattr(c.status, "value", str(c.status))
         color = GREEN if status_val == "VERIFIED" else (RED if status_val == "CONTRADICTED" else YELLOW)
-        print(f"  [{idx}] \"{BOLD}{c.claim.text}{RESET}\"")
+        print(f'  [{idx}] "{BOLD}{c.claim.text}{RESET}"')
         print(f"      - Criticality Tier : {crit.upper()} (Weight: {c.claim.criticality_weight:.2f})")
         print(f"      - Entailment Prob  : {c.nli_score * 100:.1f}%")
         print(f"      - Retrieval Score  : {c.rav_score:.4f}")
@@ -135,10 +135,11 @@ async def run_scenario(
     tier_val = getattr(hrs_res.tier, "value", str(hrs_res.tier))
     tier_color = GREEN if tier_val == "LOW" else (YELLOW if tier_val == "MEDIUM" else RED)
 
+    ci_str = f"[{ci.lower:.4f}, {ci.upper:.4f}] (Width: {ci.upper - ci.lower:.4f})"
     print(f"\n{BOLD}[STAGE 2: MULTI-SIGNAL FUSION & CONFORMAL CALIBRATION (HRS Engine)]{RESET}")
     print(f"  - Calibrated Risk Score (HRS) : {tier_color}{BOLD}{hrs_res.hrs:.4f} / 1.0000{RESET}")
     print(f"  - Risk Classification Tier   : {tier_color}{BOLD}{tier_val}{RESET}")
-    print(f"  - Mondrian Conformal (95% CI): {BOLD}[{ci.lower:.4f}, {ci.upper:.4f}]{RESET} (Width: {ci.upper - ci.lower:.4f})")
+    print(f"  - Mondrian Conformal (95% CI): {BOLD}{ci_str}{RESET}")
     print(f"  - Verification Latency       : {BOLD}{elapsed_ms:.1f} ms{RESET} (Sub-second SLA satisfied)")
 
     # STAGE 3: TreeSHAP Attribution
@@ -156,14 +157,17 @@ async def run_scenario(
     hrs_val = hrs_res.hrs
     if hrs_val <= 0.30:
         print(f"  >> {GREEN}{BOLD}[VERDICT: SAFE / PASS]{RESET} Risk score within certified bounds.")
-        print(f"  >> Return Payload: \"{result.verified_response}\"")
+        print(f'  >> Return Payload: "{result.verified_response}"')
     elif hrs_val <= 0.60:
         print(f"  >> {YELLOW}{BOLD}[VERDICT: MODERATE / FLAGGED]{RESET} Warning headers attached to downstream client.")
-        print(f"  >> Return Payload: \"{result.verified_response}\"")
+        print(f'  >> Return Payload: "{result.verified_response}"')
     else:
-        print(f"  >> {RED}{BOLD}[VERDICT: CRITICAL / BLOCKED]{RESET} Hallucination detected! Generation halted at gateway.")
+        print(
+            f"  >> {RED}{BOLD}[VERDICT: CRITICAL / BLOCKED]{RESET} "
+            "Hallucination detected! Generation halted at gateway."
+        )
         print(f"  >> {CYAN}LangGraph Autonomous Correction Agent activated with evidence grounding.{RESET}")
-        print(f"  >> Remediated Output: \"{BOLD}{result.verified_response}{RESET}\"")
+        print(f'  >> Remediated Output: "{BOLD}{result.verified_response}{RESET}"')
 
     print(BOLD + "-" * 80 + RESET + "\n")
 
@@ -189,7 +193,10 @@ async def main() -> None:
     )
     rav.add_mock_document(
         chunk_id="kb_doc_03",
-        content="Metformin hydrochloride is prescribed for managing Type 2 diabetes with a starting dose of 500mg once or twice daily.",
+        content=(
+            "Metformin hydrochloride is prescribed for managing Type 2 diabetes with a "
+            "starting dose of 500mg once or twice daily."
+        ),
         doc_id="med_fda_guidelines",
     )
 
@@ -241,7 +248,10 @@ async def main() -> None:
         scenario_num=3,
         title="Internal Logic Self-Contradiction (ICS Signal Trigger)",
         prompt="Provide a summary of the Apollo 11 lunar landing.",
-        response="Apollo 11 successfully landed astronauts on the Moon in July 1969. However, human beings have never landed on the Moon.",
+        response=(
+            "Apollo 11 successfully landed astronauts on the Moon in July 1969. "
+            "However, human beings have never landed on the Moon."
+        ),
         tenant_id="cspit_space_research",
     )
 

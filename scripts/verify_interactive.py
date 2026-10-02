@@ -18,9 +18,9 @@ Department   : Artificial Intelligence & Machine Learning (AIML)
 import argparse
 import asyncio
 import os
-from pathlib import Path
 import sys
 import time
+from pathlib import Path
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -67,7 +67,7 @@ class InMemoryDemoCache:
         score: float,
         sample_count: int,
         clusters: list[list[str]],
-        ttl: int = 3600,
+        _ttl: int = 3600,
     ) -> bool:
         key = self.get_scs_cache_key(tenant_id, model_id, prompt)
         self._cache[key] = {
@@ -100,12 +100,17 @@ def setup_orchestrator(custom_kb_text: str | None = None) -> VerificationOrchest
     )
     rav.add_mock_document(
         chunk_id="kb_base_03",
-        content="Metformin hydrochloride initial adult dose is 500mg once or twice daily with meals for Type 2 diabetes.",
+        content=(
+            "Metformin hydrochloride initial adult dose is 500mg once or twice daily with meals for Type 2 diabetes."
+        ),
         doc_id="med_fda",
     )
     rav.add_mock_document(
         chunk_id="kb_base_04",
-        content="The Eiffel Tower was constructed between 1887 and 1889 as the entrance arch for the 1889 World's Fair in Paris.",
+        content=(
+            "The Eiffel Tower was constructed between 1887 and 1889 as the entrance arch for the 1889 "
+            "World's Fair in Paris."
+        ),
         doc_id="history_eiffel",
     )
     rav.add_mock_document(
@@ -143,9 +148,9 @@ async def verify_custom_input(prompt: str, response: str, kb_context: str | None
     print(DIM + "  (Processing user-supplied test case through all 5 signals)" + RESET)
     print(CYAN + BOLD + "=" * 80 + RESET)
     print(f"\n{BOLD}[TEST PROMPT]    :{RESET} {prompt}")
-    print(f"{BOLD}[TEST RESPONSE]  :{RESET} \"{response}\"")
+    print(f'{BOLD}[TEST RESPONSE]  :{RESET} "{response}"')
     if kb_context:
-        print(f"{BOLD}[CUSTOM EVIDENCE]:{RESET} \"{kb_context}\"")
+        print(f'{BOLD}[CUSTOM EVIDENCE]:{RESET} "{kb_context}"')
     print(f"\n{DIM}>>> Running FLAN-T5 claim extraction, Qdrant RAV, SCS, DeBERTa NLI, and HRS Engine...{RESET}")
 
     orchestrator = setup_orchestrator(kb_context)
@@ -165,8 +170,13 @@ async def verify_custom_input(prompt: str, response: str, kb_context: str | None
     for idx, c in enumerate(result.claims, 1):
         crit = getattr(c.claim.criticality, "value", str(c.claim.criticality))
         status_val = getattr(c.status, "value", str(c.status))
-        status_color = GREEN if status_val in {"VERIFIED", "SUPPORTED"} else (RED if status_val == "CONTRADICTED" else YELLOW)
-        print(f"  [{idx}] \"{BOLD}{c.claim.text}{RESET}\"")
+        if status_val in {"VERIFIED", "SUPPORTED"}:
+            status_color = GREEN
+        elif status_val == "CONTRADICTED":
+            status_color = RED
+        else:
+            status_color = YELLOW
+        print(f'  [{idx}] "{BOLD}{c.claim.text}{RESET}"')
         print(f"      - Criticality Tier : {crit.upper()} (Weight: {c.claim.criticality_weight:.2f})")
         print(f"      - Textual Entailment: {c.nli_score * 100:.1f}%")
         print(f"      - Retrieval Support : {c.rav_score:.4f}")
@@ -177,10 +187,11 @@ async def verify_custom_input(prompt: str, response: str, kb_context: str | None
     tier_val = getattr(hrs_res.tier, "value", str(hrs_res.tier))
     tier_color = GREEN if tier_val == "LOW" else (YELLOW if tier_val == "MEDIUM" else RED)
 
+    ci_str = f"[{ci.lower:.4f}, {ci.upper:.4f}] (Width: {ci.upper - ci.lower:.4f})"
     print(f"\n{BOLD}[STAGE 2: CALIBRATED RISK SCORING (HRS) & CONFORMAL BOUNDS]{RESET}")
     print(f"  - Calibrated Risk Score (HRS) : {tier_color}{BOLD}{hrs_res.hrs:.4f} / 1.0000{RESET}")
     print(f"  - Risk Classification Tier   : {tier_color}{BOLD}{tier_val}{RESET}")
-    print(f"  - 95% Conformal Confidence CI: {BOLD}[{ci.lower:.4f}, {ci.upper:.4f}]{RESET} (Width: {ci.upper - ci.lower:.4f})")
+    print(f"  - 95% Conformal Confidence CI: {BOLD}{ci_str}{RESET}")
     print(f"  - Execution Latency          : {BOLD}{latency_ms:.1f} ms{RESET}")
 
     print(f"\n{BOLD}[STAGE 3: EXPLAINABILITY & SHAP CONTRIBUTIONS]{RESET}")
@@ -194,15 +205,21 @@ async def verify_custom_input(prompt: str, response: str, kb_context: str | None
 
     print(f"\n{BOLD}[STAGE 4: ENTERPRISE GATEWAY VERDICT]{RESET}")
     if hrs_res.hrs <= 0.30:
-        print(f"  >> {GREEN}{BOLD}[VERDICT: SAFE / PASS]{RESET} Factual consistency certified. Response delivered to client.")
-        print(f"  >> Final Output: \"{result.verified_response}\"")
+        print(
+            f"  >> {GREEN}{BOLD}[VERDICT: SAFE / PASS]{RESET} "
+            "Factual consistency certified. Response delivered to client."
+        )
+        print(f'  >> Final Output: "{result.verified_response}"')
     elif hrs_res.hrs <= 0.60:
-        print(f"  >> {YELLOW}{BOLD}[VERDICT: MODERATE RISK / FLAGGED]{RESET} Potential hallucination risk detected. Warning badge attached.")
-        print(f"  >> Final Output: \"{result.verified_response}\"")
+        print(
+            f"  >> {YELLOW}{BOLD}[VERDICT: MODERATE RISK / FLAGGED]{RESET} "
+            "Potential hallucination risk detected. Warning badge attached."
+        )
+        print(f'  >> Final Output: "{result.verified_response}"')
     else:
         print(f"  >> {RED}{BOLD}[VERDICT: CRITICAL RISK / INTERCEPTED]{RESET} Severe factual discrepancy detected!")
         print(f"  >> {CYAN}LangGraph Autonomous Correction loop executed evidence-based rewrite.{RESET}")
-        print(f"  >> Remediated Safe Output: \"{BOLD}{result.verified_response}{RESET}\"")
+        print(f'  >> Remediated Safe Output: "{BOLD}{result.verified_response}{RESET}"')
 
     print(CYAN + BOLD + "=" * 80 + RESET + "\n")
 
@@ -236,7 +253,8 @@ def main() -> None:
         if not resp_input:
             resp_input = default_resp
 
-        evidence_input = input(f"Enter Custom Ground Truth Evidence [{DIM}Press Enter to use built-in KB{RESET}]: ").strip()
+        prompt_ev = f"Enter Custom Ground Truth Evidence [{DIM}Press Enter to use built-in KB{RESET}]: "
+        evidence_input = input(prompt_ev).strip()
         if not evidence_input:
             evidence_input = None
 

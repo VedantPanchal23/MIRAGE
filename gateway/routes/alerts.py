@@ -27,7 +27,9 @@ logger = get_logger("alerts_routes")
 @router.get("", response_model=AlertsListResponse)
 async def list_alerts(
     tenant_id: Annotated[str, Depends(require_permission(Permission.DASHBOARD_READ))],
-    alert_status: str | None = Query(None, alias="status", description="Filter by status: active, acknowledged, resolved"),
+    alert_status: str | None = Query(
+        None, alias="status", description="Filter by status: active, acknowledged, resolved"
+    ),
     limit: int = Query(50, ge=1, le=100, description="Max number of alerts to return"),
     offset: int = Query(0, ge=0, description="Offset for pagination"),
 ) -> dict[str, Any]:

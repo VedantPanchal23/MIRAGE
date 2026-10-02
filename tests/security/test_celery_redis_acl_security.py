@@ -58,7 +58,7 @@ class TestCeleryRedisACLSecurity:
             assert "redis_version" in info
 
         finally:
-            await client.aclose()
+            await client.close()
 
     @pytest.mark.asyncio
     async def test_celery_user_denied_ratelimit_and_scs_on_db0(self, live_redis_database: Any) -> None:
@@ -90,7 +90,7 @@ class TestCeleryRedisACLSecurity:
                 with pytest.raises(NoPermissionError, match=r"(?i)(no permissions|has no permissions)"):
                     await client.get(key)
         finally:
-            await client.aclose()
+            await client.close()
 
     @pytest.mark.asyncio
     async def test_app_user_denied_celery_keys_on_db1(self, live_redis_database: Any) -> None:
@@ -136,9 +136,10 @@ class TestCeleryRedisACLSecurity:
             ("SAVE",),
         ]
 
+        raw_client: Any = client
         try:
             for cmd in prohibited_commands:
                 with pytest.raises(NoPermissionError, match=r"(?i)(no permissions|has no permissions)"):
-                    await client.execute_command(*cmd)
+                    await raw_client.execute_command(*cmd)
         finally:
-            await client.aclose()
+            await client.close()

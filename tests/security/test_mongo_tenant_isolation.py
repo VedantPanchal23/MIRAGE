@@ -114,23 +114,23 @@ class TestMongoTenantIsolation:
         """Test I: Verify strict scalar validator rejects NoSQL injection payloads before Motor queries."""
         # 1. Operators as dictionaries
         with pytest.raises(TypeError, match="Expected string"):
-            _validate_identifier("tenant_id", {"$ne": None})  # type: ignore[arg-type]
+            _validate_identifier("tenant_id", {"$ne": None})
 
         with pytest.raises(TypeError, match="Expected string"):
-            _validate_identifier("session_id", {"$gt": ""})  # type: ignore[arg-type]
+            _validate_identifier("session_id", {"$gt": ""})
 
         with pytest.raises(TypeError, match="Expected string"):
-            _validate_identifier("trace_id", {"$regex": ".*"})  # type: ignore[arg-type]
+            _validate_identifier("trace_id", {"$regex": ".*"})
 
         # 2. Non-string types
         with pytest.raises(TypeError, match="Expected string"):
-            _validate_identifier("tenant_id", 12345)  # type: ignore[arg-type]
+            _validate_identifier("tenant_id", 12345)
 
         with pytest.raises(TypeError, match="Expected string"):
-            _validate_identifier("tenant_id", None)  # type: ignore[arg-type]
+            _validate_identifier("tenant_id", None)
 
         with pytest.raises(TypeError, match="Expected string"):
-            _validate_identifier("tenant_id", ["tenant_a", "tenant_b"])  # type: ignore[arg-type]
+            _validate_identifier("tenant_id", ["tenant_a", "tenant_b"])
 
         # 3. Malformed strings with special characters / path traversal / SQL injection
         with pytest.raises(ValueError, match="invalid characters"):
@@ -165,7 +165,7 @@ class TestMongoTenantIsolation:
         assert app_url is not None, "app_url not found on live_mongo_database fixture"
 
         # Connect as mirage_app
-        client = pymongo.MongoClient(app_url)
+        client: pymongo.MongoClient[dict[str, Any]] = pymongo.MongoClient(app_url)
         app_db = client["mirage_traces"]
 
         # Write to mirage_traces must SUCCEED

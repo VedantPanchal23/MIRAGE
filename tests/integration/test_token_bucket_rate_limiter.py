@@ -120,6 +120,7 @@ class TestTokenBucketRateLimiter:
 
         exc = exc_info.value
         assert exc.status_code == 429
+        assert exc.headers is not None
         assert "X-RateLimit-Limit" in exc.headers
         assert exc.headers["X-RateLimit-Limit"] == "60"
         assert "X-RateLimit-Remaining" in exc.headers
@@ -140,10 +141,10 @@ class TestTokenBucketRateLimiter:
 
         # Create 3 independent Redis client connections simulating multiple gateway instances
         url = default_redis_client_manager.redis_url
-        client1 = aioredis.from_url(url, decode_responses=True)
-        client2 = aioredis.from_url(url, decode_responses=True)
-        client3 = aioredis.from_url(url, decode_responses=True)
-        clients = [client1, client2, client3]
+        client1: Any = aioredis.from_url(url, decode_responses=True)
+        client2: Any = aioredis.from_url(url, decode_responses=True)
+        client3: Any = aioredis.from_url(url, decode_responses=True)
+        clients: list[Any] = [client1, client2, client3]
 
         tenant_id = f"tenant_race_{uuid.uuid4().hex[:8]}"
         key = f"ratelimit:{tenant_id}:verify"
@@ -157,7 +158,7 @@ class TestTokenBucketRateLimiter:
 
         # 9 remaining tokens left. Launch 50 concurrent requests simultaneously across all 3 clients
         async def worker(worker_idx: int) -> int:
-            cli = clients[worker_idx % len(clients)]
+            cli: Any = clients[worker_idx % len(clients)]
             res = await cli.evalsha(sha, 1, key, 10, 0.0, 1, 60)
             return int(res[0])
 
@@ -175,7 +176,7 @@ class TestTokenBucketRateLimiter:
         assert res_final[1] == 0
 
         for c in clients:
-            await c.aclose()
+            await c.close()
 
     @pytest.mark.asyncio
     async def test_concurrent_multi_tenant_isolation(self, live_redis_database: Any) -> None:

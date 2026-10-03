@@ -84,7 +84,7 @@ class CorrectionGraph:
         for claim in state.get("flagged_claims", []):
             claim_id = claim.get("claim_id", "")
             claim_text = claim.get("text", "")
-            if not evidence_map.get(claim_id) and claim_text:
+            if claim_id not in evidence_map and claim_text:
                 chunks = await self.rav_worker.search_evidence(claim_text, tenant_id=tenant_id, limit=3)
                 evidence_map[claim_id] = [c.content for c in chunks]
 
@@ -143,8 +143,11 @@ class CorrectionGraph:
             cid = claim.get("claim_id", "")
             old_text = claim.get("text", "")
             new_text = rewritten.get(cid)
-            if new_text and old_text in final_text:
-                final_text = final_text.replace(old_text, new_text)
+            if new_text and old_text:
+                if f"{old_text}." in final_text and new_text.endswith("."):
+                    final_text = final_text.replace(f"{old_text}.", new_text)
+                elif old_text in final_text:
+                    final_text = final_text.replace(old_text, new_text)
 
         return {"final_response": final_text}
 
@@ -218,7 +221,9 @@ class CorrectionGraph:
         if len(top_ev.split(".")) > 0:
             clean_first_sentence = top_ev.split(".")[0].strip()
             if len(clean_first_sentence) > 10:
-                return clean_first_sentence + "."
+                if original_text.endswith("."):
+                    return clean_first_sentence + "."
+                return clean_first_sentence
 
         return original_text
 

@@ -107,6 +107,8 @@ async def get_drift_report(
 
     try:
         time_series = await default_session_store.get_time_series_authoritative(tenant_id=target_tenant, days=days)
+        if not time_series:
+            time_series = default_session_store.get_time_series(tenant_id=target_tenant, days=days)
     except Exception as exc:
         logger.debug("Authoritative time series query fallback to local cache", error=str(exc))
         time_series = default_session_store.get_time_series(tenant_id=target_tenant, days=days)

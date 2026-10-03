@@ -6,7 +6,7 @@ import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from sqlalchemy import func, select, text
+from sqlalchemy import func, literal_column, select, text
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -408,10 +408,11 @@ class PostgresPersistenceService:
     async def get_time_series(self, tenant_id: str, days: int = 30) -> list[dict[str, Any]]:
         """Compute daily time-series aggregates from PostgreSQL."""
         cutoff = datetime.now(UTC) - timedelta(days=days)
+        day_expr = func.date_trunc(literal_column("'day'"), VerificationSession.created_at)
         async with db_session.get_tenant_session(tenant_id) as session:
             stmt = (
                 select(
-                    func.date_trunc("day", VerificationSession.created_at).label("day"),
+                    day_expr.label("day"),
                     func.count(VerificationSession.session_id).label("cnt"),
                     func.avg(VerificationSession.hrs_score).label("avg_hrs"),
                 )
@@ -419,8 +420,8 @@ class PostgresPersistenceService:
                     VerificationSession.tenant_id == tenant_id,
                     VerificationSession.created_at >= cutoff,
                 )
-                .group_by(func.date_trunc("day", VerificationSession.created_at))
-                .order_by(func.date_trunc("day", VerificationSession.created_at).asc())
+                .group_by(day_expr)
+                .order_by(day_expr.asc())
             )
             rows = (await session.execute(stmt)).all()
 

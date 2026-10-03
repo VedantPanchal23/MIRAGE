@@ -104,6 +104,7 @@ class Settings(BaseSettings):
     qdrant_host: str = Field(default="localhost")
     qdrant_port: int = Field(default=6333)
     qdrant_api_key: str | None = Field(default=None)
+    qdrant_https: bool = Field(default=False)
 
     # --------------------------------------------------------------------------
     # OpenTelemetry Tracing

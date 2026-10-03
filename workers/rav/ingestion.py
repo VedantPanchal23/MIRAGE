@@ -155,6 +155,7 @@ class KnowledgeBaseIngestionService:
                     host=settings.qdrant_host,
                     port=settings.qdrant_port,
                     api_key=settings.qdrant_api_key,
+                    https=settings.qdrant_https,
                     timeout=2,
                     check_compatibility=False,
                 )

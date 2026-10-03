@@ -27,7 +27,8 @@ class RAVWorker:
                 host=self.host,
                 port=self.port,
                 api_key=settings.qdrant_api_key,
-                timeout=1,
+                https=settings.qdrant_https,
+                timeout=2,
                 check_compatibility=False,
             )
         except Exception as exc:

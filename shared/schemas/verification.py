@@ -34,7 +34,7 @@ class VerificationRequest(BaseModel):
         default_factory=list,
         description="Optional list of base64 data URIs or image URLs for multimodal verification",
     )
-    model_id: str = Field(default="llama-3.1-70b-versatile", description="Generator model identifier")
+    model_id: str = Field(default="allam-2-7b", description="Generator model identifier")
     auto_correct: bool = Field(
         default=True,
         description="Whether to run the LangGraph agentic correction loop if HRS exceeds threshold",

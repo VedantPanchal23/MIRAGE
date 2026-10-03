@@ -4,7 +4,7 @@
 **Version:** 2.1.0
 **Date:** September 2026
 **Authors:** 23AIML042 Vedant, 23AIML076 Dax
-**Institution:** IIIT Bangalore — CTRI-DG
+**Institution:** CSPIT, CHARUSAT
 
 ---
 

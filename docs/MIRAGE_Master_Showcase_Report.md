@@ -5,7 +5,7 @@
 **Audit & Release Timestamp:** 2026-10-03T11:53:00+05:30  
 **Repository Branch / Commit:** `main` @ [`8b91ea4`](file:///C:/Users/vedan/Desktop/MIRAGE)  
 **Authors:** 23AIML042 Vedant, 23AIML076 Dax  
-**Affiliation:** Centre for Technology Research & Innovation - Data Governance (CTRI-DG), IIIT Bangalore  
+**Affiliation:** Department of Artificial Intelligence & Machine Learning, Chandubhai S. Patel Institute of Technology (CSPIT), CHARUSAT  
 **Status Classification:** **`LIVE_DEMO_READY`** (Production Verification, Uncertainty Quantification, Agentic Self-Correction, Persistence & Dashboard)
 
 ---

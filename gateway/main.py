@@ -19,6 +19,7 @@ from gateway.middleware.pii import PIIDetectionMiddleware
 from gateway.middleware.security import HeaderSanitizationMiddleware, SecurityHeadersMiddleware
 from gateway.routes.alerts import router as alerts_router
 from gateway.routes.audit import router as audit_router
+from gateway.routes.auth import router as auth_router
 from gateway.routes.dashboard import router as dashboard_router
 from gateway.routes.health import router as health_router
 from gateway.routes.knowledge_base import router as knowledge_base_router
@@ -125,6 +126,7 @@ def create_app() -> FastAPI:
 
     # 6. Mount API Routers
     app.include_router(health_router)
+    app.include_router(auth_router)
     app.include_router(verify_router)
     app.include_router(proxy_router)
     app.include_router(stream_router)

@@ -9,7 +9,7 @@ description = "Autonomous Multimodal Hallucination Detection and Factual Consist
 readme = "README.md"
 authors = [
     { name = "Vedant (23AIML042)", email = "vedantpanchal2309@gmail.com" },
-    { name = "Dax (23AIML076)", email = "dax@iiitb.ac.in" }
+    { name = "Dax (23AIML076)", email = "dax@charusat.edu.in" }
 ]
 license = { text = "Proprietary / Academic Research" }
 requires-python = ">=3.11, <3.14"

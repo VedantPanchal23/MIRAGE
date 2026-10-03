@@ -153,7 +153,7 @@ export function DashboardShell() {
 
       {/* Application Footer */}
       <footer className="border-t border-slate-800/80 px-6 py-4 text-xs text-slate-500 flex flex-wrap justify-between items-center gap-2">
-        <span>MIRAGE — IIIT Bangalore CTRI-DG Research Project</span>
+        <span>MIRAGE — CSPIT, CHARUSAT Research Project</span>
         <span>React 18 | Vite | Python 3.12 | OpenTelemetry | pybreaker</span>
       </footer>
 

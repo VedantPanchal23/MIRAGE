@@ -6,9 +6,9 @@ MIRAGE is a production-grade, black-box verification middleware that intercepts 
 ---
 
 ## 👥 Authors & Academic Affiliation
-- **Vedant (23AIML042)** — IIIT Bangalore, CTRI-DG
-- **Dax (23AIML076)** — IIIT Bangalore, CTRI-DG
-- **Institution**: International Institute of Information Technology Bangalore (IIITB)
+- **Vedant (23AIML042)** — CSPIT, CHARUSAT
+- **Dax (23AIML076)** — CSPIT, CHARUSAT
+- **Institution**: Chandubhai S. Patel Institute of Technology (CSPIT), CHARUSAT
 - **Date**: September 2026
 
 ---
@@ -64,4 +64,4 @@ pytest
 ---
 
 ## 📜 License & Citation
-Research project under active development at IIIT Bangalore (CTRI-DG). All rights reserved.
+Research project under active development at CSPIT, CHARUSAT. All rights reserved.

@@ -29,6 +29,7 @@ import React, {
   useMemo,
 } from "react";
 import { setApiToken, onUnauthorized } from "../api/client";
+import { getDemoToken } from "../api/auth";
 
 /**
  * Canonical enterprise authorization roles (Security & Access §13.1, shared.schemas.auth.Role).
@@ -211,6 +212,25 @@ export function AuthProvider({ children, initialToken = null }) {
   }, []);
 
   /**
+   * Request a signed Bearer JWT token from the demo gateway and authenticate.
+   *
+   * @param {string} [tenantId="tenant_demo"]
+   * @param {string} [role="tenant_admin"]
+   * @param {string} [userId="demo_operator"]
+   */
+  const loginAsDemo = useCallback(
+    async (tenantId = "tenant_demo", role = "tenant_admin", userId = "demo_operator") => {
+      setAuthError(null);
+      const res = await getDemoToken(tenantId, role, userId);
+      if (res && res.access_token) {
+        return login(res.access_token);
+      }
+      throw new Error("No access token returned from gateway");
+    },
+    [login]
+  );
+
+  /**
    * Clear in-memory token and reset authentication state.
    */
   const logout = useCallback(() => {
@@ -265,11 +285,12 @@ export function AuthProvider({ children, initialToken = null }) {
       tenantId: isAuthenticated ? parsed.tenantId : null,
       authError,
       login,
+      loginAsDemo,
       logout,
       hasPermission,
       hasRole,
     }),
-    [isAuthenticated, token, parsed, authError, login, logout, hasPermission, hasRole]
+    [isAuthenticated, token, parsed, authError, login, loginAsDemo, logout, hasPermission, hasRole]
   );
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>;

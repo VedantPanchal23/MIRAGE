@@ -32,6 +32,10 @@ export {
 } from "./health";
 
 export {
+  getDemoToken,
+} from "./auth";
+
+export {
   generateReport,
   getReportById,
   getReportPdf,
@@ -47,6 +51,7 @@ import * as alerts from "./alerts";
 import * as stream from "./stream";
 import * as health from "./health";
 import * as reports from "./reports";
+import * as auth from "./auth";
 import { apiFetch, setApiToken, getApiToken, onUnauthorized, ApiError } from "./client";
 
 export const api = {
@@ -60,6 +65,7 @@ export const api = {
   stream,
   health,
   reports,
+  auth,
 };
 
 export default api;

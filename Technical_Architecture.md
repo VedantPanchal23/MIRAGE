@@ -8,7 +8,7 @@
 | Document Version | 2.1.0 |
 | Status | Approved |
 | Authors | 23AIML042 Vedant, 23AIML076 Dax |
-| Institution | IIIT Bangalore — CTRI-DG |
+| Institution | CSPIT, CHARUSAT |
 | Date | September 2026 |
 
 ---

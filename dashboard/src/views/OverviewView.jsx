@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useContext } from "react";
 import {
   Activity,
   ShieldCheck,
@@ -8,10 +8,12 @@ import {
   Database,
   BarChart2,
   RefreshCw,
+  Building,
 } from "lucide-react";
 import { getDashboardStats, getHealth } from "../api";
 import { MetricCard } from "../components/MetricCard";
 import { CircuitBreakerStatus } from "../components/CircuitBreakerStatus";
+import { AuthContext } from "../context/AuthContext";
 
 /**
  * Overview View for Executive & Operational Telemetry.
@@ -22,6 +24,7 @@ import { CircuitBreakerStatus } from "../components/CircuitBreakerStatus";
  * - Handles Loading, Error, Empty, and Success states cleanly with accessible ARIA semantics.
  */
 export function OverviewView({ isRefreshing, onDataLoaded }) {
+  const auth = useContext(AuthContext);
   const [stats, setStats] = useState(null);
   const [circuits, setCircuits] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -129,6 +132,76 @@ export function OverviewView({ isRefreshing, onDataLoaded }) {
             </div>
           </div>
         </div>
+
+        {(error.status === 401 || error.code === "UNAUTHORIZED" || error.code === "HTTP_401") && (
+          <div className="mt-4 pt-3 border-t border-slate-800 bg-slate-950/60 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <ShieldCheck className="w-4 h-4 text-sky-400" />
+                <span className="text-xs font-semibold text-slate-200">
+                  1-Click Live Showcase Authentication
+                </span>
+              </div>
+              <span className="text-[10px] text-slate-500 font-mono">Zero-Trust Bearer JWT</span>
+            </div>
+            <p className="text-[11px] text-slate-400">
+              Connect to the authoritative gateway using a pre-configured enterprise demonstration profile:
+            </p>
+            <div className="flex flex-wrap gap-2.5">
+              <button
+                type="button"
+                onClick={async () => {
+                  if (auth?.loginAsDemo) {
+                    try {
+                      await auth.loginAsDemo("tenant_demo", "tenant_admin", "demo_operator");
+                      fetchOverviewData();
+                    } catch (e) {
+                      console.error("Login failed", e);
+                    }
+                  }
+                }}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-500 rounded-lg shadow-sm transition focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              >
+                <Building className="w-3.5 h-3.5" />
+                <span>🏢 Demo Tenant Admin</span>
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (auth?.loginAsDemo) {
+                    try {
+                      await auth.loginAsDemo("tenant_demo", "operator", "demo_operator");
+                      fetchOverviewData();
+                    } catch (e) {
+                      console.error("Login failed", e);
+                    }
+                  }
+                }}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-sky-600 hover:bg-sky-500 rounded-lg shadow-sm transition focus:outline-none focus:ring-2 focus:ring-sky-400"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>🛡️ Compliance Operator</span>
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (auth?.loginAsDemo) {
+                    try {
+                      await auth.loginAsDemo("tenant_demo", "super_admin", "demo_superadmin");
+                      fetchOverviewData();
+                    } catch (e) {
+                      console.error("Login failed", e);
+                    }
+                  }
+                }}
+                className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-purple-600 hover:bg-purple-500 rounded-lg shadow-sm transition focus:outline-none focus:ring-2 focus:ring-purple-400"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>👑 Super Admin</span>
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex justify-end pt-2 border-t border-slate-800">
           <button

@@ -31,6 +31,8 @@ EXEMPT_PATHS: set[str] = {
     "/redoc",
     "/openapi.json",
     "/metrics",
+    "/v1/auth/demo-token",
+    "/v1/auth/token",
 }
 
 # In-memory API Key Registry mapping SHA-256(api_key) -> (tenant_id, Role)

@@ -101,7 +101,7 @@ describe("Dashboard Shell & Application Integration (App.test.jsx)", () => {
 
     expect(screen.getByRole("heading", { name: "MIRAGE" })).toBeInTheDocument();
     expect(screen.getByRole("navigation", { name: "Dashboard Sections" })).toBeInTheDocument();
-    expect(screen.getByText(/IIIT Bangalore CTRI-DG Research Project/i)).toBeInTheDocument();
+    expect(screen.getByText(/CSPIT, CHARUSAT Research Project/i)).toBeInTheDocument();
 
     await waitFor(() => {
       expect(api.getDashboardStats).toHaveBeenCalled();

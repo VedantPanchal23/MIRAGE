@@ -8,7 +8,7 @@
 | Document Version | 2.1.0 |
 | Status | Approved |
 | Authors | 23AIML042 Vedant, 23AIML076 Dax |
-| Institution | IIIT Bangalore — CTRI-DG |
+| Institution | CSPIT, CHARUSAT |
 | Date | September 2026 |
 | Review Cycle | Monthly |
 
@@ -98,7 +98,7 @@ MIRAGE becomes the universal trust layer for enterprise LLM deployments — a pl
 | End Users of LLM Applications | Indirect beneficiaries | Receive more reliable LLM outputs |
 | LLM API Providers | External dependency | Groq (free tier), OpenRouter (free models), Hugging Face Inference API (free tier) for development; enterprise tenants may configure OpenAI, Anthropic, or any OpenAI-compatible provider |
 | Academic Reviewers | Evaluators | Assess research novelty of HRS calibration methodology |
-| IIITB Faculty | Project evaluators | Assess technical depth, innovation, and production readiness |
+| CSPIT Faculty | Project evaluators | Assess technical depth, innovation, and production readiness |
 
 ---
 

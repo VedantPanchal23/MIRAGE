@@ -45,8 +45,8 @@
     citecolor=accentteal,
     urlcolor=accentteal,
     pdfauthor={Vedant Panchal (23AIML042), Dax Virani (23AIML076)},
-    pdftitle={MIRAGE: Autonomous Multimodal Hallucination Detection & Factual Verification System},
-    pdfsubject={Project Technical Dossier & Approval Report - CSPIT AIML}
+    pdftitle={MIRAGE: Autonomous Multimodal Hallucination Detection and Factual Verification System},
+    pdfsubject={Project Technical Dossier and Approval Report - CSPIT AIML}
 }
 
 % ==============================================================================
@@ -148,17 +148,17 @@
     \begin{tcolorbox}[colback=lightgreybg,colframe=primarynavy,arc=2mm,boxrule=1pt,width=0.96\linewidth]
         \centering
         \textbf{\large Project Metadata \& Student Investigators}\\[0.2cm]
-        \begin{tabular}{ll}
+        \begin{tabularx}{\linewidth}{p{3.8cm} X}
             \textbf{Student Name 1:} & Vedant Panchal \quad (\textbf{Roll No:} 23AIML042) \\
             \textbf{Student Name 2:} & Dax Virani \quad (\textbf{Roll No:} 23AIML076) \\
-            \textbf{Degree Program:} & Bachelor of Technology in Artificial Intelligence \& Machine Learning \\
+            \textbf{Degree Program:} & Bachelor of Technology in AI \& Machine Learning \\
             \textbf{Institution:}    & Chandubhai S. Patel Institute of Technology (CHARUSAT) \\
             \textbf{Academic Year:}  & 2026--2027 \\
             \textbf{Project Track:}  & Enterprise AI Systems, Safe Autonomy \& Robust LLMs \\
-            \textbf{Project Status:} & \textbf{Phase P0--P4 Tier 1 Complete \& Ratified;} \\
-                                     & \textbf{Live Demonstration Validated (\texttt{LIVE\_DEMO\_READY});} \\
-                                     & \textbf{Phase P5 \& Tier 2 Academic Execution Initiated}
-        \end{tabular}
+            \textbf{Project Status:} & \textbf{Phase P0--P4 Tier 1 Complete \& Ratified;} \newline
+                                     \textbf{Live Demonstration Validated (\texttt{LIVE\_DEMO\_READY});} \newline
+                                     \textbf{Phase P5 \& Tier 2 Academic Execution Initiated}
+        \end{tabularx}
     \end{tcolorbox}
     
     \vspace{0.8cm}
@@ -202,7 +202,7 @@ Current industrial approaches to hallucination mitigation suffer from four funda
     \item \textbf{Naive Prompt Engineering (``Think step-by-step'' / System Prompts):} LLMs frequently hallucinate within chain-of-thought traces, inventing plausible-sounding but completely fictitious rationales.
     \item \textbf{Standard Retrieval-Augmented Generation (RAG) Alone:} Standard RAG retrieves documents, but generative models frequently ignore context snippets, misinterpret retrieved metrics, or extrapolate ungrounded assertions.
     \item \textbf{LLM-as-a-Judge:} Using a secondary frontier LLM (e.g., GPT-4) to grade the primary model is prohibitively expensive, introduces $3\times$ to $5\times$ latency penalties, and exhibits correlated failure modes where both models hallucinate on identical out-of-distribution prompts.
-    \item \textbf{Uncalibrated Heuristics Without Uncertainty Quantification:} Existing commercial guardrails emit simplistic binary flags (Pass/Fail) or uncalibrated confidence scores without mathematical uncertainty bounds. In enterprise compliance, a risk score must be paired with formal statistical coverage guarantees.
+    \item \textbf{Uncalibrated Heuristics Without Uncertainty Bounds:} Existing commercial guardrails emit simplistic binary flags (Pass/Fail) or uncalibrated confidence scores without mathematical uncertainty bounds. In enterprise compliance, a risk score must be paired with formal statistical coverage guarantees.
 \end{enumerate}
 
 \subsection{Formal Academic Problem Statement}
@@ -257,7 +257,7 @@ MIRAGE is an \textbf{Enterprise AI Safety Middleware Platform} delivering five d
 \textbf{2. Direct Verification REST API} & Workflow Orchestrators \& Pipeline Integrations & Dedicated endpoint (\texttt{POST /v1/verify}) accepting pre-generated (\texttt{prompt}, \texttt{response}) pairs, returning atomic claims, signal breakdowns, and conformal uncertainty intervals. \\
 \textbf{3. Real-Time Streaming WebSocket} & Interactive Chatbots \& UI Applications & Bidirectional persistent WebSocket (\texttt{/v1/verify/stream}) executing a 5-stage handshake and streaming claim verification events incrementally. \\
 \textbf{4. Model Context Protocol (MCP) Server} & AI IDEs, Cursor, Claude Desktop, Copilot & Standardized JSON-RPC 2.0 MCP server exposing \texttt{check\_hallucination}, \texttt{verify\_factual\_consistency}, and \texttt{get\_health\_status} to autonomous agentic workflows. \\
-\textbf{5. Operator & Drift Web Dashboard} & AI Safety Officers, Compliance Teams & React 18 + Vite frontend (100\% JavaScript/JSX, zero TSX) displaying longitudinal Population Stability Index (PSI) drift trends, TreeSHAP waterfalls, and PDF audit certificates. \\
+\textbf{5. Operator \& Drift Web Dashboard} & AI Safety Officers, Compliance Teams & React 18 + Vite frontend (100\% JavaScript/JSX, zero TSX) displaying longitudinal Population Stability Index (PSI) drift trends, TreeSHAP waterfalls, and PDF audit certificates. \\
 \bottomrule
 \end{tabularx}
 \caption{Taxonomy of MIRAGE Product Interfaces and Deployment Targets.}
@@ -512,7 +512,7 @@ To guarantee zero fabrication, direct HTTP probes were dispatched to Groq's API:
 \centering
 \small
 \renewcommand{\arraystretch}{1.3}
-\begin{tabularx}{\linewidth}{p{3.2cm} p{5.5cm} p{5.5cm}}
+\begin{tabularx}{\linewidth}{p{3.2cm} X X}
 \toprule
 \textbf{Evaluation Metric} & \textbf{Scenario A: Grounded Knowledge} & \textbf{Scenario B: Contradicted Hallucination} \\
 \midrule
@@ -580,7 +580,7 @@ To contextualize MIRAGE's technical contributions, we evaluate it against eight 
 \centering
 \tiny
 \renewcommand{\arraystretch}{1.25}
-\begin{tabularx}{\linewidth}{p{2.2cm} p{1.6cm} p{1.6cm} p{1.6cm} p{1.6cm} p{1.6cm} p{1.6cm} p{1.6cm} p{1.6cm} p{1.8cm}}
+\begin{tabularx}{\linewidth}{p{2.0cm} *{9}{>{\centering\arraybackslash}X}}
 \toprule
 \textbf{Dimension} & \textbf{MIRAGE (Ours)} & \textbf{SelfCheckGPT} & \textbf{FACTSCORE} & \textbf{Guardrails AI} & \textbf{NeMo Guard.} & \textbf{Cleanlab TLM} & \textbf{Galileo Eval} & \textbf{TruLens} & \textbf{Langfuse} \\
 \midrule

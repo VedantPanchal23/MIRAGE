@@ -132,22 +132,74 @@ class BenchmarkCertificationGuard:
         # ----------------------------------------------------------------------
         cross_model = report_payload.get("cross_model_generalization", [])
         simulation_models: list[str] = []
+        unconfirmed_models: list[str] = []
+        missing_models: list[str] = []
+
+        # Required generator families per PRD §4 and Technical Architecture §4:
+        # 1. Llama 3.1 70B (meta-llama/Meta-Llama-3.1-70B-Instruct)
+        # 2. Mixtral 8x7B (mistralai/Mixtral-8x7B-Instruct-v0.1)
+        # 3. Gemma 2 27B (google/gemma-2-27b-it)
+        required_families = {
+            "Llama-3.1-70B": [
+                "llama-3.1-70b",
+                "llama 3.1 70b",
+                "meta-llama-3.1-70b",
+                "llama-3.1",
+                "llama 3.1",
+                "llama",
+            ],
+            "Mixtral-8x7B": ["mixtral-8x7b", "mixtral 8x7b", "mixtral"],
+            "Gemma-2-27B": ["gemma-2-27b", "gemma 2 27b", "gemma-2", "gemma 2", "gemma"],
+        }
+        found_families: set[str] = set()
 
         for m in cross_model:
-            eval_type = m.get("evaluation_type", "")
-            if "Simulation" in eval_type:
-                simulation_models.append(m.get("model_name", "unknown"))
+            model_name = str(m.get("model_name", "unknown"))
+            eval_type = str(m.get("evaluation_type", ""))
+            name_lower = model_name.lower().replace("_", "-")
 
-        check_4_passed = len(simulation_models) == 0 and len(cross_model) > 0
+            if "simulation" in eval_type.lower():
+                simulation_models.append(model_name)
+
+            identity_confirmed = m.get("model_identity_confirmed") is True or m.get("live_api_confirmed") is True
+            if not identity_confirmed and "simulation" not in eval_type.lower():
+                unconfirmed_models.append(model_name)
+
+            for fam_name, patterns in required_families.items():
+                if any(p in name_lower for p in patterns):
+                    found_families.add(fam_name)
+
+        for fam_name in required_families:
+            if fam_name not in found_families:
+                missing_models.append(fam_name)
+
+        check_4_passed = (
+            len(simulation_models) == 0
+            and len(unconfirmed_models) == 0
+            and len(missing_models) == 0
+            and len(cross_model) >= 3
+        )
         gate_checks["live_generator_execution"] = {
             "passed": check_4_passed,
             "simulation_models": simulation_models,
-            "description": "Cross-model generator evaluation must execute live API/model generation, not simulation.",
+            "unconfirmed_models": unconfirmed_models,
+            "missing_models": missing_models,
+            "description": (
+                "Cross-model generator evaluation must execute live API/model generation with confirmed "
+                "model identities (Llama 3.1 70B, Mixtral 8x7B, Gemma 2 27B) rather than stylistic simulation."
+            ),
         }
         if not check_4_passed:
-            unmet_prerequisites.append(
-                f"Cross-model evaluation executed via stylistic perturbation simulation: {simulation_models}"
-            )
+            if simulation_models:
+                unmet_prerequisites.append(
+                    f"Cross-model evaluation executed via stylistic perturbation simulation: {simulation_models}"
+                )
+            if unconfirmed_models:
+                unmet_prerequisites.append(
+                    f"Generator model identities not cryptographically or API-confirmed: {unconfirmed_models}"
+                )
+            if missing_models:
+                unmet_prerequisites.append(f"Missing required generator model architectures: {missing_models}")
 
         # ----------------------------------------------------------------------
         # Check 5: Baseline Qualification Integrity

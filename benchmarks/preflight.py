@@ -8,18 +8,20 @@ BEFORE any inference or evaluation runs:
    - FActScore (N=183 biographies / ~3,200 atomic facts)
    - MMHAL-Bench (N=96)
 2. No fixture or demonstration datasets are selected.
-3. Dataset SHA-256 hashes match manifest specifications.
+3. Dataset SHA-256 hashes do not match known test fixtures, and schema/duplicates/domains are verified.
 4. Model credentials/checkpoints exist for live generator execution (no simulation).
 5. Hardware runtime is verified (detects NVIDIA RTX 3050 6GB VRAM and checks memory budgets).
 6. Calibration and test evaluation splits are strictly disjoint (zero test leakage).
 7. Benchmark configuration and random seed are deterministic and sealed.
 8. Output directory is clean or explicitly versioned.
-9. Repository commit SHA is recorded.
+9. Repository commit SHA and ratified protocol commit SHA are recorded and separated.
+10. Manifest SHA-256 immutability is verified against on-disk tier2_manifest.json.
 
 Fails closed with exit code 1 and actionable diagnostics if any prerequisite is missing.
 """
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -29,6 +31,10 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from benchmarks.datasets.factscore import get_factscore_fixture_fingerprint
+from benchmarks.datasets.halueval import get_halueval_fixture_fingerprint
+from benchmarks.datasets.mmhal import get_mmhal_fixture_fingerprint
+from benchmarks.datasets.truthfulqa import get_truthfulqa_fixture_fingerprint
 from benchmarks.manifest import TIER_2_EXPERIMENTS, build_manifest_payload
 
 
@@ -55,6 +61,7 @@ class Tier2PreflightResult:
     unmet_checks: list[str]
     diagnostics: list[str]
     remediations: list[str]
+    manifest_ratified_commit_sha: str = ""
 
     def to_dict(self) -> dict[str, Any]:
         """Convert preflight result to dictionary."""
@@ -82,11 +89,11 @@ class Tier2PreflightValidator:
         self.manifest = build_manifest_payload()
 
     def get_git_commit_sha(self) -> str:
-        """Resolve current git commit SHA."""
+        """Resolve current git commit SHA dynamically from HEAD."""
         try:
             return subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
         except Exception:
-            return "d24dd64"
+            return "git-unavailable"
 
     def probe_hardware_environment(self) -> dict[str, Any]:
         """Probe local hardware and GPU capabilities."""
@@ -137,30 +144,54 @@ class Tier2PreflightValidator:
     def check_datasets_presence_and_fixtures(self) -> PreflightCheckResult:
         """Verify all 4 academic corpora exist on disk and are not demonstration fixtures."""
         dataset_paths = {
-            "HaluEval": self.halueval_path or Path("data/academic_corpora/halueval_10k.json"),
-            "TruthfulQA": self.truthfulqa_path or Path("data/academic_corpora/truthfulqa_817.json"),
-            "FActScore": self.factscore_path or Path("data/academic_corpora/factscore_183.json"),
-            "MMHAL-Bench": self.mmhal_path or Path("data/academic_corpora/mmhal_96.json"),
+            "HaluEval": (
+                self.halueval_path or Path("data/academic_corpora/halueval_10k.json"),
+                get_halueval_fixture_fingerprint(),
+            ),
+            "TruthfulQA": (
+                self.truthfulqa_path or Path("data/academic_corpora/truthfulqa_817.json"),
+                get_truthfulqa_fixture_fingerprint(),
+            ),
+            "FActScore": (
+                self.factscore_path or Path("data/academic_corpora/factscore_183.json"),
+                get_factscore_fixture_fingerprint(),
+            ),
+            "MMHAL-Bench": (
+                self.mmhal_path or Path("data/academic_corpora/mmhal_96.json"),
+                get_mmhal_fixture_fingerprint(),
+            ),
         }
 
         missing_datasets: list[str] = []
         fixture_detected: list[str] = []
 
-        for name, p in dataset_paths.items():
+        for name, (p, fixture_hash) in dataset_paths.items():
             if not p.exists():
                 missing_datasets.append(f"{name} (expected at: {p})")
             else:
-                # Reject if pointing to internal fixture files
+                # Reject if pointing to internal fixture files or directory
                 p_str = str(p).lower().replace("\\", "/")
                 if "fixture" in p_str or "tests/" in p_str:
-                    fixture_detected.append(f"{name} ({p})")
+                    fixture_detected.append(f"{name} (fixture path: {p})")
+                else:
+                    # Fingerprint check against known fixture hashes
+                    try:
+                        content = p.read_text(encoding="utf-8")
+                        content_hash = hashlib.sha256(content.encode("utf-8")).hexdigest()
+                        if content_hash == fixture_hash:
+                            fixture_detected.append(f"{name} (matches fixture SHA-256: {content_hash[:16]}...)")
+                    except Exception as e:
+                        fixture_detected.append(f"{name} (read error: {e})")
 
         if missing_datasets or fixture_detected:
             details = []
             if missing_datasets:
                 details.append(f"Missing external academic datasets: {', '.join(missing_datasets)}.")
             if fixture_detected:
-                details.append(f"Datasets pointing to internal fixtures: {', '.join(fixture_detected)}.")
+                details.append(
+                    "Datasets pointing to internal fixtures or matching fixture fingerprints: "
+                    f"{', '.join(fixture_detected)}."
+                )
             return PreflightCheckResult(
                 check_name="dataset_presence_and_fixtures",
                 passed=False,
@@ -194,13 +225,18 @@ class Tier2PreflightValidator:
                 deficits.append(f"{name}: file not found (required N={req_count})")
                 continue
             try:
-                with open(p, encoding="utf-8") as f:
-                    data = json.load(f)
+                content = p.read_text(encoding="utf-8")
+                try:
+                    data = json.loads(content)
                     actual_count = len(data) if isinstance(data, list) else len(data.get("data", []))
-                    if actual_count < req_count:
-                        deficits.append(f"{name}: actual N={actual_count} < required N={req_count}")
+                except json.JSONDecodeError:
+                    lines = [ln.strip() for ln in content.splitlines() if ln.strip()]
+                    actual_count = len(lines)
+
+                if actual_count < req_count:
+                    deficits.append(f"{name}: actual N={actual_count} < required N={req_count}")
             except Exception as e:
-                deficits.append(f"{name}: unreadable JSON ({e})")
+                deficits.append(f"{name}: unreadable dataset file ({e})")
 
         if deficits:
             return PreflightCheckResult(
@@ -217,6 +253,154 @@ class Tier2PreflightValidator:
             remediation="None required.",
         )
 
+    def check_dataset_deep_integrity(self) -> PreflightCheckResult:
+        """Deep integrity check: JSON schema validation, unique IDs, duplicate detection, and label domains."""
+        dataset_paths = {
+            "HaluEval": (self.halueval_path or Path("data/academic_corpora/halueval_10k.json"), 10000),
+            "TruthfulQA": (self.truthfulqa_path or Path("data/academic_corpora/truthfulqa_817.json"), 817),
+            "FActScore": (self.factscore_path or Path("data/academic_corpora/factscore_183.json"), 183),
+            "MMHAL-Bench": (self.mmhal_path or Path("data/academic_corpora/mmhal_96.json"), 96),
+        }
+
+        issues: list[str] = []
+
+        for name, (path, req_count) in dataset_paths.items():
+            if not path.exists():
+                issues.append(f"{name}: file not found at {path}")
+                continue
+
+            # Reject internal test fixture paths
+            p_str = str(path).lower().replace("\\", "/")
+            if "fixture" in p_str or "tests/" in p_str:
+                issues.append(f"{name}: path points to internal test fixture ({path})")
+                continue
+
+            try:
+                content = path.read_text(encoding="utf-8")
+                items: list[dict[str, Any]] = []
+                try:
+                    parsed = json.loads(content)
+                    if isinstance(parsed, list):
+                        items = parsed
+                    elif isinstance(parsed, dict) and "data" in parsed:
+                        items = parsed["data"]
+                    else:
+                        issues.append(f"{name}: invalid JSON structure (expected list of objects or dict with 'data')")
+                        continue
+                except json.JSONDecodeError:
+                    for line_idx, line in enumerate(content.splitlines(), start=1):
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            items.append(json.loads(line))
+                        except Exception as e:
+                            issues.append(f"{name}: unparseable JSON on line {line_idx} ({e})")
+                            break
+                    if issues and issues[-1].startswith(f"{name}: unparseable"):
+                        continue
+
+                actual_count = len(items)
+                if actual_count < req_count:
+                    issues.append(f"{name}: actual N={actual_count} < required literature N={req_count}")
+                    continue
+
+                seen_ids: set[str] = set()
+                duplicate_ids: list[str] = []
+                invalid_labels: list[str] = []
+                missing_fields: list[str] = []
+
+                for idx, item in enumerate(items):
+                    if not isinstance(item, dict):
+                        issues.append(f"{name}: item {idx} is not a JSON object")
+                        break
+
+                    item_id = str(
+                        item.get("id")
+                        or item.get("case_id")
+                        or item.get("question_id")
+                        or item.get("topic")
+                        or f"idx_{idx}"
+                    )
+                    if item_id in seen_ids:
+                        duplicate_ids.append(item_id)
+                    else:
+                        seen_ids.add(item_id)
+
+                    # Required fields check per dataset
+                    if name == "HaluEval":
+                        if not (item.get("prompt") or item.get("question") or item.get("dialogue_history")):
+                            missing_fields.append(f"item {item_id} missing prompt/question")
+                        if not (item.get("response") or item.get("hallucinated_answer") or item.get("answer")):
+                            missing_fields.append(f"item {item_id} missing response/answer")
+                        if "label" not in item:
+                            missing_fields.append(f"item {item_id} missing ground truth label")
+                    elif name == "TruthfulQA":
+                        if not (item.get("prompt") or item.get("question")):
+                            missing_fields.append(f"item {item_id} missing question")
+                    elif name == "FActScore":
+                        if not (item.get("prompt") or item.get("topic") or item.get("name")):
+                            missing_fields.append(f"item {item_id} missing topic/prompt")
+                    elif name == "MMHAL-Bench":
+                        if not (item.get("prompt") or item.get("question")):
+                            missing_fields.append(f"item {item_id} missing prompt")
+                        if not (item.get("image") or item.get("image_path") or item.get("image_id")):
+                            missing_fields.append(f"item {item_id} missing image reference")
+
+                    # Label domain check
+                    if "label" in item:
+                        raw_label = item["label"]
+                        if raw_label not in (
+                            0,
+                            1,
+                            0.0,
+                            1.0,
+                            True,
+                            False,
+                            "0",
+                            "1",
+                            "hallucinated",
+                            "factual",
+                            "true",
+                            "false",
+                        ):
+                            invalid_labels.append(f"{item_id}: {raw_label}")
+
+                if duplicate_ids:
+                    issues.append(
+                        f"{name}: {len(duplicate_ids)} duplicate sample IDs detected (e.g., {duplicate_ids[:3]})"
+                    )
+                if missing_fields:
+                    issues.append(f"{name}: {len(missing_fields)} schema violations (e.g., {missing_fields[:2]})")
+                if invalid_labels:
+                    issues.append(
+                        f"{name}: {len(invalid_labels)} labels outside domain [0, 1] (e.g., {invalid_labels[:2]})"
+                    )
+
+            except Exception as e:
+                issues.append(f"{name}: read/parse error: {e}")
+
+        if issues:
+            return PreflightCheckResult(
+                check_name="dataset_deep_integrity",
+                passed=False,
+                details=f"Dataset deep integrity issues: {'; '.join(issues)}.",
+                remediation=(
+                    "Acquire verified external academic corpora matching native counts "
+                    "(HaluEval N=10k, TruthfulQA N=817, FActScore N=183, MMHAL N=96), "
+                    "with valid unique IDs, complete schema fields, and binary labels [0, 1]."
+                ),
+            )
+
+        return PreflightCheckResult(
+            check_name="dataset_deep_integrity",
+            passed=True,
+            details=(
+                "All 4 academic corpora passed deep schema validation, unique ID checks, and label domain verification."
+            ),
+            remediation="None required.",
+        )
+
     def check_live_generator_credentials(self) -> PreflightCheckResult:
         """Verify API keys / credentials exist for live 70B generator inference."""
         required_keys = ["HF_TOKEN", "GROQ_API_KEY", "OPENAI_API_KEY", "TOGETHER_API_KEY"]
@@ -228,7 +412,7 @@ class Tier2PreflightValidator:
                 passed=False,
                 details=(
                     "No valid inference credentials found in environment. "
-                    "70B models (Llama-3-70B, Mixtral-8x7B) cannot be executed locally on 6GB VRAM."
+                    "70B models (Llama-3.1-70B, Mixtral-8x7B) cannot be executed locally on 6GB VRAM."
                 ),
                 remediation=(
                     "Set HF_TOKEN or GROQ_API_KEY in environment or .env to enable live generator execution. "
@@ -245,7 +429,6 @@ class Tier2PreflightValidator:
 
     def check_calibration_split_disjointness(self) -> PreflightCheckResult:
         """Verify calibration fitting split and evaluation split are disjoint."""
-        # Manifest specifies: HaluEval N_cal=1,000 for fitting; TruthfulQA (N=817) & FActScore (N=183) for evaluation
         cal_exp = next((e for e in TIER_2_EXPERIMENTS if e.experiment_id == "EXP-CALIBRATION-TRANSFER"), None)
         if not cal_exp:
             return PreflightCheckResult(
@@ -293,20 +476,51 @@ class Tier2PreflightValidator:
         )
 
     def check_manifest_immutability(self) -> PreflightCheckResult:
-        """Verify manifest SHA-256 integrity and determinism."""
+        """Verify manifest SHA-256 integrity, determinism, and match against on-disk tier2_manifest.json."""
         manifest_hash = self.manifest.get("manifest_sha256", "")
         if not manifest_hash:
             return PreflightCheckResult(
                 check_name="manifest_immutability",
                 passed=False,
-                details="Manifest has no SHA-256 fingerprint.",
+                details="In-memory manifest has no SHA-256 fingerprint.",
                 remediation="Regenerate manifest using build_manifest_payload().",
+            )
+
+        disk_manifest_path = Path("benchmarks/tier2_manifest.json")
+        if not disk_manifest_path.exists():
+            return PreflightCheckResult(
+                check_name="manifest_immutability",
+                passed=False,
+                details=f"Authoritative manifest file missing on disk at {disk_manifest_path}.",
+                remediation="Run benchmarks.manifest export_tier2_manifest() to persist the frozen manifest.",
+            )
+
+        try:
+            with open(disk_manifest_path, encoding="utf-8") as f:
+                disk_data = json.load(f)
+            disk_hash = disk_data.get("manifest_sha256", "")
+            if disk_hash != manifest_hash:
+                return PreflightCheckResult(
+                    check_name="manifest_immutability",
+                    passed=False,
+                    details=(
+                        f"Manifest SHA-256 mismatch between in-memory specification ({manifest_hash[:16]}...) "
+                        f"and on-disk {disk_manifest_path} ({disk_hash[:16]}...). Tampering detected."
+                    ),
+                    remediation="Re-synchronize benchmarks/tier2_manifest.json with benchmarks.manifest.py.",
+                )
+        except Exception as e:
+            return PreflightCheckResult(
+                check_name="manifest_immutability",
+                passed=False,
+                details=f"Failed to read or parse {disk_manifest_path}: {e}",
+                remediation="Ensure benchmarks/tier2_manifest.json is valid JSON.",
             )
 
         return PreflightCheckResult(
             check_name="manifest_immutability",
             passed=True,
-            details=f"Manifest sealed with SHA-256: {manifest_hash[:16]}... (status: FROZEN).",
+            details=f"Manifest sealed with SHA-256: {manifest_hash[:16]}... (status: FROZEN, verified on disk).",
             remediation="None required.",
         )
 
@@ -315,10 +529,12 @@ class Tier2PreflightValidator:
         hardware_info = self.probe_hardware_environment()
         git_sha = self.get_git_commit_sha()
         manifest_sha = self.manifest.get("manifest_sha256", "unknown")
+        manifest_ratified_sha = self.manifest.get("ratified_commit_sha", "unknown")
 
         check_functions = [
             self.check_datasets_presence_and_fixtures,
             self.check_native_sample_counts,
+            self.check_dataset_deep_integrity,
             self.check_live_generator_credentials,
             self.check_calibration_split_disjointness,
             self.check_output_directory_integrity,
@@ -357,6 +573,7 @@ class Tier2PreflightValidator:
             unmet_checks=unmet_checks,
             diagnostics=diagnostics,
             remediations=remediations,
+            manifest_ratified_commit_sha=manifest_ratified_sha,
         )
 
 
@@ -366,10 +583,11 @@ def format_preflight_table(result: Tier2PreflightResult) -> str:
     lines.append("\n" + "=" * 105)
     lines.append("MIRAGE Phase P4: Tier 2 Academic Execution Preflight Validation Report")
     lines.append("=" * 105)
-    lines.append(f"Git Commit SHA   : {result.git_commit_sha}")
-    lines.append(f"Manifest SHA-256 : {result.manifest_sha256}")
-    lines.append(f"Preflight Status : {result.status} (Success: {result.success})")
-    lines.append(f"Hardware Summary : {result.hardware_summary.get('note')}")
+    lines.append(f"Execution Commit SHA : {result.git_commit_sha}")
+    lines.append(f"Manifest Protocol SHA: {result.manifest_ratified_commit_sha}")
+    lines.append(f"Manifest SHA-256     : {result.manifest_sha256}")
+    lines.append(f"Preflight Status     : {result.status} (Success: {result.success})")
+    lines.append(f"Hardware Summary     : {result.hardware_summary.get('note')}")
     lines.append("-" * 105)
 
     col_widths = [36, 10, 53]

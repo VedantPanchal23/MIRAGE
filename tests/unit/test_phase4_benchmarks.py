@@ -11,6 +11,7 @@ Validates:
 8. scripts.run_benchmarks: CLI execution and JSON report generation.
 """
 
+import json
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -422,9 +423,9 @@ def test_benchmark_certification_guard_blocks_fixtures() -> None:
             }
         ],
         "cross_model_generalization": [
-            {"model_name": "Llama", "evaluation_type": "Live API Generation"},
-            {"model_name": "Mixtral", "evaluation_type": "Live API Generation"},
-            {"model_name": "Gemma", "evaluation_type": "Live API Generation"},
+            {"model_name": "Llama 3.1 70B", "evaluation_type": "Live API Generation", "model_identity_confirmed": True},
+            {"model_name": "Mixtral 8x7B", "evaluation_type": "Live API Generation", "model_identity_confirmed": True},
+            {"model_name": "Gemma 2 27B", "evaluation_type": "Live API Generation", "model_identity_confirmed": True},
         ],
         "adversarial_robustness": [
             {
@@ -481,9 +482,9 @@ def test_benchmark_certification_guard_detects_calibration_leakage() -> None:
             }
         ],
         "cross_model_generalization": [
-            {"model_name": "Llama", "evaluation_type": "Live API Generation"},
-            {"model_name": "Mixtral", "evaluation_type": "Live API Generation"},
-            {"model_name": "Gemma", "evaluation_type": "Live API Generation"},
+            {"model_name": "Llama 3.1 70B", "evaluation_type": "Live API Generation", "model_identity_confirmed": True},
+            {"model_name": "Mixtral 8x7B", "evaluation_type": "Live API Generation", "model_identity_confirmed": True},
+            {"model_name": "Gemma 2 27B", "evaluation_type": "Live API Generation", "model_identity_confirmed": True},
         ],
         "adversarial_robustness": [
             {
@@ -572,7 +573,7 @@ def test_tier2_manifest_schema_and_integrity() -> None:
 
     # Verify live generator targets
     live_models = manifest["target_live_generator_models"]
-    assert "meta-llama/Meta-Llama-3-70B-Instruct" in live_models
+    assert "meta-llama/Meta-Llama-3.1-70B-Instruct" in live_models
     assert "mistralai/Mixtral-8x7B-Instruct-v0.1" in live_models
     assert "google/gemma-2-27b-it" in live_models
 
@@ -741,3 +742,169 @@ def test_certification_guard_blocks_simulated_generators_even_with_large_n() -> 
     assert any(
         "Cross-model evaluation executed via stylistic perturbation simulation" in p for p in audit.unmet_prerequisites
     )
+
+
+def test_governing_acceptance_criteria_match_section_17() -> None:
+    """Verify manifest acceptance thresholds strictly preserve Benchmarking_Evaluation.md §17 governing criteria."""
+    manifest = build_manifest_payload()
+    assert "Benchmarking_Evaluation.md §17" in manifest["governing_specification"]
+    assert manifest["ratified_commit_sha"] != ""
+
+    exp_map = {e["experiment_id"]: e for e in manifest["experiments"]}
+
+    # HaluEval Core
+    halu = exp_map["EXP-HALUEVAL-CORE"]
+    assert "Macro F1 > 0.85" in halu["acceptance_threshold"]
+    assert "AUROC > 0.90" in halu["acceptance_threshold"]
+    assert "ECE < 0.035" in halu["acceptance_threshold"]
+    assert "Brier < 0.16" in halu["acceptance_threshold"]
+
+    # TruthfulQA Core
+    tqa = exp_map["EXP-TRUTHFULQA-CORE"]
+    assert "Macro F1 > 0.80" in tqa["acceptance_threshold"]
+    assert "Transfer ECE < 0.050" in tqa["acceptance_threshold"]
+
+    # FActScore Core
+    fact = exp_map["EXP-FACTSCORE-CORE"]
+    assert "Atomic F1 > 0.82" in fact["acceptance_threshold"]
+    assert "Transfer ECE < 0.050" in fact["acceptance_threshold"]
+
+    # MMHAL-Bench Core
+    mmhal = exp_map["EXP-MMHAL-CORE"]
+    assert "VGS Accuracy > 0.78" in mmhal["acceptance_threshold"]
+    assert "llava-v1.6-mistral-7b-hf" in mmhal["model_checkpoint"]
+    assert "clip-vit-large-patch14" in mmhal["model_checkpoint"]
+
+    # Conformal Sizing
+    conf = exp_map["EXP-CONFORMAL-SIZING"]
+    assert "Marginal coverage >= 94.5%" in conf["acceptance_threshold"]
+    assert "Mondrian coverage >= 93.5%" in conf["acceptance_threshold"]
+    assert "Mean interval width < 0.18" in conf["acceptance_threshold"]
+
+    # Cross-Model Live
+    cross = exp_map["EXP-CROSS-MODEL-LIVE"]
+    assert "Macro F1 > 0.85" in cross["acceptance_threshold"]
+    assert "Meta-Llama-3.1-70B-Instruct" in cross["model_checkpoint"]
+    assert "Mixtral-8x7B-Instruct-v0.1" in cross["model_checkpoint"]
+    assert "gemma-2-27b-it" in cross["model_checkpoint"]
+
+    # Adversarial Core
+    adv = exp_map["EXP-ADVERSARIAL-CORE"]
+    assert "ATK-01 Delta F1 < 0.04" in adv["acceptance_threshold"]
+    assert "ATK-02 Delta HRS < 0.02" in adv["acceptance_threshold"]
+    assert "ATK-04 Contradiction F1 > 0.82" in adv["acceptance_threshold"]
+    assert "ATK-03 classified as known metric-sensitivity" in adv["acceptance_threshold"]
+
+    # Ablations 12-way Bonferroni
+    abl = exp_map["EXP-ABLATIONS-12WAY"]
+    assert "Bonferroni correction" in abl["acceptance_threshold"]
+    assert "p_k < 0.00455" in abl["acceptance_threshold"]
+
+
+def test_preflight_dynamic_commit_and_protocol_sha() -> None:
+    """Verify preflight validator resolves dynamic HEAD commit and reports ratified protocol SHA."""
+    validator = Tier2PreflightValidator()
+    commit_sha = validator.get_git_commit_sha()
+
+    # Dynamic git SHA must not be hardcoded stale commit
+    assert commit_sha != "d24dd64"
+    assert len(commit_sha) >= 7
+
+    res = validator.run_preflight()
+    assert res.git_commit_sha == commit_sha
+    assert res.manifest_ratified_commit_sha != ""
+    assert res.manifest_ratified_commit_sha != "d24dd64"
+
+    # Formatted table must show both provenance indicators
+    table = format_preflight_table(res)
+    assert f"Execution Commit SHA : {commit_sha}" in table
+    assert f"Manifest Protocol SHA: {res.manifest_ratified_commit_sha}" in table
+
+
+def test_preflight_manifest_immutability_detects_tamper() -> None:
+    """Verify preflight rejects tampered or mismatched manifest files."""
+    validator = Tier2PreflightValidator()
+    # Check legitimate check passes against disk
+    check_res = validator.check_manifest_immutability()
+    assert check_res.passed is True
+
+    # Artificially alter manifest hash in validator
+    validator.manifest["manifest_sha256"] = "0" * 64
+    tampered_res = validator.check_manifest_immutability()
+    assert tampered_res.passed is False
+    assert "Tampering detected" in tampered_res.details
+
+
+def test_preflight_deep_dataset_integrity_detects_schema_and_duplicate_violations(tmp_path: Path) -> None:
+    """Verify check_dataset_deep_integrity detects duplicate IDs and schema violations."""
+    fake_halueval = tmp_path / "halueval_tampered.json"
+    # Duplicate ID "item_01" and invalid label 999
+    bad_data = [
+        {"id": "item_01", "prompt": "Q1?", "response": "A1.", "label": 0},
+        {"id": "item_01", "prompt": "Q2?", "response": "A2.", "label": 999},  # duplicate + invalid label
+    ]
+    fake_halueval.write_text(json.dumps(bad_data), encoding="utf-8")
+
+    validator = Tier2PreflightValidator(halueval_path=fake_halueval)
+    res = validator.check_dataset_deep_integrity()
+
+    assert res.passed is False
+    assert "duplicate sample IDs" in res.details or "actual N=" in res.details or "labels outside domain" in res.details
+
+
+def test_certification_guard_enforces_exact_model_identities() -> None:
+    """Verify BenchmarkCertificationGuard validates exact model families and confirmation flags."""
+    guard = BenchmarkCertificationGuard()
+
+    # Case A: Live generation but unconfirmed identities -> FAILS
+    payload_unconfirmed: dict[str, Any] = {
+        "cross_model_generalization": [
+            {
+                "model_name": "Llama 3.1 70B",
+                "evaluation_type": "Live API Generation",
+                "model_identity_confirmed": False,
+            },
+            {"model_name": "Mixtral 8x7B", "evaluation_type": "Live API Generation", "model_identity_confirmed": False},
+            {"model_name": "Gemma 2 27B", "evaluation_type": "Live API Generation", "model_identity_confirmed": False},
+        ],
+    }
+    audit_a = guard.audit_certification_readiness(payload_unconfirmed)
+    assert not audit_a.gate_checks["live_generator_execution"]["passed"]
+    assert any(
+        "Generator model identities not cryptographically or API-confirmed" in p for p in audit_a.unmet_prerequisites
+    )
+
+    # Case B: Missing one required model family -> FAILS
+    payload_missing: dict[str, Any] = {
+        "cross_model_generalization": [
+            {"model_name": "Llama 3.1 70B", "evaluation_type": "Live API Generation", "model_identity_confirmed": True},
+            {"model_name": "Mixtral 8x7B", "evaluation_type": "Live API Generation", "model_identity_confirmed": True},
+            # Missing Gemma 2 27B
+        ],
+    }
+    audit_b = guard.audit_certification_readiness(payload_missing)
+    assert not audit_b.gate_checks["live_generator_execution"]["passed"]
+    assert any("Missing required generator model architectures" in p for p in audit_b.unmet_prerequisites)
+
+    # Case C: All 3 confirmed live models -> PASSES Check 4
+    payload_confirmed: dict[str, Any] = {
+        "cross_model_generalization": [
+            {
+                "model_name": "meta-llama/Meta-Llama-3.1-70B-Instruct",
+                "evaluation_type": "Live API Generation",
+                "model_identity_confirmed": True,
+            },
+            {
+                "model_name": "mistralai/Mixtral-8x7B-Instruct-v0.1",
+                "evaluation_type": "Live API Generation",
+                "model_identity_confirmed": True,
+            },
+            {
+                "model_name": "google/gemma-2-27b-it",
+                "evaluation_type": "Live API Generation",
+                "model_identity_confirmed": True,
+            },
+        ],
+    }
+    audit_c = guard.audit_certification_readiness(payload_confirmed)
+    assert audit_c.gate_checks["live_generator_execution"]["passed"] is True

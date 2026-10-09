@@ -10,7 +10,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 
 
 class HeaderSanitizationMiddleware:
-    """Strips untrusted client-supplied security headers (e.g. X-Role) at the ASGI boundary.
+    """Strips untrusted client-supplied identity headers at the ASGI boundary.
 
     Implements Security & Access Document §2.2:
     Headers specifying roles are ignored and stripped before downstream application logic.
@@ -20,9 +20,10 @@ class HeaderSanitizationMiddleware:
         self.app = app
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] == "http":
-            # Strip X-Role completely from raw ASGI scope headers
-            sanitized_headers = [(k, v) for k, v in scope.get("headers", []) if k.lower() != b"x-role"]
+        if scope["type"] in {"http", "websocket"}:
+            # Identity is established exclusively by a credential plus control-plane lookup.
+            prohibited = {b"x-role", b"x-tenant-id", b"x-agent-id", b"x-identity-id", b"x-capability"}
+            sanitized_headers = [(k, v) for k, v in scope.get("headers", []) if k.lower() not in prohibited]
             scope["headers"] = sanitized_headers
         await self.app(scope, receive, send)
 

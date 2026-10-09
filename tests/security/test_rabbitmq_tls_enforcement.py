@@ -28,7 +28,7 @@ class TestRabbitMQTLSValidation:
         s = Settings(
             environment=EnvironmentType.PRODUCTION,
             celery_broker_url="amqps://mirage:secret@broker.mirage.internal:5671//",
-            secret_key="a" * 32,
+            secret_key="a" * 48,
         )
         assert s.celery_broker_url == "amqps://mirage:secret@broker.mirage.internal:5671//"
         assert s.environment == EnvironmentType.PRODUCTION

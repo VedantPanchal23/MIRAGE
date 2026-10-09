@@ -1,4 +1,3 @@
-import React from "react";
 import {
   LayoutDashboard,
   TrendingUp,
@@ -6,6 +5,10 @@ import {
   Radio,
   AlertCircle,
   Lock,
+  Layers,
+  Wrench,
+  ShieldCheck,
+  Eye,
 } from "lucide-react";
 import { PERMISSIONS } from "../context/AuthContext";
 
@@ -18,6 +21,8 @@ import { PERMISSIONS } from "../context/AuthContext";
  * - sessions: VERIFY_READ or AUDIT_READ (backend GET /v1/sessions/{session_id})
  * - stream: VERIFY_WRITE (backend WebSocket /v1/verify/stream)
  * - alerts: DASHBOARD_READ (backend GET /v1/alerts)
+ * - context: DASHBOARD_READ (backend Gate 2 Context & Memory)
+ * - actions: DASHBOARD_READ (backend Gate 3 Action Assurance & Tool Governance)
  */
 export const SECTION_PERMISSIONS = Object.freeze({
   overview: [PERMISSIONS.DASHBOARD_READ],
@@ -25,6 +30,10 @@ export const SECTION_PERMISSIONS = Object.freeze({
   sessions: [PERMISSIONS.VERIFY_READ, PERMISSIONS.AUDIT_READ],
   stream: [PERMISSIONS.VERIFY_WRITE],
   alerts: [PERMISSIONS.DASHBOARD_READ],
+  context: [PERMISSIONS.DASHBOARD_READ],
+  actions: [PERMISSIONS.DASHBOARD_READ],
+  output: [PERMISSIONS.DASHBOARD_READ],
+  outcomes: [PERMISSIONS.DASHBOARD_READ],
 });
 
 export const NAV_ITEMS = [
@@ -33,6 +42,30 @@ export const NAV_ITEMS = [
     label: "Overview",
     icon: LayoutDashboard,
     requiredPermissions: SECTION_PERMISSIONS.overview,
+  },
+  {
+    id: "context",
+    label: "Context Assurance",
+    icon: Layers,
+    requiredPermissions: SECTION_PERMISSIONS.context,
+  },
+  {
+    id: "actions",
+    label: "Action Assurance",
+    icon: Wrench,
+    requiredPermissions: SECTION_PERMISSIONS.actions,
+  },
+  {
+    id: "output",
+    label: "Output Assurance",
+    icon: ShieldCheck,
+    requiredPermissions: SECTION_PERMISSIONS.output,
+  },
+  {
+    id: "outcomes",
+    label: "Outcome Assurance",
+    icon: Eye,
+    requiredPermissions: SECTION_PERMISSIONS.outcomes,
   },
   {
     id: "drift",

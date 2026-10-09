@@ -1,6 +1,5 @@
 import React, { useState } from "react";
-import { KeyRound, X, AlertCircle, Shield, Building, ShieldCheck, Loader2 } from "lucide-react";
-import { getDemoToken } from "../api/auth";
+import { KeyRound, X, AlertCircle } from "lucide-react";
 
 /**
  * Accessible Authentication Dialog allowing operators to provide a JWT access token
@@ -12,7 +11,6 @@ import { getDemoToken } from "../api/auth";
 export function LoginModal({ isOpen, onClose, onLogin }) {
   const [tokenInput, setTokenInput] = useState("");
   const [error, setError] = useState(null);
-  const [loadingRole, setLoadingRole] = useState(null);
 
   if (!isOpen) return null;
 
@@ -31,24 +29,6 @@ export function LoginModal({ isOpen, onClose, onLogin }) {
       onClose();
     } catch (err) {
       setError(err.message || "Failed to authenticate token.");
-    }
-  };
-
-  const handleDemoLogin = async (role, title) => {
-    setError(null);
-    setLoadingRole(role);
-    try {
-      const res = await getDemoToken("tenant_demo", role, `demo_${role}`);
-      if (res && res.access_token) {
-        onLogin(res.access_token);
-        onClose();
-      } else {
-        throw new Error("No token returned by demo gateway");
-      }
-    } catch (err) {
-      setError(err.message || `Failed to authenticate as ${title}. Ensure backend gateway is running.`);
-    } finally {
-      setLoadingRole(null);
     }
   };
 
@@ -77,74 +57,6 @@ export function LoginModal({ isOpen, onClose, onLogin }) {
               Authenticate Session
             </h2>
             <p className="text-xs text-slate-400">Authoritative Bearer JWT verification</p>
-          </div>
-        </div>
-
-        {/* 1-Click Demo Profiles */}
-        <div className="mb-4 bg-slate-950/60 border border-slate-800/80 rounded-lg p-3.5 space-y-2.5">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-semibold text-sky-400 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4" />
-              Quick Showcase Access (1-Click)
-            </span>
-            <span className="text-[10px] text-slate-500">Live Gateway Bootstrap</span>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-            <button
-              type="button"
-              disabled={Boolean(loadingRole)}
-              onClick={() => handleDemoLogin("tenant_admin", "Tenant Admin")}
-              className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-indigo-900/60 bg-indigo-950/30 hover:bg-indigo-900/50 text-indigo-300 text-xs font-medium transition disabled:opacity-50"
-            >
-              {loadingRole === "tenant_admin" ? (
-                <Loader2 className="w-4 h-4 animate-spin my-1" />
-              ) : (
-                <Building className="w-4 h-4 mb-1 text-indigo-400" />
-              )}
-              <span className="font-semibold text-[11px]">Tenant Admin</span>
-              <span className="text-[9px] text-slate-400">Full Access</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={Boolean(loadingRole)}
-              onClick={() => handleDemoLogin("operator", "Compliance Operator")}
-              className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-sky-900/60 bg-sky-950/30 hover:bg-sky-900/50 text-sky-300 text-xs font-medium transition disabled:opacity-50"
-            >
-              {loadingRole === "operator" ? (
-                <Loader2 className="w-4 h-4 animate-spin my-1" />
-              ) : (
-                <Shield className="w-4 h-4 mb-1 text-sky-400" />
-              )}
-              <span className="font-semibold text-[11px]">Operator</span>
-              <span className="text-[9px] text-slate-400">Audit & Circuits</span>
-            </button>
-
-            <button
-              type="button"
-              disabled={Boolean(loadingRole)}
-              onClick={() => handleDemoLogin("super_admin", "Super Admin")}
-              className="flex flex-col items-center justify-center p-2.5 rounded-lg border border-purple-900/60 bg-purple-950/30 hover:bg-purple-900/50 text-purple-300 text-xs font-medium transition disabled:opacity-50"
-            >
-              {loadingRole === "super_admin" ? (
-                <Loader2 className="w-4 h-4 animate-spin my-1" />
-              ) : (
-                <ShieldCheck className="w-4 h-4 mb-1 text-purple-400" />
-              )}
-              <span className="font-semibold text-[11px]">Super Admin</span>
-              <span className="text-[9px] text-slate-400">Global Scope</span>
-            </button>
-          </div>
-        </div>
-
-        {/* Separator */}
-        <div className="relative my-4">
-          <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-slate-800"></div>
-          </div>
-          <div className="relative flex justify-center text-[10px] uppercase font-semibold text-slate-500">
-            <span className="bg-slate-900 px-2.5">or enter custom jwt token</span>
           </div>
         </div>
 

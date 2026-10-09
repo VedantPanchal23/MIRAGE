@@ -1,4 +1,6 @@
-# MIRAGE — Technical Architecture Document (TAD)
+> **⚠️ SUPERSEDED:** This document is the MIRAGE 2.x Technical Architecture, retained for historical reference. The authoritative MIRAGE 3.0 architecture is at [`docs/Technical_Architecture.md`](docs/Technical_Architecture.md). See [`docs/MIRAGE_3.0_Specification.md`](docs/MIRAGE_3.0_Specification.md) for the canonical specification.
+
+# MIRAGE — Technical Architecture Document (TAD) [v2.x — Superseded]
 **An Autonomous Multimodal Hallucination Detection and Factual Consistency Verification System for Production LLMs**
 
 ---

@@ -1,4 +1,6 @@
-# MIRAGE: Testing Strategy
+> **⚠️ SUPERSEDED:** This document is the MIRAGE 2.x Testing Strategy, retained for historical reference. The authoritative MIRAGE 3.0 testing strategy is at [`docs/Testing_Strategy.md`](docs/Testing_Strategy.md). See [`docs/MIRAGE_3.0_Specification.md`](docs/MIRAGE_3.0_Specification.md) for the canonical specification.
+
+# MIRAGE: Testing Strategy [v2.x — Superseded]
 **Autonomous Multimodal Hallucination Detection and Factual Consistency Verification System for Production LLMs**
 
 **Version:** 2.1.0

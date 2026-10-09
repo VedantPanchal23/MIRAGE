@@ -4,12 +4,15 @@ import os
 from collections.abc import Generator
 from typing import Any
 
+# Must execute before any MIRAGE import: fixture credentials are inaccessible
+# in development, staging, and production authentication paths.
+os.environ["ENVIRONMENT"] = "test"
+
 import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy.pool import NullPool
 from starlette.testclient import TestClient
-from testcontainers.community.postgres import PostgresContainer
 
 from db.session import create_app_engine, reset_sessionmaker
 from gateway.main import create_app
@@ -17,12 +20,88 @@ from shared.config import get_settings
 from shared.schemas.auth import Role
 from tests.auth_factory import AuthTestFactory
 
+TEST_TENANTS: list[str] = [
+    "admin_tenant",
+    "atk01_tenant",
+    "atk02_tenant",
+    "default_tenant",
+    "edge_tenant",
+    "sqli_tenant",
+    "t1",
+    "t_obs",
+    "t_test",
+    "tenant_a",
+    "tenant_admin_a",
+    "tenant_admin_corp",
+    "tenant_alpha",
+    "tenant_audit",
+    "tenant_authoritative_99",
+    "tenant_bearer_test",
+    "tenant_bound",
+    "tenant_cert_test",
+    "tenant_chaos_01",
+    "tenant_contract_01",
+    "tenant_dash",
+    "tenant_dynamic_api",
+    "tenant_enterprise",
+    "tenant_exh_123",
+    "tenant_expired",
+    "tenant_fintech",
+    "tenant_hospital_a",
+    "tenant_implicit",
+    "tenant_integration_01",
+    "tenant_integration_audit",
+    "tenant_integration_kb",
+    "tenant_legit",
+    "tenant_legitimate",
+    "tenant_ops",
+    "tenant_p1_404",
+    "tenant_pii_test",
+    "tenant_research",
+    "tenant_revoked",
+    "tenant_sec_01",
+    "tenant_stream_valid",
+    "tenant_tampered",
+    "tenant_valid",
+    "tenant_viewer",
+    "tenant_viewer_sec",
+    "tenant_ws_test",
+    "tenant_x",
+    "tenant_xyz",
+    "test_multimodal_tenant",
+    "test_tenant",
+    "test_text_tenant",
+    "unicode_tenant",
+    "viewer_tenant",
+    "mcp_client",
+]
+
+
+def _seed_standard_test_tenants(conn: Any) -> None:
+    """Seed comprehensive list of tenants required by unit and integration suites."""
+    import hashlib
+
+    from sqlalchemy import text
+
+    values = []
+    for t_id in TEST_TENANTS:
+        h = hashlib.sha256(f"api_key_{t_id}".encode()).hexdigest()[:32]
+        values.append(f"('{t_id}', '{t_id.title()}', '{h}', 'free', NOW())")
+    sql = f"""
+        INSERT INTO tenants (id, name, api_key_hash, tier, created_at)
+        VALUES {', '.join(values)}
+        ON CONFLICT (id) DO NOTHING;
+    """
+    conn.execute(text(sql))
+    conn.commit()
+
 
 @pytest.fixture(scope="session", autouse=True)
-def live_postgres_database() -> Generator[PostgresContainer | None, None, None]:
+def live_postgres_database() -> Generator[Any, None, None]:
     """Spin up an ephemeral PostgreSQL 16 Testcontainer and apply Alembic migrations for test session."""
     settings = get_settings()
     try:
+        from testcontainers.community.postgres import PostgresContainer
         with PostgresContainer("postgres:16-alpine") as pg:
             sync_url = pg.get_connection_url().replace("+psycopg2", "")
             async_url = sync_url.replace("postgresql://", "postgresql+asyncpg://")
@@ -40,9 +119,25 @@ def live_postgres_database() -> Generator[PostgresContainer | None, None, None]:
             cfg.set_main_option("sqlalchemy.url", sync_url)
             command.upgrade(cfg, "head")
 
+            # Seed standard test tenants required by unit and integration suites
+            from sqlalchemy import create_engine
+            sync_engine = create_engine(sync_url)
+            with sync_engine.connect() as conn:
+                _seed_standard_test_tenants(conn)
+            sync_engine.dispose()
+
             yield pg
     except Exception as exc:
         print(f"Warning: Testcontainers PostgreSQL failed to start: {exc}")
+        # Attempt seeding on configured fallback sync url
+        try:
+            from sqlalchemy import create_engine
+            fallback_engine = create_engine(settings.database_sync_url)
+            with fallback_engine.connect() as conn:
+                _seed_standard_test_tenants(conn)
+            fallback_engine.dispose()
+        except Exception:
+            pass
         yield None
 
 

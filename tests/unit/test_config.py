@@ -8,6 +8,7 @@ from shared.config import EnvironmentType, Settings, get_settings
 @pytest.mark.unit
 class TestConfig:
     def test_default_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.delenv("ENVIRONMENT", raising=False)
         monkeypatch.delenv("REDIS_PORT", raising=False)
         monkeypatch.delenv("RABBITMQ_PORT", raising=False)
         monkeypatch.delenv("POSTGRES_PORT", raising=False)
@@ -33,6 +34,9 @@ class TestConfig:
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ENVIRONMENT", "production")
+        monkeypatch.setenv(
+            "SECRET_KEY", "a-very-long-production-secret-key-that-exceeds-48-characters!"
+        )
         monkeypatch.setenv("CELERY_BROKER_URL", "amqps://mirage:secret@rabbit.internal:5671//")
         monkeypatch.setenv("DEBUG", "false")
         monkeypatch.setenv("SCS_SAMPLE_COUNT", "7")

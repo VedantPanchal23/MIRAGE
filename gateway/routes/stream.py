@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, st
 
 from gateway.middleware.auth import decode_access_token
 from models.flan_t5.decomposer import AtomicClaimDecomposer
+from services.output_assurance import output_assurance_service
 from shared.logging import get_logger
 from shared.schemas import VerificationRequest
 from shared.schemas.auth import ROLE_PERMISSIONS, Permission
@@ -129,7 +130,7 @@ async def websocket_verification_stream(websocket: WebSocket) -> None:
 
         # 3. Cryptographic Token Validation
         try:
-            auth_context = decode_access_token(token)
+            auth_context = await decode_access_token(token)
         except HTTPException as exc:
             logger.warning("WebSocket JWT validation rejected", trace_id=trace_id, error=str(exc.detail))
             try:
@@ -264,6 +265,7 @@ async def websocket_verification_stream(websocket: WebSocket) -> None:
                 {
                     "event_type": "claims_extracted",
                     "trace_id": trace_id,
+                    "assurance_status": "UNVERIFIED_SPECULATIVE",
                     "claims_count": len(claims),
                     "claims": [
                         {
@@ -291,12 +293,33 @@ async def websocket_verification_stream(websocket: WebSocket) -> None:
                 {
                     "event_type": "signals_computed",
                     "trace_id": trace_id,
+                    "assurance_status": "UNVERIFIED_SPECULATIVE",
                     "signal_attribution": result.hrs_result.signal_attribution.model_dump(),
                     "contradicted_claims": [
                         c.claim.claim_id for c in result.claims if c.status.value == "CONTRADICTED"
                     ],
                 }
             )
+
+            # Gate 4 Tier 1 DLP & Safety Inspection
+            final_stream_text = result.verified_response
+            safety_res = output_assurance_service.run_dlp_and_safety(final_stream_text)
+            if safety_res.redacted_content is not None:
+                final_stream_text = safety_res.redacted_content
+            if safety_res.prompt_injection_leakage:
+                final_stream_text = (
+                    "[RESPONSE BLOCKED BY MIRAGE GATE 4: Prompt injection/jailbreak control tokens detected]"
+                )
+
+            # Derive honest verification status
+            if not safety_res.safe:
+                ver_status = "BLOCKED"
+            elif result.hrs_result.contradicted_claims_count > 0:
+                ver_status = "CONTRADICTED"
+            elif result.hrs_result.hrs >= 0.60:
+                ver_status = "PARTIALLY_VERIFIED"
+            else:
+                ver_status = "VERIFIED"
 
             # Stream final verification verdict
             await websocket.send_json(
@@ -305,12 +328,19 @@ async def websocket_verification_stream(websocket: WebSocket) -> None:
                     "trace_id": trace_id,
                     "hrs_score": result.hrs_result.hrs,
                     "risk_tier": result.hrs_result.tier.value,
+                    "verification_status": ver_status,
                     "conformal_interval": {
                         "lower": result.hrs_result.conformal_interval.lower,
                         "upper": result.hrs_result.conformal_interval.upper,
                     },
+                    "safety": {
+                        "safe": safety_res.safe,
+                        "secrets_detected": safety_res.secrets_detected,
+                        "pii_detected": safety_res.pii_detected,
+                        "prompt_injection_leakage": safety_res.prompt_injection_leakage,
+                    },
                     "correction_applied": result.metadata.correction_applied,
-                    "verified_response": result.verified_response,
+                    "verified_response": final_stream_text,
                 }
             )
 

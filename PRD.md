@@ -1,4 +1,6 @@
-# MIRAGE — Product Requirements Document (PRD)
+> **⚠️ SUPERSEDED:** This document is the MIRAGE 2.x PRD, retained for historical reference. The authoritative MIRAGE 3.0 PRD is at [`docs/PRD.md`](docs/PRD.md). See [`docs/MIRAGE_3.0_Specification.md`](docs/MIRAGE_3.0_Specification.md) for the canonical specification.
+
+# MIRAGE — Product Requirements Document (PRD) [v2.x — Superseded]
 **An Autonomous Multimodal Hallucination Detection and Factual Consistency Verification System for Production LLMs**
 
 ---

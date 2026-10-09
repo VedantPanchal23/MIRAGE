@@ -1,4 +1,6 @@
-# MIRAGE: Benchmarking & Evaluation Strategy
+> **⚠️ SUPERSEDED:** This document is the MIRAGE 2.x Benchmarking & Evaluation Strategy, retained for historical reference. The authoritative MIRAGE 3.0 benchmark specification is at [`docs/Benchmarking_Evaluation.md`](docs/Benchmarking_Evaluation.md). See [`docs/MIRAGE_3.0_Specification.md`](docs/MIRAGE_3.0_Specification.md) for the canonical specification.
+
+# MIRAGE: Benchmarking & Evaluation Strategy [v2.x — Superseded]
 
 | Metadata | Details |
 | :--- | :--- |

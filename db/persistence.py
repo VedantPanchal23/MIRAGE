@@ -21,6 +21,7 @@ from db.models import (
     Tenant,
     VerificationSession,
 )
+from shared.config import get_settings
 from shared.logging import get_logger
 from shared.schemas.audit import compute_sha256
 
@@ -61,24 +62,26 @@ class PostgresPersistenceService:
     """Authoritative persistence service for verification sessions, claims, and audit logs."""
 
     async def ensure_tenant_exists(self, session: AsyncSession, tenant_id: str) -> None:
-        """Ensure tenant row exists and lock it for audit hash-chain concurrency."""
-        insert_stmt = (
-            pg_insert(Tenant)
-            .values(
-                id=tenant_id,
-                name=f"Tenant {tenant_id}",
-                api_key_hash=compute_sha256(f"seed_api_key_{tenant_id}_{uuid.uuid4().hex}"),
-                tier="free",
-                scs_enabled=True,
-                pii_detection_enabled=True,
-            )
-            .on_conflict_do_nothing(index_elements=["id"])
-        )
-        await session.execute(insert_stmt)
-
-        # Explicit per-tenant serialization lock for the current transaction
+        """Lock a provisioned tenant; execution paths may never provision tenants in production."""
         lock_stmt = select(Tenant.id).where(Tenant.id == tenant_id).with_for_update()
-        await session.execute(lock_stmt)
+        if (await session.execute(lock_stmt)).scalar_one_or_none() is None:
+            settings = get_settings()
+            if settings.environment == "test":
+                stmt = (
+                    pg_insert(Tenant)
+                    .values(
+                        id=tenant_id,
+                        name=f"Test Dynamic Tenant {tenant_id}",
+                        api_key_hash=hashlib.sha256(tenant_id.encode()).hexdigest()[:32],
+                        created_at=datetime.now(UTC),
+                    )
+                    .on_conflict_do_nothing(index_elements=["id"])
+                )
+                await session.execute(stmt)
+                await session.flush()
+                await session.execute(lock_stmt)
+                return
+            raise DefinitivePostgresPersistenceError(f"Unknown or unprovisioned tenant '{tenant_id}'")
 
     async def persist_verification_transaction(
         self,

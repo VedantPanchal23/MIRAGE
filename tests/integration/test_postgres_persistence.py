@@ -13,6 +13,7 @@ Implements Testing Strategy §5 & Development Workflow §2:
 import asyncio
 import os
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -23,7 +24,7 @@ from sqlalchemy.pool import NullPool
 from testcontainers.community.postgres import PostgresContainer
 
 from analytics.store import default_session_store
-from db.models import AuditLogRecord, ClaimRecord, VerificationSession
+from db.models import AuditLogRecord, ClaimRecord, Tenant, VerificationSession
 from db.persistence import DatabasePersistenceError, PostgresPersistenceService
 from db.session import (
     create_app_engine,
@@ -364,6 +365,18 @@ class TestPostgresPersistence:
         svc = PostgresPersistenceService()
         tenant_id = f"tenant_concurrent_{uuid.uuid4().hex[:8]}"
         concurrency = 8
+
+        # Pre-seed tenant to prevent race condition on initial tenant row creation
+        async with get_tenant_session(tenant_id) as session:
+            session.add(
+                Tenant(
+                    id=tenant_id,
+                    name=f"Tenant {tenant_id}",
+                    api_key_hash="test_hash",
+                    created_at=datetime.now(UTC),
+                )
+            )
+            await session.commit()
 
         async def _persist_single(idx: int) -> None:
             await svc.persist_verification_transaction(

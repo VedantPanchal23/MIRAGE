@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     )
     algorithm: str = Field(default="HS256")
     access_token_expire_minutes: int = Field(default=1440)
+    jwt_issuer: str = Field(default="mirage-control-plane")
+    jwt_audience: str = Field(default="mirage-gateway")
+    demo_auth_enabled: bool = Field(default=False)
 
     # --------------------------------------------------------------------------
     # PostgreSQL Database
@@ -96,6 +99,25 @@ class Settings(BaseSettings):
                 "Production security policy violation: CELERY_BROKER_URL must use AMQPS (TLS 1.2+) "
                 f"in production mode. Plaintext amqp:// is strictly prohibited. Received: {v[:8]}***"
             )
+        return v
+
+    @field_validator("secret_key")
+    @classmethod
+    def validate_signing_secret(cls, v: str, info: ValidationInfo) -> str:
+        """Reject known development signing material in production."""
+        env = info.data.get("environment")
+        if env == EnvironmentType.PRODUCTION and (
+            v == "dev-insecure-secret-key-change-in-production-min32chars" or len(v) < 48
+        ):
+            raise ValueError("Production requires a unique JWT signing secret of at least 48 characters")
+        return v
+
+    @field_validator("demo_auth_enabled")
+    @classmethod
+    def reject_demo_auth_in_production(cls, v: bool, info: ValidationInfo) -> bool:
+        """Prevent a demonstration issuer from being enabled in production."""
+        if v and info.data.get("environment") == EnvironmentType.PRODUCTION:
+            raise ValueError("DEMO_AUTH_ENABLED is prohibited in production")
         return v
 
     # --------------------------------------------------------------------------

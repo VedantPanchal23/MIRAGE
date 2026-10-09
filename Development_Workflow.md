@@ -1,4 +1,6 @@
-# MIRAGE: Development Workflow & CI/CD
+> **⚠️ SUPERSEDED:** This document is the MIRAGE 2.x Development Workflow, retained for historical reference. The authoritative MIRAGE 3.0 workflow specification is at [`docs/Development_Workflow.md`](docs/Development_Workflow.md). See [`docs/MIRAGE_3.0_Specification.md`](docs/MIRAGE_3.0_Specification.md) for the canonical specification.
+
+# MIRAGE: Development Workflow & CI/CD [v2.x — Superseded]
 **Version:** 2.1.0
 **Date:** September 2026
 **Status:** Approved

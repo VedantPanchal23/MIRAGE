@@ -59,6 +59,7 @@ class TestCORSConfiguration:
         prod_settings = Settings(
             environment=EnvironmentType.PRODUCTION,
             debug=False,
+            secret_key="a" * 48,
             celery_broker_url="amqps://mirage:mirage_rabbit_secret@localhost:5671//",
         )
 

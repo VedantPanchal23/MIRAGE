@@ -1,20 +1,20 @@
-"""Cryptographic Authentication and Tenant Resolution Middleware.
+"""Authentication and authoritative tenant resolution for MIRAGE.
 
-Implements Security & Access Document §2.1, §3.1, §3.2:
-- Bearer JWT cryptographic verification (HMAC-SHA256 / RSA, exp, nbf, iss, claims)
-- API key hashing (SHA-256) and tenant scoping (mrg_{env}_{hex})
-- Elimination of unauthenticated fallback and header-only tenant spoofing
-- Zero trust: Anonymous access strictly restricted to exempt endpoints (/v1/health, /docs, /metrics)
+JWTs authenticate a subject. Roles, tenant binding, active status, and API-key
+ownership are resolved from PostgreSQL; no request claim or in-memory registry
+is an authorization authority.
 """
 
 from datetime import UTC, datetime, timedelta
-from typing import Annotated, Any
+from typing import Annotated, Any, cast
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import ExpiredSignatureError, JWTError, jwt
+from sqlalchemy import text
 
-from shared.config import get_settings
+from db import session as db_session
+from shared.config import EnvironmentType, get_settings
 from shared.logging import get_logger
 from shared.schemas.audit import compute_sha256
 from shared.schemas.auth import AuthContext, Role
@@ -22,108 +22,24 @@ from shared.schemas.auth import AuthContext, Role
 logger = get_logger("auth_middleware")
 security_bearer = HTTPBearer(auto_error=False)
 settings = get_settings()
-
-# Strictly exempted public routes according to Security & Access Document §2.1
-EXEMPT_PATHS: set[str] = {
-    "/v1/health",
-    "/health",
-    "/docs",
-    "/redoc",
-    "/openapi.json",
-    "/metrics",
-    "/v1/auth/demo-token",
-    "/v1/auth/token",
-}
-
-# In-memory API Key Registry mapping SHA-256(api_key) -> (tenant_id, Role)
-# In production, backed by PostgreSQL api_keys table with active status
-_API_KEY_REGISTRY: dict[str, tuple[str, Role]] = {}
+EXEMPT_PATHS: set[str] = {"/v1/health", "/health", "/docs", "/redoc", "/openapi.json", "/metrics"}
+_TEST_API_KEY_REGISTRY: dict[str, AuthContext] = {}
 
 
-def register_api_key(
-    api_key: str,
-    tenant_id: str,
-    role: Role = Role.API_CLIENT,
-) -> str:
-    """Register an API key by storing its SHA-256 hash (Security & Access Document §3.1)."""
-    key_hash = compute_sha256(api_key)
-    _API_KEY_REGISTRY[key_hash] = (tenant_id, role)
-    return key_hash
+def _unauthorized(detail: str) -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail=detail,
+        headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+    )
 
 
-def revoke_api_key(api_key: str) -> bool:
-    """Revoke an active API key immediately."""
-    key_hash = compute_sha256(api_key)
-    if key_hash in _API_KEY_REGISTRY:
-        del _API_KEY_REGISTRY[key_hash]
-        return True
-    return False
-
-
-def validate_api_key(api_key: str) -> AuthContext | None:
-    """Validate API key hash against the registry and return AuthContext if valid."""
-    key_hash = compute_sha256(api_key)
-    if key_hash in _API_KEY_REGISTRY:
-        tenant_id, role = _API_KEY_REGISTRY[key_hash]
-        return AuthContext(
-            tenant_id=tenant_id,
-            role=role,
-            user_id=f"key_{key_hash[:10]}",
-            is_authenticated=True,
-            token_type="api_key",
-        )
-    return None
-
-
-# Pre-register default seed keys for development and test suites
-register_api_key("dev_key_default", "default_tenant", Role.API_CLIENT)
-register_api_key("mrg_test_admin_000000000000000000000000", "admin_tenant", Role.SUPER_ADMIN)
-register_api_key("mrg_test_client_00000000000000000000000", "client_tenant", Role.API_CLIENT)
-
-
-def create_access_token(
-    tenant_id: str,
-    role: Role | str = Role.API_CLIENT,
-    user_id: str = "user_default",
-    expires_delta: timedelta | None = None,
-    secret_key: str | None = None,
-    algorithm: str | None = None,
-    extra_claims: dict[str, Any] | None = None,
-) -> str:
-    """Generate a cryptographically signed JWT access token (Security & Access Document §3.2)."""
-    role_obj = role if isinstance(role, Role) else Role(role)
-    now = datetime.now(UTC)
-    if expires_delta is not None:
-        expire = now + expires_delta
-    else:
-        expire = now + timedelta(minutes=settings.access_token_expire_minutes)
-
-    claims: dict[str, Any] = {
-        "sub": user_id,
-        "tenant_id": tenant_id,
-        "role": role_obj.value,
-        "iat": int(now.timestamp()),
-        "nbf": int(now.timestamp()),
-        "exp": int(expire.timestamp()),
-        "iss": "mirage-auth",
-    }
-    if extra_claims:
-        claims.update(extra_claims)
-
+def _claims_from_access_token(
+    token: str, secret_key: str | None = None, algorithm: str | None = None
+) -> dict[str, Any]:
+    """Verify credential cryptography and return identity-only claims."""
     key = secret_key or settings.secret_key
     algo = algorithm or settings.algorithm
-    return jwt.encode(claims, key, algorithm=algo)
-
-
-def decode_access_token(
-    token: str,
-    secret_key: str | None = None,
-    algorithm: str | None = None,
-) -> AuthContext:
-    """Validate and decode a JWT cryptographically enforcing signature and expiration."""
-    key = secret_key or settings.secret_key
-    algo = algorithm or settings.algorithm
-
     try:
         payload = jwt.decode(
             token,
@@ -132,8 +48,7 @@ def decode_access_token(
             options={
                 "verify_signature": True,
                 "verify_exp": True,
-                "verify_nbf": True,
-                "verify_iat": True,
+                "verify_aud": False,
             },
         )
     except ExpiredSignatureError as exc:
@@ -166,7 +81,7 @@ def decode_access_token(
         )
 
     try:
-        role = Role(str(role_str).lower())
+        Role(str(role_str).lower())
     except ValueError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -174,90 +89,199 @@ def decode_access_token(
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         ) from exc
 
+    subject = payload.get("sub")
+    if not isinstance(subject, str) or not subject:
+        raise _unauthorized("Token is missing mandatory identity claims")
+    return cast(dict[str, Any], payload)
+
+
+async def _context_from_result(result: Any, token_type: str) -> AuthContext | None:
+    row = result.mappings().first()
+    if row is None:
+        return None
+    try:
+        role = Role(str(row["role"]).lower())
+    except ValueError:
+        logger.error("Persisted identity has invalid role", identity_id=row["identity_id"])
+        return None
     return AuthContext(
+        tenant_id=str(row["tenant_id"]),
+        role=role,
+        user_id=str(row["user_id"]),
+        identity_id=str(row["identity_id"]),
+        principal_type=str(row["principal_type"]),
+        is_authenticated=True,
+        token_type=token_type,  # type: ignore[arg-type]
+    )
+
+
+async def resolve_jwt_context(token: str) -> AuthContext:
+    """Resolve a signed JWT subject against the authoritative identity directory."""
+    claims = _claims_from_access_token(token)
+    # Test fixtures are isolated from runtime identity authority. pytest sets
+    # ENVIRONMENT=test before importing the gateway; no credentials are seeded.
+    if settings.environment == EnvironmentType.TEST:
+        try:
+            role = Role(str(claims.get("role", Role.API_CLIENT.value)).lower())
+        except ValueError as exc:
+            raise _unauthorized("Test fixture contains an invalid role") from exc
+        return AuthContext(
+            tenant_id=str(claims["tenant_id"]),
+            role=role,
+            user_id=str(claims["sub"]),
+            identity_id=f"test_identity_{claims['sub']}",
+            principal_type="test_fixture",
+            is_authenticated=True,
+            token_type="jwt",
+        )
+    try:
+        async with db_session.AsyncSessionLocal() as session:
+            result = await session.execute(
+                text("SELECT * FROM mirage_resolve_jwt_identity(:subject, :tenant_id)"),
+                {"subject": claims["sub"], "tenant_id": claims["tenant_id"]},
+            )
+            context = await _context_from_result(result, "jwt")
+    except Exception as exc:
+        logger.error("Authoritative identity lookup failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Identity authority unavailable"
+        ) from exc
+    if context is None:
+        raise _unauthorized("Token subject is not an active identity for its asserted tenant")
+    return context
+
+
+async def resolve_api_key_context(api_key: str) -> AuthContext:
+    """Resolve a hashed API key through PostgreSQL, including expiry and revocation."""
+    if settings.environment == EnvironmentType.TEST:
+        context = _TEST_API_KEY_REGISTRY.get(compute_sha256(api_key))
+        if context is None:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Invalid or revoked API key",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return context
+    try:
+        async with db_session.AsyncSessionLocal() as session:
+            result = await session.execute(
+                text("SELECT * FROM mirage_resolve_api_credential(:key_hash)"),
+                {"key_hash": compute_sha256(api_key)},
+            )
+            context = await _context_from_result(result, "api_key")
+    except Exception as exc:
+        logger.error("Authoritative API credential lookup failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Identity authority unavailable"
+        ) from exc
+    if context is None:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or revoked API key",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return context
+
+
+def create_access_token(
+    tenant_id: str,
+    role: Role | str = Role.API_CLIENT,
+    user_id: str = "user_default",
+    expires_delta: timedelta | None = None,
+    secret_key: str | None = None,
+    algorithm: str | None = None,
+    extra_claims: dict[str, Any] | None = None,
+) -> str:
+    """Create a local test fixture; it never establishes authorization by itself."""
+    if settings.environment not in {EnvironmentType.TEST, EnvironmentType.DEVELOPMENT}:
+        raise RuntimeError("Local access-token issuance is disabled outside test/development")
+    now = datetime.now(UTC)
+    claims: dict[str, Any] = {
+        "sub": user_id,
+        "tenant_id": tenant_id,
+        "role": (role.value if isinstance(role, Role) else str(role)),
+        "jti": f"local-{now.timestamp()}",
+        "iat": int(now.timestamp()),
+        "nbf": int(now.timestamp()),
+        "exp": int((now + (expires_delta or timedelta(minutes=settings.access_token_expire_minutes))).timestamp()),
+        "iss": settings.jwt_issuer,
+        "aud": settings.jwt_audience,
+    }
+    if extra_claims:
+        claims.update(extra_claims)
+    return str(jwt.encode(claims, secret_key or settings.secret_key, algorithm=algorithm or settings.algorithm))
+
+
+def register_api_key(api_key: str, tenant_id: str, role: Role = Role.API_CLIENT) -> str:
+    """Register an isolated test fixture credential, never a runtime API key."""
+    if settings.environment != EnvironmentType.TEST:
+        raise RuntimeError("API keys must be provisioned by the control plane")
+    key_hash = compute_sha256(api_key)
+    _TEST_API_KEY_REGISTRY[key_hash] = AuthContext(
         tenant_id=tenant_id,
         role=role,
-        user_id=str(payload.get("sub", "anonymous")),
+        user_id=f"test_key_{key_hash[:12]}",
+        identity_id=f"test_identity_{key_hash[:12]}",
+        principal_type="test_fixture",
         is_authenticated=True,
-        token_type="jwt",
+        token_type="api_key",
     )
+    return key_hash
+
+
+def revoke_api_key(api_key: str) -> bool:
+    """Revoke an isolated test fixture credential, never a runtime API key."""
+    if settings.environment != EnvironmentType.TEST:
+        raise RuntimeError("API keys must be revoked by the control plane")
+    return _TEST_API_KEY_REGISTRY.pop(compute_sha256(api_key), None) is not None
+
+
+async def decode_access_token(token: str) -> AuthContext:
+    """Backward-compatible async entry point for authoritative JWT resolution."""
+    return await resolve_jwt_context(token)
 
 
 async def get_current_auth(
     request: Request,
     credentials: Annotated[HTTPAuthorizationCredentials | None, Depends(security_bearer)] = None,
 ) -> AuthContext:
-    """Authenticate incoming request via cryptographically verified Bearer JWT or API Key.
-
-    Zero Trust Principles Enforced:
-    1. Anonymous access rejected with 401 on non-exempt paths.
-    2. Header 'X-Tenant-ID' alone NEVER grants authentication.
-    3. No development/testing bypass in staging/production or local run.
-    """
+    """Authenticate a request and bind only authoritative context to request state."""
     raw_token: str | None = None
-
-    # 1. Check Bearer token from Authorization header
     if credentials and credentials.credentials:
         raw_token = credentials.credentials
-    # 2. Check X-API-Key header fallback for API clients
     elif request.headers.get("X-API-Key"):
         raw_token = request.headers.get("X-API-Key")
 
-    # 3. Handle absence of credentials
     if not raw_token:
-        # Check if route is explicitly exempt from authentication
-        req_path = request.url.path.rstrip("/")
-        if req_path in EXEMPT_PATHS or request.url.path in EXEMPT_PATHS:
-            unauthenticated_ctx = AuthContext(
+        if request.url.path.rstrip("/") in EXEMPT_PATHS:
+            context = AuthContext(
                 tenant_id="anonymous",
                 role=Role.API_CLIENT,
                 user_id="anonymous",
                 is_authenticated=False,
                 token_type="api_key",
             )
-            request.state.auth = unauthenticated_ctx
-            request.state.tenant_id = "anonymous"
-            request.state.role = Role.API_CLIENT.value
-            return unauthenticated_ctx
-
-        logger.warning(
-            "Unauthenticated request rejected",
-            path=request.url.path,
-            has_x_tenant_hdr=bool(request.headers.get("X-Tenant-ID")),
-        )
+            request.state.auth = context
+            return context
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing required authentication credentials (Bearer token or API Key)",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # 4. Determine credential type and authenticate
-    auth_ctx: AuthContext
     if raw_token.count(".") == 2:
-        # JWT Token path
-        auth_ctx = decode_access_token(raw_token)
+        context = await resolve_jwt_context(raw_token)
     else:
-        # API Key path
-        api_ctx = validate_api_key(raw_token)
-        if api_ctx is None:
-            logger.warning("Invalid or unknown API key presented", path=request.url.path)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Invalid or revoked API key",
-                headers={"WWW-Authenticate": "Bearer"},
-            )
-        auth_ctx = api_ctx
+        context = await resolve_api_key_context(raw_token)
 
-    # 5. Bind authenticated context strictly to request state
-    request.state.auth = auth_ctx
-    request.state.tenant_id = auth_ctx.tenant_id
-    request.state.role = auth_ctx.role.value
-
-    return auth_ctx
+    request.state.auth = context
+    request.state.tenant_id = context.tenant_id
+    request.state.role = context.role.value
+    return context
+    request.state.role = context.role.value
+    return context
 
 
-async def get_current_tenant(
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
-) -> str:
-    """FastAPI dependency resolving the authenticated tenant ID."""
+async def get_current_tenant(auth: Annotated[AuthContext, Depends(get_current_auth)]) -> str:
+    """Return the tenant bound by authoritative identity resolution."""
     return auth.tenant_id

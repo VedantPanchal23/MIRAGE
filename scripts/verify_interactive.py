@@ -28,8 +28,11 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 os.chdir(PROJECT_ROOT)
 
+import httpx
+
 from models.deberta import DeBERTaNLIVerifier
 from models.flan_t5 import AtomicClaimDecomposer
+from shared.config import get_settings
 from shared.schemas import VerificationRequest
 from workers.ics.worker import ICSWorker
 from workers.orchestrator import VerificationOrchestrator
@@ -224,16 +227,58 @@ async def verify_custom_input(prompt: str, response: str, kb_context: str | None
     print(CYAN + BOLD + "=" * 80 + RESET + "\n")
 
 
+async def fetch_llm_response(prompt: str) -> str:
+    """Dispatches user prompt directly to the active primary model (Groq allam-2-7b)."""
+    settings = get_settings()
+    if settings.groq_api_key and settings.groq_api_key != "your_groq_api_key_here":
+        try:
+            print(
+                f"\n{CYAN}>>> Querying active primary model ({settings.default_primary_model}) via Groq API...{RESET}"
+            )
+            async with httpx.AsyncClient(timeout=15.0) as client:
+                resp = await client.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {settings.groq_api_key}"},
+                    json={
+                        "model": settings.default_primary_model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "temperature": 0.2,
+                        "max_tokens": 256,
+                    },
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    content = data["choices"][0]["message"]["content"].strip()
+                    print(
+                        f"{GREEN}>>> Received raw model response from {settings.default_primary_model} "
+                        f"in {resp.elapsed.total_seconds():.2f}s!{RESET}"
+                    )
+                    return content
+                else:
+                    print(f"{YELLOW}>>> Groq returned HTTP {resp.status_code}. Using fallback generator.{RESET}")
+        except Exception as e:
+            print(f"{YELLOW}>>> Groq API call failed ({e}). Using fallback generator.{RESET}")
+    return f"Live model generation for prompt: '{prompt}'."
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="MIRAGE Live Interactive Faculty Verification Runner")
     parser.add_argument("--prompt", type=str, help="Input prompt to test")
-    parser.add_argument("--response", type=str, help="Model generation to verify")
+    parser.add_argument(
+        "--response",
+        type=str,
+        default=None,
+        help="Optional model generation to verify (if omitted, queries Groq live)",
+    )
     parser.add_argument("--evidence", type=str, default=None, help="Optional custom ground truth evidence text")
 
     args = parser.parse_args()
 
-    if args.prompt and args.response:
-        asyncio.run(verify_custom_input(args.prompt, args.response, args.evidence))
+    if args.prompt:
+        resp = args.response
+        if not resp:
+            resp = asyncio.run(fetch_llm_response(args.prompt))
+        asyncio.run(verify_custom_input(args.prompt, resp, args.evidence))
     else:
         # Interactive CLI mode
         print("\n" + CYAN + BOLD + "=" * 80 + RESET)
@@ -242,16 +287,16 @@ def main() -> None:
         print(DIM + "   Type your test prompt and model response below for real-time verification." + RESET)
         print(CYAN + BOLD + "=" * 80 + RESET + "\n")
 
-        default_prompt = "When was the Eiffel Tower constructed and for what event?"
-        default_resp = "The Eiffel Tower was built in 1989 for the Olympic Games in London."
+        default_prompt = "Who discovered penicillin and where was it discovered?"
 
         prompt_input = input(f"Enter Prompt [{DIM}Press Enter for default: '{default_prompt}'{RESET}]: ").strip()
         if not prompt_input:
             prompt_input = default_prompt
 
-        resp_input = input(f"Enter Model Response [{DIM}Press Enter for default: '{default_resp}'{RESET}]: ").strip()
+        resp_prompt_text = f"Enter Model Response [{DIM}Press Enter to generate LIVE from Groq allam-2-7b{RESET}]: "
+        resp_input = input(resp_prompt_text).strip()
         if not resp_input:
-            resp_input = default_resp
+            resp_input = asyncio.run(fetch_llm_response(prompt_input))
 
         prompt_ev = f"Enter Custom Ground Truth Evidence [{DIM}Press Enter to use built-in KB{RESET}]: "
         evidence_input = input(prompt_ev).strip()

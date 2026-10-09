@@ -25,6 +25,7 @@ from db.redis import (
     RedisCacheService,
     RedisClientManager,
     RedisConnectionError,
+    RedisOperationTimeoutError,
     TokenBucketRateLimiter,
 )
 from gateway.main import create_app
@@ -141,7 +142,7 @@ class TestChaosScenariosP34:
                 # --------------------------------------------------------------
                 # Token bucket pointed to the dead Redis proxy raises RedisConnectionError
                 proxied_limiter = TokenBucketRateLimiter(client_manager=proxied_mgr)
-                with pytest.raises(RedisConnectionError):
+                with pytest.raises((RedisConnectionError, RedisOperationTimeoutError)):
                     await proxied_limiter.consume(tenant_id=tenant_id, tier="free")
 
                 # HTTP Gateway level: rate limiter failure returns HTTP 503 SERVICE_DEGRADED

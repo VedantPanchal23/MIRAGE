@@ -33,6 +33,194 @@ class Tenant(Base):
     kb_documents: Mapped[list["KBDocumentRecord"]] = relationship("KBDocumentRecord", back_populates="tenant")
 
 
+class User(Base):
+    """Authoritative human principal registered by the control plane."""
+
+    __tablename__ = "users"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    external_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("tenant_id", "external_subject", name="uq_users_tenant_subject"),)
+
+
+class Agent(Base):
+    """Tenant-scoped governed agent identity."""
+
+    __tablename__ = "agents"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    max_autonomy_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_agents_tenant_name"),)
+
+
+class ActorIdentity(Base):
+    """A verifiable user, API client, service, or agent principal."""
+
+    __tablename__ = "actor_identities"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    principal_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    role: Mapped[str] = mapped_column(String(32), nullable=False)
+    user_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    agent_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("agents.id", ondelete="SET NULL"), nullable=True
+    )
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("tenant_id", "subject", name="uq_actor_identities_tenant_subject"),)
+
+
+class ApiCredential(Base):
+    """Hashed, revocable API credential bound to one authoritative actor identity."""
+
+    __tablename__ = "api_credentials"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    identity_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("actor_identities.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class Policy(Base):
+    """Versioned native typed policy definition with explicit lifecycle."""
+
+    __tablename__ = "policies"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    version: Mapped[int] = mapped_column(Integer, nullable=False)
+    rules: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("tenant_id", "name", "version", name="uq_policies_tenant_name_version"),)
+
+
+class Capability(Base):
+    """Scoped, revocable authority granted to an actor or agent."""
+
+    __tablename__ = "capabilities"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    identity_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("actor_identities.id", ondelete="CASCADE"), nullable=True
+    )
+    agent_id: Mapped[str | None] = mapped_column(String(64), ForeignKey("agents.id", ondelete="CASCADE"), nullable=True)
+    capability_type: Mapped[str] = mapped_column(String(128), nullable=False)
+    resource_scope: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    constraints: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    max_autonomy_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class Budget(Base):
+    """Authoritative bounds consumed by a governed AI transaction."""
+
+    __tablename__ = "budgets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    max_turns: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_tool_calls: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_cost_micros: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_risk: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class AITransaction(Base):
+    """Core ledger record for the governed iterative transaction envelope."""
+
+    __tablename__ = "ai_transactions"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    actor_identity_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("actor_identities.id", ondelete="RESTRICT"), nullable=False
+    )
+    agent_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("agents.id", ondelete="RESTRICT"), nullable=True
+    )
+    parent_transaction_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("ai_transactions.id", ondelete="RESTRICT"), nullable=True
+    )
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    correlation_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    state: Mapped[str] = mapped_column(String(32), nullable=False)
+    max_turns: Mapped[int] = mapped_column(Integer, nullable=False)
+    turn_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    taint_flags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    context_sources: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    policy_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("policies.id", ondelete="RESTRICT"), nullable=True
+    )
+    budget_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("budgets.id", ondelete="RESTRICT"), nullable=True
+    )
+    final_disposition: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    version: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key", name="uq_transactions_tenant_idempotency"),)
+
+
 class VerificationSession(Base):
     """Execution session for a single prompt-response verification workflow."""
 
@@ -112,6 +300,14 @@ class AuditLogRecord(Base):
     claims_count: Mapped[int] = mapped_column(Integer, nullable=False)
     claims_summary: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
     correction_applied: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    event_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    actor_identity_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    transaction_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    policy_reference: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    capability_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    event_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     prev_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     chain_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -209,3 +405,216 @@ class KBDocumentRecord(Base):
     )
 
     tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="kb_documents")
+
+
+class GovernedMemory(Base):
+    """Authoritative persistent semantic and episodic memory with provenance and attestation."""
+
+    __tablename__ = "governed_memories"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    owner_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    memory_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    scope: Mapped[str] = mapped_column(String(32), default="ORGANIZATIONAL", nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    attestation_status: Mapped[str] = mapped_column(String(32), default="NONE", nullable=False)
+    attested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    taint: Mapped[str] = mapped_column(String(64), default="TAINT_INTERNAL", nullable=False)
+    confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    ttl_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class ToolDefinition(Base):
+    """Governed tool registration with egress classification and capability requirements."""
+
+    __tablename__ = "tool_registry"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    tool_type: Mapped[str] = mapped_column(String(32), default="NATIVE", nullable=False)
+    egress_type: Mapped[str] = mapped_column(String(32), default="INTERNAL_ISOLATED", nullable=False)
+    trust_level: Mapped[str] = mapped_column(String(32), default="VERIFIED", nullable=False)
+    required_capability: Mapped[str] = mapped_column(String(128), nullable=False)
+    parameters_schema: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_tool_registry_tenant_name"),)
+
+
+class ActionContract(Base):
+    """First-class AI Action Contract tracking proposed, authorized, and executed actions."""
+
+    __tablename__ = "action_contracts"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    transaction_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_transactions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    actor_identity_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("actor_identities.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    agent_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("agents.id", ondelete="RESTRICT"), nullable=True
+    )
+    tool_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tool_registry.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    tool_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    action_type: Mapped[str] = mapped_column(String(32), default="EXECUTE", nullable=False)
+    target_resource: Mapped[str] = mapped_column(String(512), nullable=False)
+    parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    normalized_parameters: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    parameters_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    required_capability: Mapped[str] = mapped_column(String(128), nullable=False)
+    taint_flags: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    risk_score: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    blast_radius: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    state: Mapped[str] = mapped_column(String(32), default="PROPOSED", nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    preconditions: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    postconditions: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    observed_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    approval_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    authorized_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    executed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (UniqueConstraint("tenant_id", "idempotency_key", name="uq_action_contracts_tenant_idempotency"),)
+
+
+class ActionApproval(Base):
+    """Governed human-in-the-loop (L4) approval ticket with parameter hash locking."""
+
+    __tablename__ = "action_approvals"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("action_contracts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    transaction_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_transactions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    required_role: Mapped[str] = mapped_column(String(32), default="SUPER_ADMIN", nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False)
+    parameters_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    requested_by: Mapped[str] = mapped_column(String(64), nullable=False)
+    decided_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class OutputAssuranceRecord(Base):
+    """Authoritative persistent record of Gate 4 Output Assurance evaluations."""
+
+    __tablename__ = "output_assurance_records"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    transaction_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_transactions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_version: Mapped[str] = mapped_column(String(32), default="1.0.0", nullable=False)
+    original_output: Mapped[str] = mapped_column(Text, nullable=False)
+    final_output: Mapped[str] = mapped_column(Text, nullable=False)
+    output_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    verification_status: Mapped[str] = mapped_column(String(32), nullable=False)
+    final_decision: Mapped[str] = mapped_column(String(32), nullable=False)
+    risk_tier: Mapped[str] = mapped_column(String(32), nullable=False)
+    risk_score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    conformal_bounds: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    signal_attributions: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    claims_payload: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    safety_result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    factual_result: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    budget_consumed: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    tier_path: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    escalation_reasons: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    was_corrected: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    correction_history: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    audit_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class OutcomeVerificationRecord(Base):
+    """Authoritative persistent record of Gate 5 Outcome Assurance & Reality Verifications."""
+
+    __tablename__ = "outcome_verification_records"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    transaction_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_transactions.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    action_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("action_contracts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    observability_class: Mapped[str] = mapped_column(String(32), nullable=False)
+    outcome_status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    epistemic_confidence: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    verifier_adapter: Mapped[str] = mapped_column(String(64), nullable=False)
+    is_simulated: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    expected_postconditions: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    observed_state: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    discrepancies: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    evidence_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    reconciliation_notes: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    verification_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    target_environment: Mapped[str] = mapped_column(String(32), default="DEFAULT", nullable=False)
+    contract_binding_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    verified_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+

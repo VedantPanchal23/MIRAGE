@@ -79,5 +79,8 @@ class AuthContext(BaseModel):
     tenant_id: str = Field(..., description="Authoritative tenant identifier")
     role: Role = Field(..., description="Cryptographically verified role")
     user_id: str = Field(default="anonymous", description="User or subject identifier")
+    identity_id: str | None = Field(default=None, description="Authoritative actor identity identifier")
+    principal_type: str = Field(default="user", description="Authoritative principal category")
+    capabilities: frozenset[str] = Field(default_factory=frozenset)
     is_authenticated: bool = Field(default=True, description="Whether authentication was cryptographically verified")
     token_type: Literal["jwt", "api_key"] = Field(default="jwt", description="Credential type used for authentication")

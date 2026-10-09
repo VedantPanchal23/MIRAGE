@@ -1,4 +1,6 @@
-# MIRAGE — Security & Access Document (SAD)
+> **⚠️ SUPERSEDED:** This document is the MIRAGE 2.x Security & Access Document, retained for historical reference. The authoritative MIRAGE 3.0 security specification is at [`docs/Security.md`](docs/Security.md). See [`docs/MIRAGE_3.0_Specification.md`](docs/MIRAGE_3.0_Specification.md) for the canonical specification.
+
+# MIRAGE — Security & Access Document (SAD) [v2.x — Superseded]
 **An Autonomous Multimodal Hallucination Detection and Factual Consistency Verification System for Production LLMs**
 
 ---

@@ -17,16 +17,21 @@ from db.persistence import DatabasePersistenceError
 from db.redis import RedisServiceError, default_redis_client_manager
 from gateway.middleware.pii import PIIDetectionMiddleware
 from gateway.middleware.security import HeaderSanitizationMiddleware, SecurityHeadersMiddleware
+from gateway.routes.actions import router as actions_router
 from gateway.routes.alerts import router as alerts_router
 from gateway.routes.audit import router as audit_router
 from gateway.routes.auth import router as auth_router
+from gateway.routes.context import router as context_router
 from gateway.routes.dashboard import router as dashboard_router
 from gateway.routes.health import router as health_router
 from gateway.routes.knowledge_base import router as knowledge_base_router
+from gateway.routes.outcomes import router as outcomes_router
+from gateway.routes.output import router as output_router
 from gateway.routes.proxy import router as proxy_router
 from gateway.routes.reports import router as reports_router
 from gateway.routes.sessions import router as sessions_router
 from gateway.routes.stream import router as stream_router
+from gateway.routes.transactions import router as transactions_router
 from gateway.routes.verify import router as verify_router
 from shared.config import get_settings
 from shared.logging import configure_logging, get_logger
@@ -107,13 +112,13 @@ def create_app() -> FastAPI:
         call_next: Callable[[Request], Awaitable[Response]],
     ) -> Response:
         start_time = time.time()
-        tenant_id = request.headers.get("X-Tenant-ID", "anonymous")
         response = await call_next(request)
         _ = time.time() - start_time
         endpoint = request.url.path
         # Avoid exploding cardinality on dynamic paths
         if endpoint.startswith("/v1/dashboard/sessions"):
             endpoint = "/v1/dashboard/sessions"
+        tenant_id = getattr(request.state, "tenant_id", "anonymous")
         record_request_metric(tenant_id=tenant_id, status_code=response.status_code, endpoint=endpoint)
         return response
 
@@ -130,6 +135,11 @@ def create_app() -> FastAPI:
     app.include_router(verify_router)
     app.include_router(proxy_router)
     app.include_router(stream_router)
+    app.include_router(transactions_router)
+    app.include_router(context_router)
+    app.include_router(actions_router)
+    app.include_router(output_router)
+    app.include_router(outcomes_router)
     app.include_router(dashboard_router)
     app.include_router(knowledge_base_router)
     app.include_router(audit_router)

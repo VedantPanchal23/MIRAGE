@@ -13,12 +13,14 @@ Implements and validates:
 10. Failed enqueue does not leave a falsely successful ingestion state.
 """
 
+import asyncio
 import hashlib
 import io
 import uuid
 from typing import Any
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
@@ -29,7 +31,7 @@ from gateway.main import create_app
 from gateway.routes.knowledge_base import _kb_service
 from shared.config import get_settings
 from shared.config.settings import EnvironmentType
-from shared.schemas.auth import Role
+from shared.schemas.auth import AuthContext, Role
 from tests.auth_factory import AuthTestFactory
 from workers.rav.ingestion import KnowledgeBaseIngestionService
 from workers.tasks import _run_async, ingest_document_task
@@ -44,9 +46,18 @@ class TestP1KnowledgeBaseSafety:
 
     def test_production_upload_cannot_execute_synchronously(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify that ?sync=true is strictly forbidden in production mode."""
-        monkeypatch.setattr(settings, "environment", EnvironmentType.PRODUCTION)
         tenant_id = f"t_prod_kb_{uuid.uuid4().hex[:8]}"
         headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.TENANT_ADMIN)
+        monkeypatch.setattr(settings, "environment", EnvironmentType.PRODUCTION)
+        mock_auth = AuthContext(
+            tenant_id=tenant_id,
+            role=Role.TENANT_ADMIN,
+            user_id="test_user_01",
+            identity_id=f"id_{tenant_id}",
+            principal_type="user",
+            is_authenticated=True,
+            token_type="jwt",
+        )
 
         doc_payload = {
             "filename": "prod_doc.txt",
@@ -54,33 +65,43 @@ class TestP1KnowledgeBaseSafety:
             "collection_name": "prod_kb",
         }
 
-        # 1. JSON upload with ?sync=true in production -> 400
-        res_sync_query = client.post("/v1/kb/upload?sync=true", json=doc_payload, headers=headers)
-        assert res_sync_query.status_code == 400
-        assert "Synchronous ingestion is disabled in production" in res_sync_query.json()["error"]["message"]
+        with patch("gateway.middleware.auth.resolve_jwt_context", return_value=mock_auth):
+            # 1. JSON upload with ?sync=true in production -> 400
+            res_sync_query = client.post("/v1/kb/upload?sync=true", json=doc_payload, headers=headers)
+            assert res_sync_query.status_code == 400
+            assert "Synchronous ingestion is disabled in production" in res_sync_query.json()["error"]["message"]
 
-        # 2. JSON upload with payload sync=True in production -> 400
-        payload_with_sync = {**doc_payload, "sync": True}
-        res_sync_body = client.post("/v1/kb/upload", json=payload_with_sync, headers=headers)
-        assert res_sync_body.status_code == 400
-        assert "Synchronous ingestion is disabled in production" in res_sync_body.json()["error"]["message"]
+            # 2. JSON upload with payload sync=True in production -> 400
+            payload_with_sync = {**doc_payload, "sync": True}
+            res_sync_body = client.post("/v1/kb/upload", json=payload_with_sync, headers=headers)
+            assert res_sync_body.status_code == 400
+            assert "Synchronous ingestion is disabled in production" in res_sync_body.json()["error"]["message"]
 
-        # 3. Multipart file upload with ?sync=true in production -> 400
-        file_bytes = b"Production file contents"
-        files = {"file": ("prod_file.txt", io.BytesIO(file_bytes), "text/plain")}
-        res_file_sync = client.post("/v1/kb/upload/file?sync=true", files=files, headers=headers)
-        assert res_file_sync.status_code == 400
-        assert "Synchronous ingestion is disabled in production" in res_file_sync.json()["error"]["message"]
+            # 3. Multipart file upload with ?sync=true in production -> 400
+            file_bytes = b"Production file contents"
+            files = {"file": ("prod_file.txt", io.BytesIO(file_bytes), "text/plain")}
+            res_file_sync = client.post("/v1/kb/upload/file?sync=true", files=files, headers=headers)
+            assert res_file_sync.status_code == 400
+            assert "Synchronous ingestion is disabled in production" in res_file_sync.json()["error"]["message"]
 
-        # 4. Backward-compatible alias /v1/knowledge-base/upload with ?sync=true -> 400
-        res_alias_sync = client.post("/v1/knowledge-base/upload?sync=true", json=doc_payload, headers=headers)
-        assert res_alias_sync.status_code == 400
+            # 4. Backward-compatible alias /v1/knowledge-base/upload with ?sync=true -> 400
+            res_alias_sync = client.post("/v1/knowledge-base/upload?sync=true", json=doc_payload, headers=headers)
+            assert res_alias_sync.status_code == 400
 
     def test_production_upload_always_enqueues_through_durable_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Verify that production upload enqueues to mirage.ingest Quorum queue."""
-        monkeypatch.setattr(settings, "environment", EnvironmentType.PRODUCTION)
-        tenant_id = f"t_prod_queue_{uuid.uuid4().hex[:8]}"
+        tenant_id = "tenant_integration_kb"
         headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.TENANT_ADMIN)
+        monkeypatch.setattr(settings, "environment", EnvironmentType.PRODUCTION)
+        mock_auth = AuthContext(
+            tenant_id=tenant_id,
+            role=Role.TENANT_ADMIN,
+            user_id="test_user_01",
+            identity_id=f"id_{tenant_id}",
+            principal_type="user",
+            is_authenticated=True,
+            token_type="jwt",
+        )
 
         doc_payload = {
             "filename": "durable_doc.txt",
@@ -89,6 +110,7 @@ class TestP1KnowledgeBaseSafety:
         }
 
         with (
+            patch("gateway.middleware.auth.resolve_jwt_context", return_value=mock_auth),
             patch("gateway.routes.knowledge_base.is_broker_reachable", return_value=True),
             patch("workers.tasks.ingest_document_task.apply_async") as mock_apply,
         ):
@@ -444,8 +466,6 @@ class TestP1KnowledgeBaseSafety:
     @pytest.mark.asyncio
     async def test_concurrent_uploads_same_content(self) -> None:
         """Verify concurrent uploads with identical content succeed without race conditions or duplicate rows."""
-        import concurrent.futures
-
         tenant_id = f"t_conc_same_{uuid.uuid4().hex[:8]}"
         headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.TENANT_ADMIN)
         payload = {
@@ -454,14 +474,11 @@ class TestP1KnowledgeBaseSafety:
             "collection_name": "conc_kb",
         }
 
-        # Issue 5 concurrent uploads
-        def do_upload() -> int:
-            resp = client.post("/v1/kb/upload?sync=true", json=payload, headers=headers)
-            return resp.status_code
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-            futures = [executor.submit(do_upload) for _ in range(5)]
-            status_codes = [f.result() for f in futures]
+        # Issue 5 concurrent uploads using httpx.AsyncClient with ASGITransport
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+            tasks = [ac.post("/v1/kb/upload?sync=true", json=payload, headers=headers) for _ in range(5)]
+            responses = await asyncio.gather(*tasks)
+            status_codes = [resp.status_code for resp in responses]
 
         # All requests must have succeeded (either 201 Created or 200 OK duplicate)
         assert all(sc in {200, 201} for sc in status_codes)
@@ -474,23 +491,24 @@ class TestP1KnowledgeBaseSafety:
     @pytest.mark.asyncio
     async def test_concurrent_uploads_different_content(self) -> None:
         """Verify concurrent uploads with differing content update atomically via ON CONFLICT without error."""
-        import concurrent.futures
-
         tenant_id = f"t_conc_diff_{uuid.uuid4().hex[:8]}"
         headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.TENANT_ADMIN)
 
-        def do_upload_variant(i: int) -> int:
-            payload = {
-                "filename": "concurrent_diff.txt",
-                "content": f"Variant {i} content string for concurrency test.",
-                "collection_name": "conc_kb",
-            }
-            resp = client.post("/v1/kb/upload?sync=true", json=payload, headers=headers)
-            return resp.status_code
-
-        with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
-            futures = [executor.submit(do_upload_variant, i) for i in range(4)]
-            status_codes = [f.result() for f in futures]
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
+            tasks = [
+                ac.post(
+                    "/v1/kb/upload?sync=true",
+                    json={
+                        "filename": "concurrent_diff.txt",
+                        "content": f"Variant {i} content string for concurrency test.",
+                        "collection_name": "conc_kb",
+                    },
+                    headers=headers,
+                )
+                for i in range(4)
+            ]
+            responses = await asyncio.gather(*tasks)
+            status_codes = [resp.status_code for resp in responses]
 
         # All uploads should succeed with 200 or 201 (no 500 Internal Server Error)
         assert all(sc in {200, 201} for sc in status_codes)

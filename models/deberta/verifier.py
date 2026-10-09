@@ -1,12 +1,20 @@
 """DeBERTa-v3-large NLI Verifier and Multi-Evidence Aggregator."""
 
 import re
-from typing import Any
+from typing import Any, NamedTuple
 
 from shared.logging import get_logger
 from shared.schemas import EvidenceChunk
 
 logger = get_logger("deberta_verifier")
+
+
+class NLIPrediction(NamedTuple):
+    """Named tuple for NLI probabilities ensuring explicit field semantics and backwards-compatible tuple indexing."""
+
+    entailment: float
+    neutral: float
+    contradiction: float
 
 
 class DeBERTaNLIVerifier:
@@ -33,17 +41,19 @@ class DeBERTaNLIVerifier:
                 logger.warning("Failed to load neural DeBERTa verifier, using heuristic logic", error=str(exc))
                 self.use_neural = False
 
-    def predict_pair(self, premise: str, hypothesis: str) -> tuple[float, float, float]:
-        """Return (p_entailment, p_neutral, p_contradiction) for a premise-hypothesis pair."""
+    def predict_pair(self, premise: str, hypothesis: str) -> NLIPrediction:
+        """Return NLIPrediction(entailment, neutral, contradiction) for a premise-hypothesis pair."""
         p_clean = premise.strip()
         h_clean = hypothesis.strip()
         if not p_clean or not h_clean:
-            return 0.0, 1.0, 0.0
+            return NLIPrediction(0.0, 1.0, 0.0)
 
         if self.use_neural and self._model is not None and self._tokenizer is not None:
-            return self._predict_neural(p_clean, h_clean)
+            res = self._predict_neural(p_clean, h_clean)
+            return NLIPrediction(res[0], res[1], res[2])
 
-        return self._predict_heuristic(p_clean, h_clean)
+        res = self._predict_heuristic(p_clean, h_clean)
+        return NLIPrediction(res[0], res[1], res[2])
 
     def are_bidirectionally_entailed(self, text_a: str, text_b: str, threshold: float = 0.5) -> bool:
         """Check if text_a and text_b mutually entail each other (Kuhn et al., 2023 semantic clustering)."""

@@ -15,6 +15,10 @@ import { DriftView } from "./views/DriftView";
 import { SessionsView } from "./views/SessionsView";
 import { AlertsView } from "./views/AlertsView";
 import { LiveStreamView } from "./views/LiveStreamView";
+import { ContextAssuranceView } from "./views/ContextAssuranceView";
+import { ActionAssuranceView } from "./views/ActionAssuranceView";
+import { OutputAssuranceView } from "./views/OutputAssuranceView";
+import { OutcomeAssuranceView } from "./views/OutcomeAssuranceView";
 
 /**
  * Dashboard application shell managing navigation state, header actions, and view routing.
@@ -70,6 +74,38 @@ export function DashboardShell() {
       case "overview":
         return (
           <OverviewView
+            isRefreshing={isRefreshing}
+            onDataLoaded={handleDataLoaded}
+          />
+        );
+
+      case "context":
+        return (
+          <ContextAssuranceView
+            isRefreshing={isRefreshing}
+            onDataLoaded={handleDataLoaded}
+          />
+        );
+
+      case "actions":
+        return (
+          <ActionAssuranceView
+            isRefreshing={isRefreshing}
+            onDataLoaded={handleDataLoaded}
+          />
+        );
+
+      case "output":
+        return (
+          <OutputAssuranceView
+            isRefreshing={isRefreshing}
+            onDataLoaded={handleDataLoaded}
+          />
+        );
+
+      case "outcomes":
+        return (
+          <OutcomeAssuranceView
             isRefreshing={isRefreshing}
             onDataLoaded={handleDataLoaded}
           />

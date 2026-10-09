@@ -93,3 +93,6 @@ dashboard/dist/
 # Benchmark & load test results
 results/*
 !results/.gitkeep
+
+# Local binaries and tooling
+.tools/

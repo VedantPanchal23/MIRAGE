@@ -30,7 +30,12 @@ from db.models import ActionContract, AuditLogRecord, OutcomeVerificationRecord
 from shared.config import get_settings
 from shared.logging import get_logger
 from shared.schemas.action import ActionState
-from shared.schemas.audit import compute_sha256
+from shared.schemas.audit import (
+    GENESIS_ROOT_HASH,
+    TrustedCheckpointRegistry,
+    compute_sha256,
+    is_valid_sha256_hex,
+)
 from shared.schemas.auth import AuthContext, Role
 from shared.schemas.outcome import (
     ObservabilityClass,
@@ -726,13 +731,17 @@ class SimulatedTestAdapter(BaseOutcomeAdapter):
 class RealityVerifierService:
     """Core Gate 5 Outcome Assurance engine validating external system state."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        checkpoint_registry: TrustedCheckpointRegistry | None = None,
+    ) -> None:
         self.adapters: dict[OutcomeVerifierType, BaseOutcomeAdapter] = {
             OutcomeVerifierType.DATABASE: DatabaseStateAdapter(),
             OutcomeVerifierType.HTTP_RESOURCE: HttpResourceAdapter(),
             OutcomeVerifierType.ASYNC_EVENT: AsyncEventAdapter(),
             OutcomeVerifierType.SIMULATED: SimulatedTestAdapter(),
         }
+        self.checkpoint_registry = checkpoint_registry or TrustedCheckpointRegistry()
 
     def _validate_outcome_transition(self, current_status: OutcomeStatus, new_status: OutcomeStatus) -> None:
         """Enforce monotonic outcome state machine preventing status regression or illegal upgrades."""
@@ -823,11 +832,123 @@ class RealityVerifierService:
             verified_at=verified_dt,
         )
 
+    def _validate_chain_record_fields_and_hash(
+        self,
+        audit_record: AuditLogRecord,
+        role_label: str = "record",
+    ) -> str:
+        """Validate all required cryptographic fields, format, types, and self-integrity.
+
+        Fails closed (HTTP 409) if any field is missing, empty, malformed, or if the stored
+        chain_hash does not match the recomputed canonical SHA-256 hash.
+        Returns the validated verified_at ISO timestamp string.
+        """
+        # 1. entry_id validation
+        entry_id = audit_record.entry_id
+        if not entry_id or not isinstance(entry_id, str) or not entry_id.strip():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Audit chain record '{entry_id or 'unknown'}' missing or empty entry_id field.",
+            )
+        if len(entry_id) > 64 or not re.match(r"^[a-zA-Z0-9_\-]+$", entry_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Audit chain record '{entry_id}' has invalid entry_id format.",
+            )
+
+        # 2. prev_hash validation
+        prev_hash = audit_record.prev_hash
+        if not prev_hash or not isinstance(prev_hash, str) or not is_valid_sha256_hex(prev_hash):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Audit chain record '{entry_id}' missing or malformed prev_hash field.",
+            )
+
+        # 3. chain_hash validation
+        chain_hash = audit_record.chain_hash
+        if not chain_hash or not isinstance(chain_hash, str) or not is_valid_sha256_hex(chain_hash):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Audit chain record '{entry_id}' missing or malformed chain_hash field.",
+            )
+
+        # 4. decision validation
+        decision = audit_record.decision
+        if not decision or not isinstance(decision, str) or not decision.strip():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Audit chain record '{entry_id}' missing or empty decision field.",
+            )
+
+        # 5. event_payload and verified_at validation
+        payload = audit_record.event_payload
+        if payload is None or not isinstance(payload, dict):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Audit chain record '{entry_id}' missing or invalid event_payload dictionary.",
+            )
+
+        verified_at = payload.get("verified_at")
+        if not verified_at or not isinstance(verified_at, str) or not verified_at.strip():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Audit chain record '{entry_id}' missing or empty verified_at field in payload.",
+            )
+
+        # Timestamp format validation
+        try:
+            datetime.fromisoformat(verified_at)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=f"Audit chain record '{entry_id}' has invalid ISO-8601 verified_at timestamp: '{verified_at}'.",
+            ) from None
+
+        # 6. Database column vs payload concordance
+        if payload.get("decision") and payload.get("decision") != decision:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit chain divergence: {role_label} '{entry_id}' payload decision "
+                    f"'{payload.get('decision')}' disagrees with column decision '{decision}'."
+                ),
+            )
+        if payload.get("outcome_status") and payload.get("outcome_status") != decision:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit chain divergence: {role_label} '{entry_id}' payload outcome_status "
+                    f"'{payload.get('outcome_status')}' disagrees with column decision '{decision}'."
+                ),
+            )
+        if audit_record.transaction_id and payload.get("transaction_id"):
+            if payload.get("transaction_id") != audit_record.transaction_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Audit chain divergence: {role_label} '{entry_id}' payload transaction_id "
+                        f"'{payload.get('transaction_id')}' disagrees with column '{audit_record.transaction_id}'."
+                    ),
+                )
+
+        # 7. Recompute canonical hash and verify exact match
+        expected_chain_hash = compute_sha256(f"{prev_hash}:{entry_id}:{decision}:{verified_at}")
+        if chain_hash != expected_chain_hash:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit chain corruption detected at {role_label} '{entry_id}': "
+                    f"chain_hash '{chain_hash}' does not match computed hash '{expected_chain_hash}'."
+                ),
+            )
+
+        return verified_at
+
     async def verify_record_against_audit_trail(
         self,
         session: Any,
         record: OutcomeVerificationRecord,
-        trusted_root_hash: str = "0" * 64,
+        trusted_root_hash: str = GENESIS_ROOT_HASH,
         max_chain_depth: int = 500,
     ) -> OutcomeVerificationContract:
         """Verify OutcomeVerificationRecord integrity internally and against AuditLogRecord.
@@ -837,10 +958,29 @@ class RealityVerifierService:
         the cryptographic chain back to trusted root (default genesis '0'*64). Fails closed (HTTP 409)
         if the trust anchor is missing, conflicting, tampered, or detached from the audit chain.
         """
-        # 1. Internal canonical payload integrity and SHA-256 hash check
+        # 1. Trusted root format and authentication verification
+        if not is_valid_sha256_hex(trusted_root_hash):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Malformed trusted root hash: '{trusted_root_hash}' "
+                    "must be a 64-character lowercase hexadecimal string."
+                ),
+            )
+
+        if not self.checkpoint_registry.is_authenticated_root(record.tenant_id, trusted_root_hash):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Untrusted root hash: Checkpoint '{trusted_root_hash}' is not an authenticated "
+                    f"trust anchor for tenant '{record.tenant_id}'."
+                ),
+            )
+
+        # 2. Internal canonical payload integrity and SHA-256 hash check
         contract = self._record_to_contract(record)
 
-        # 2. External AuditLogRecord trust anchor lookup
+        # 3. External AuditLogRecord trust anchor lookup
         audit_stmt = (
             select(AuditLogRecord)
             .where(
@@ -880,7 +1020,7 @@ class RealityVerifierService:
         matching_audit = matching_audits[0]
         payload = matching_audit.event_payload or {}
 
-        # 3. Unambiguous 4-way correlation check: outcome_id, action_id, tenant_id, transaction_id
+        # 4. Unambiguous 4-way correlation check: outcome_id, action_id, tenant_id, transaction_id
         if payload.get("outcome_id") != record.id:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -923,7 +1063,7 @@ class RealityVerifierService:
                 ),
             )
 
-        # 4. Hash and Decision verification against audit record
+        # 5. Hash and Decision verification against audit record
         if matching_audit.response_hash != record.verification_hash:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -943,24 +1083,13 @@ class RealityVerifierService:
                 ),
             )
 
-        # 5. Cryptographic Chain Self-Integrity verification
-        verified_at_val = payload.get("verified_at")
-        if verified_at_val:
-            expected_chain = compute_sha256(
-                f"{matching_audit.prev_hash}:{matching_audit.entry_id}:{matching_audit.decision}:{verified_at_val}"
-            )
-            if matching_audit.chain_hash != expected_chain:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"Audit chain corruption detected: AuditLogRecord '{matching_audit.entry_id}' "
-                        f"chain_hash '{matching_audit.chain_hash}' does not match computed hash '{expected_chain}'."
-                    ),
-                )
+        # 6. Cryptographic Chain Self-Integrity & Required Field verification (Fail-Closed)
+        self._validate_chain_record_fields_and_hash(matching_audit, role_label=f"anchor '{matching_audit.entry_id}'")
 
-        # 6. Full-Chain Recursive Validation Back to Trusted Root
+        # 7. Full-Chain Recursive Validation Back to Trusted Root
         curr = matching_audit
         visited_hashes: set[str] = {curr.chain_hash}
+        visited_entry_ids: set[str] = {curr.entry_id}
         chain_depth = 0
 
         while curr.prev_hash != trusted_root_hash:
@@ -982,18 +1111,72 @@ class RealityVerifierService:
                     ),
                 )
 
-            pred_stmt = select(AuditLogRecord).where(
-                AuditLogRecord.tenant_id == record.tenant_id,
-                AuditLogRecord.chain_hash == curr.prev_hash,
+            pred_stmt = (
+                select(AuditLogRecord)
+                .where(
+                    AuditLogRecord.tenant_id == record.tenant_id,
+                    AuditLogRecord.chain_hash == curr.prev_hash,
+                )
+                .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
             )
-            pred_record = (await session.execute(pred_stmt)).scalar_one_or_none()
-            if not pred_record:
+            exec_res = await session.execute(pred_stmt)
+            pred_records: list[Any] = []
+            if hasattr(exec_res, "scalars"):
+                scalars_call = exec_res.scalars()
+                if hasattr(scalars_call, "all"):
+                    res_all = scalars_call.all()
+                    if isinstance(res_all, list):
+                        pred_records = res_all
+                    elif hasattr(exec_res, "scalar_one_or_none"):
+                        s_one = exec_res.scalar_one_or_none()
+                        pred_records = [s_one] if s_one is not None else []
+                    else:
+                        pred_records = list(res_all)
+                elif hasattr(exec_res, "scalar_one_or_none"):
+                    s_one = exec_res.scalar_one_or_none()
+                    pred_records = [s_one] if s_one is not None else []
+            elif hasattr(exec_res, "scalar_one_or_none"):
+                s_one = exec_res.scalar_one_or_none()
+                pred_records = [s_one] if s_one is not None else []
+
+            if not pred_records:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
                         f"Audit chain broken linkage: predecessor block with chain_hash '{curr.prev_hash}' "
-                        f"not found in audit trail for tenant '{record.tenant_id}' (traversed depth {chain_depth}). "
+                        f"not found in audit trail for tenant '{record.tenant_id}' (depth {chain_depth}). "
                         f"Chain does not anchor to trusted root '{trusted_root_hash}'."
+                    ),
+                )
+
+            if len(pred_records) > 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Audit chain ambiguous linkage: found {len(pred_records)} conflicting predecessor "
+                        f"blocks with chain_hash '{curr.prev_hash}' for tenant '{record.tenant_id}'."
+                    ),
+                )
+
+            pred_record = pred_records[0]
+
+            # Predecessor tenant boundary check
+            if pred_record.tenant_id != record.tenant_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Audit chain tenant isolation violation: ancestor '{pred_record.entry_id}' "
+                        f"tenant '{pred_record.tenant_id}' does not match record tenant '{record.tenant_id}'."
+                    ),
+                )
+
+            # Node repetition check
+            if pred_record.entry_id in visited_entry_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Audit chain node repetition detected at entry_id '{pred_record.entry_id}' "
+                        f"for tenant '{record.tenant_id}'."
                     ),
                 )
 
@@ -1021,23 +1204,12 @@ class RealityVerifierService:
                     ),
                 )
 
-            # Predecessor self-integrity check
-            p_payload = pred_record.event_payload or {}
-            p_verified_at = p_payload.get("verified_at")
-            if p_verified_at and pred_record.decision:
-                expected_p_hash = compute_sha256(
-                    f"{pred_record.prev_hash}:{pred_record.entry_id}:{pred_record.decision}:{p_verified_at}"
-                )
-                if pred_record.chain_hash != expected_p_hash:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail=(
-                            f"Audit chain corruption detected at ancestor '{pred_record.entry_id}': "
-                            f"chain_hash '{pred_record.chain_hash}' does not match computed hash '{expected_p_hash}'."
-                        ),
-                    )
+            # Ancestor self-integrity and missing-field validation (fail-closed)
+            self._validate_chain_record_fields_and_hash(pred_record, role_label=f"ancestor '{pred_record.entry_id}'")
 
             visited_hashes.add(curr.prev_hash)
+            visited_hashes.add(pred_record.chain_hash)
+            visited_entry_ids.add(pred_record.entry_id)
             curr = pred_record
 
         return contract
@@ -1363,6 +1535,7 @@ class RealityVerifierService:
                 .where(AuditLogRecord.tenant_id == auth.tenant_id)
                 .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
                 .limit(1)
+                .with_for_update()
             )
             prev_chain_hash = latest_audit.scalar_one_or_none() or "0" * 64
             entry_id = f"aud_{uuid.uuid4().hex}"

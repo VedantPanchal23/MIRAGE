@@ -280,7 +280,7 @@ async def test_audit_anchor_corrupted_chain_hash_rejected():
     """Corrupted chain_hash in audit entry triggers fail-closed error."""
     service = RealityVerifierService()
     rec, audit = build_canonical_outcome()
-    audit.chain_hash = "corrupted_chain_hash_" + "0" * 43
+    audit.chain_hash = "c" * 64
 
     mock_session = AsyncMock()
     mock_scalars = MagicMock(all=MagicMock(return_value=[audit]))
@@ -299,7 +299,7 @@ async def test_audit_anchor_missing_predecessor_block_rejected():
     """Audit entry with non-genesis prev_hash but missing predecessor block in DB fails."""
     service = RealityVerifierService()
     rec, audit = build_canonical_outcome()
-    audit.prev_hash = "predecessor_hash_" + "0" * 47
+    audit.prev_hash = "b" * 64
     audit.chain_hash = compute_sha256(
         f"{audit.prev_hash}:{audit.entry_id}:{audit.decision}:{audit.event_payload['verified_at']}"
     )
@@ -327,11 +327,12 @@ async def test_audit_anchor_reordered_chain_timestamp_rejected():
     """Predecessor record with timestamp later than current record indicates reordering."""
     service = RealityVerifierService()
     rec, audit = build_canonical_outcome()
-    audit.prev_hash = "predecessor_hash_" + "0" * 47
+    audit.prev_hash = "b" * 64
     audit.chain_hash = compute_sha256(
         f"{audit.prev_hash}:{audit.entry_id}:{audit.decision}:{audit.event_payload['verified_at']}"
     )
 
+    t_future = datetime(2026, 12, 31, tzinfo=UTC)
     pred_audit = AuditLogRecord(
         entry_id="aud_pred",
         tenant_id=rec.tenant_id,
@@ -351,10 +352,10 @@ async def test_audit_anchor_reordered_chain_timestamp_rejected():
         policy_reference=None,
         capability_id="payment:settle",
         reason="test",
-        event_payload={},
+        event_payload={"verified_at": t_future.isoformat()},
         prev_hash="0" * 64,
         chain_hash=audit.prev_hash,
-        created_at=datetime(2026, 12, 31, tzinfo=UTC),  # Future timestamp vs audit.created_at!
+        created_at=t_future,  # Future timestamp vs audit.created_at!
     )
 
     mock_session = AsyncMock()
@@ -513,7 +514,7 @@ async def test_audit_chain_recursive_broken_link_at_depth_2():
     t1 = datetime(2026, 10, 10, 10, 5, 0, tzinfo=UTC)
     t2 = datetime(2026, 10, 10, 10, 10, 0, tzinfo=UTC)
 
-    missing_hash = "missing_hash_" + "0" * 51
+    missing_hash = "b" * 64
     chain_1 = compute_sha256(f"{missing_hash}:aud_block_1:SUCCESS_CONFIRMED:{t1.isoformat()}")
     aud_1 = AuditLogRecord(
         entry_id="aud_block_1",
@@ -601,7 +602,7 @@ async def test_audit_chain_recursive_tampered_ancestor_hash_at_depth_2():
     t2 = datetime(2026, 10, 10, 10, 10, 0, tzinfo=UTC)
 
     prev_1 = "0" * 64
-    chain_1 = "corrupted_chain_1_" + "0" * 46
+    chain_1 = "c" * 64
     aud_1 = AuditLogRecord(
         entry_id="aud_block_1",
         tenant_id=rec.tenant_id,
@@ -826,7 +827,7 @@ async def test_audit_chain_recursive_cyclic_loop_detected():
         policy_reference=None,
         capability_id="payment:settle",
         reason="cycle_block",
-        event_payload={},
+        event_payload={"verified_at": t1.isoformat()},
         prev_hash=chain_leaf,  # Loop back!
         chain_hash=chain_1,
         created_at=t1,
@@ -889,7 +890,7 @@ async def test_audit_chain_recursive_floating_orphan_subchain_rejected():
     t1 = datetime(2026, 10, 10, 10, 5, 0, tzinfo=UTC)
 
     # aud_0 prev_hash is some random unrooted hash instead of '0'*64
-    fake_orphan_root = "unrooted_orphan_" + "0" * 48
+    fake_orphan_root = "f" * 64
     chain_0 = compute_sha256(f"{fake_orphan_root}:aud_block_0:SUCCESS_CONFIRMED:{t0.isoformat()}")
     aud_0 = AuditLogRecord(
         entry_id="aud_block_0",
@@ -973,7 +974,8 @@ async def test_audit_chain_custom_trusted_root_checkpoint():
     service = RealityVerifierService()
     rec, _ = build_canonical_outcome()
 
-    checkpoint_root = "checkpoint_trusted_hash_" + "0" * 40
+    checkpoint_root = "d" * 64
+    service.checkpoint_registry.register_checkpoint(rec.tenant_id, checkpoint_root)
     now_iso = datetime.now(UTC).isoformat()
     chain_leaf = compute_sha256(f"{checkpoint_root}:aud_leaf:SUCCESS_CONFIRMED:{now_iso}")
 

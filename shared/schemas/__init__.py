@@ -7,7 +7,13 @@ from shared.schemas.alerts import (
     AlertStatus,
     OperatorAlertResponse,
 )
-from shared.schemas.audit import AuditLogEntry, compute_sha256
+from shared.schemas.audit import (
+    GENESIS_ROOT_HASH,
+    AuditLogEntry,
+    TrustedCheckpointRegistry,
+    compute_sha256,
+    is_valid_sha256_hex,
+)
 from shared.schemas.auth import ROLE_PERMISSIONS, AuthContext, Permission, Role
 from shared.schemas.claims import (
     CRITICALITY_WEIGHTS,
@@ -63,6 +69,9 @@ from shared.schemas.verification import (
 __all__ = [
     "AuditLogEntry",
     "compute_sha256",
+    "GENESIS_ROOT_HASH",
+    "is_valid_sha256_hex",
+    "TrustedCheckpointRegistry",
     "AuthContext",
     "Role",
     "Permission",

@@ -2,15 +2,61 @@
 
 import hashlib
 import json
+import re
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Final
 
 from pydantic import BaseModel, Field
+
+_HEX_64_REGEX: Final[re.Pattern[str]] = re.compile(r"^[0-9a-f]{64}$")
+GENESIS_ROOT_HASH: Final[str] = "0" * 64
 
 
 def compute_sha256(text: str) -> str:
     """Compute SHA-256 hex digest for arbitrary input string."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def is_valid_sha256_hex(val: Any) -> bool:
+    """Check if value is a valid 64-character lowercase hexadecimal string."""
+    return isinstance(val, str) and len(val) == 64 and bool(_HEX_64_REGEX.match(val))
+
+
+class TrustedCheckpointRegistry:
+    """Authenticated registry for tenant-scoped trust anchors and checkpoints.
+
+    Enforces that arbitrary unauthenticated caller-selected hashes cannot be
+    treated as trusted roots. Checkpoints must be pre-registered per-tenant.
+    The genesis root ('0' * 64) is universally authenticated by default.
+    """
+
+    def __init__(self, initial_checkpoints: dict[str, set[str]] | None = None) -> None:
+        self._checkpoints: dict[str, set[str]] = {}
+        if initial_checkpoints:
+            for t_id, hashes in initial_checkpoints.items():
+                for h in hashes:
+                    self.register_checkpoint(t_id, h)
+
+    def register_checkpoint(self, tenant_id: str, checkpoint_hash: str) -> None:
+        """Register an authenticated checkpoint for a specific tenant."""
+        if not tenant_id or not isinstance(tenant_id, str) or not tenant_id.strip():
+            raise ValueError("tenant_id must be a non-empty string")
+        h = checkpoint_hash.lower().strip() if isinstance(checkpoint_hash, str) else ""
+        if not is_valid_sha256_hex(h):
+            raise ValueError(f"Invalid checkpoint hash format: '{checkpoint_hash}'")
+        self._checkpoints.setdefault(tenant_id.strip(), set()).add(h)
+
+    def is_authenticated_root(self, tenant_id: str, root_hash: str) -> bool:
+        """Verify whether a root hash is an authenticated trust anchor for the tenant."""
+        if not isinstance(root_hash, str):
+            return False
+        h = root_hash.lower().strip()
+        if h == GENESIS_ROOT_HASH:
+            return True
+        if not is_valid_sha256_hex(h):
+            return False
+        tenant_roots = self._checkpoints.get(tenant_id.strip(), set())
+        return h in tenant_roots
 
 
 class AuditLogEntry(BaseModel):

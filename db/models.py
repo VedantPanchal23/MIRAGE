@@ -584,6 +584,7 @@ class OutcomeVerificationRecord(Base):
     """Authoritative persistent record of Gate 5 Outcome Assurance & Reality Verifications."""
 
     __tablename__ = "outcome_verification_records"
+    __table_args__ = (UniqueConstraint("tenant_id", "action_id", name="uq_outcome_records_tenant_action"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(

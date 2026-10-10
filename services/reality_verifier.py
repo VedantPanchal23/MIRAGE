@@ -615,7 +615,54 @@ class RealityVerifierService:
             )
 
     def _record_to_contract(self, record: OutcomeVerificationRecord) -> OutcomeVerificationContract:
-        """Convert an authoritative database record to an immutable OutcomeVerificationContract."""
+        """Convert an authoritative database record to an immutable OutcomeVerificationContract.
+
+        Enforces read-time cryptographic integrity check against the canonical payload.
+        """
+        canonical = (record.evidence_payload or {}).get("_canonical_payload")
+        if canonical and isinstance(canonical, dict):
+            # 1. Verify column integrity against canonical payload
+            mismatches: list[str] = []
+            if record.outcome_status != canonical.get("outcome_status"):
+                mismatches.append(f"outcome_status ('{record.outcome_status}' != '{canonical.get('outcome_status')}')")
+            if record.tenant_id != canonical.get("tenant_id"):
+                mismatches.append(f"tenant_id ('{record.tenant_id}' != '{canonical.get('tenant_id')}')")
+            if record.action_id != canonical.get("action_id"):
+                mismatches.append(f"action_id ('{record.action_id}' != '{canonical.get('action_id')}')")
+            if record.transaction_id != canonical.get("transaction_id"):
+                mismatches.append(f"transaction_id ('{record.transaction_id}' != '{canonical.get('transaction_id')}')")
+            if record.observability_class != canonical.get("observability_class"):
+                mismatches.append(
+                    f"observability_class ('{record.observability_class}' != '{canonical.get('observability_class')}')"
+                )
+            if abs(record.epistemic_confidence - float(canonical.get("epistemic_confidence", 0.0))) > 1e-5:
+                stored_conf = record.epistemic_confidence
+                expected_conf = canonical.get("epistemic_confidence")
+                mismatches.append(f"epistemic_confidence ('{stored_conf}' != '{expected_conf}')")
+
+            if mismatches:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Cryptographic integrity violation: OutcomeVerificationRecord '{record.id}' "
+                        f"tampered in storage. Divergences: {', '.join(mismatches)}"
+                    ),
+                )
+
+            # 2. Recompute SHA-256 over canonical payload
+            recomputed_hash = hashlib.sha256(
+                json.dumps(canonical, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+            if recomputed_hash != record.verification_hash:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Cryptographic integrity violation: OutcomeVerificationRecord '{record.id}' "
+                        f"verification_hash mismatch. Stored: '{record.verification_hash}', "
+                        f"Recomputed: '{recomputed_hash}'"
+                    ),
+                )
+
         verified_dt = (
             record.verified_at.isoformat()
             if hasattr(record.verified_at, "isoformat")
@@ -662,13 +709,14 @@ class RealityVerifierService:
         idempotency_key = request.idempotency_key or f"idem_outc_{request.action_id}_{request.verifier_type.value}"
 
         async with db_session.get_tenant_session(auth.tenant_id) as session:
-            # 2. Fetch and validate ActionContract under tenant boundary
+            # 2. Fetch and validate ActionContract under tenant boundary with row-level lock
             stmt = (
                 select(ActionContract)
                 .where(
                     ActionContract.id == request.action_id,
                     ActionContract.tenant_id == auth.tenant_id,
                 )
+                .with_for_update()
             )
             action = (await session.execute(stmt)).scalar_one_or_none()
             if not action:
@@ -687,13 +735,13 @@ class RealityVerifierService:
                 )
 
             # 3. Action Execution State Invariant:
-            # Action MUST be COMPLETED or EXECUTING. Proposed, awaiting approval, or blocked actions CANNOT be verified.
-            if action.state not in (ActionState.COMPLETED.value, ActionState.EXECUTING.value, "EXECUTED"):
+            # Action MUST be COMPLETED or EXECUTED. In-flight or proposed actions CANNOT be verified.
+            if action.state not in (ActionState.COMPLETED.value, "EXECUTED"):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
                         f"Cannot verify unexecuted action: ActionContract '{action.id}' is in state '{action.state}'. "
-                        f"Only COMPLETED or EXECUTING actions may be verified."
+                        f"Only COMPLETED or EXECUTED actions may be verified."
                     ),
                 )
 
@@ -704,6 +752,9 @@ class RealityVerifierService:
                     OutcomeVerificationRecord.tenant_id == auth.tenant_id,
                     OutcomeVerificationRecord.action_id == action.id,
                 )
+                .order_by(OutcomeVerificationRecord.created_at.desc())
+                .limit(1)
+                .with_for_update()
             )
             raw_existing = (await session.execute(existing_stmt)).scalar_one_or_none()
             existing_record = raw_existing if isinstance(raw_existing, OutcomeVerificationRecord) else None
@@ -776,8 +827,26 @@ class RealityVerifierService:
             reconciliation_notes.extend(probe_result.reconciliation_notes)
 
             # 9. Determine OutcomeStatus and Epistemic Confidence
+            target_scheme = ""
+            if action.target_resource:
+                target_scheme = (
+                    action.target_resource.split("://")[0].lower()
+                    if "://" in action.target_resource
+                    else action.target_resource.split(":")[0].lower()
+                )
+            is_blind_sink = target_scheme in ("udp", "syslog", "mailto", "smtp", "blackhole", "devnull", "sink")
+
             obs_class = request.observability_class
             discrepancies = probe_result.discrepancies
+
+            # Enforce authoritative blind sink override: client cannot forge OBS_DIRECT on write-only sinks
+            if is_blind_sink and obs_class != ObservabilityClass.OBS_BLIND:
+                obs_class = ObservabilityClass.OBS_BLIND
+                reconciliation_notes.append(
+                    f"Target resource '{action.target_resource}' is an unobservable write-only sink ({target_scheme}). "
+                    f"Client observability class '{request.observability_class.value}' "
+                    "authoritatively downgraded to OBS_BLIND."
+                )
 
             if obs_class == ObservabilityClass.OBS_BLIND:
                 outcome_status = OutcomeStatus.UNOBSERVABLE
@@ -796,7 +865,16 @@ class RealityVerifierService:
                 )
 
             elif obs_class == ObservabilityClass.OBS_DIRECT:
-                if probe_result.is_simulated:
+                # Epistemic Invariant: void postconditions assertion CANNOT produce SUCCESS_CONFIRMED
+                if len(effective_postconditions) == 0:
+                    outcome_status = OutcomeStatus.ACKNOWLEDGED_UNVERIFIED
+                    epistemic_confidence = 0.50
+                    reconciliation_notes.append(
+                        "Void postcondition assertion: zero expected postconditions were specified. "
+                        "SUCCESS_CONFIRMED requires authoritative postcondition state verification. "
+                        "Status downgraded to ACKNOWLEDGED_UNVERIFIED."
+                    )
+                elif probe_result.is_simulated:
                     # Simulation evidence NEVER satisfies production SUCCESS_CONFIRMED!
                     if discrepancies:
                         outcome_status = OutcomeStatus.FAILED
@@ -820,7 +898,14 @@ class RealityVerifierService:
                     epistemic_confidence = 1.00
 
             elif obs_class == ObservabilityClass.OBS_EVENTUAL:
-                if probe_result.success_indicated and not discrepancies:
+                if len(effective_postconditions) == 0:
+                    outcome_status = OutcomeStatus.ACKNOWLEDGED_UNVERIFIED
+                    epistemic_confidence = 0.50
+                    reconciliation_notes.append(
+                        "Void postcondition assertion: zero expected postconditions were specified. "
+                        "Cannot award SUCCESS_EVENTUALLY_OBSERVED without verified postconditions."
+                    )
+                elif probe_result.success_indicated and not discrepancies:
                     outcome_status = OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED
                     epistemic_confidence = 0.95
                 elif "timed out" in " ".join(discrepancies).lower():
@@ -873,6 +958,11 @@ class RealityVerifierService:
             canonical_bytes = json.dumps(canonical_payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
             verification_hash = hashlib.sha256(canonical_bytes).hexdigest()
 
+            evidence_payload = {
+                **probe_result.evidence_payload,
+                "_canonical_payload": canonical_payload,
+            }
+
             # 12. Upsert OutcomeVerificationRecord
             if existing_record:
                 record = existing_record
@@ -884,7 +974,7 @@ class RealityVerifierService:
                 record.expected_postconditions = effective_postconditions
                 record.observed_state = probe_result.observed_state
                 record.discrepancies = discrepancies
-                record.evidence_payload = probe_result.evidence_payload
+                record.evidence_payload = evidence_payload
                 record.reconciliation_notes = reconciliation_notes
                 record.verification_hash = verification_hash
                 record.idempotency_key = idempotency_key
@@ -905,7 +995,7 @@ class RealityVerifierService:
                     expected_postconditions=effective_postconditions,
                     observed_state=probe_result.observed_state,
                     discrepancies=discrepancies,
-                    evidence_payload=probe_result.evidence_payload,
+                    evidence_payload=evidence_payload,
                     reconciliation_notes=reconciliation_notes,
                     verification_hash=verification_hash,
                     idempotency_key=idempotency_key,

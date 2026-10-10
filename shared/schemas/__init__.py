@@ -10,9 +10,15 @@ from shared.schemas.alerts import (
 from shared.schemas.audit import (
     GENESIS_ROOT_HASH,
     AuditLogEntry,
+    CheckpointModel,
+    NotaryKeyRegistry,
+    TrustAssuranceLevel,
     TrustedCheckpointRegistry,
+    compute_checkpoint_canonical_string,
     compute_sha256,
     is_valid_sha256_hex,
+    sign_checkpoint_payload,
+    verify_checkpoint_signature,
 )
 from shared.schemas.auth import ROLE_PERMISSIONS, AuthContext, Permission, Role
 from shared.schemas.claims import (
@@ -72,6 +78,12 @@ __all__ = [
     "GENESIS_ROOT_HASH",
     "is_valid_sha256_hex",
     "TrustedCheckpointRegistry",
+    "TrustAssuranceLevel",
+    "CheckpointModel",
+    "NotaryKeyRegistry",
+    "compute_checkpoint_canonical_string",
+    "sign_checkpoint_payload",
+    "verify_checkpoint_signature",
     "AuthContext",
     "Role",
     "Permission",

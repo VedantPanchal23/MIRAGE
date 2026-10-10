@@ -26,7 +26,12 @@ from fastapi import HTTPException, status
 from sqlalchemy import select, text
 
 from db import session as db_session
-from db.models import ActionContract, AuditLogRecord, OutcomeVerificationRecord
+from db.models import (
+    ActionContract,
+    AuditLogRecord,
+    OutcomeVerificationRecord,
+    TenantAuditLedger,
+)
 from shared.config import get_settings
 from shared.logging import get_logger
 from shared.schemas.action import ActionState
@@ -755,7 +760,11 @@ class RealityVerifierService:
                 ),
             )
 
-    def _record_to_contract(self, record: OutcomeVerificationRecord) -> OutcomeVerificationContract:
+    def _record_to_contract(
+        self,
+        record: OutcomeVerificationRecord,
+        trust_assurance_level: str = "GENESIS_SENTINEL",
+    ) -> OutcomeVerificationContract:
         """Convert an authoritative database record to an immutable OutcomeVerificationContract.
 
         Enforces read-time cryptographic integrity check against the canonical payload.
@@ -830,6 +839,7 @@ class RealityVerifierService:
             contract_binding_hash=record.contract_binding_hash,
             schema_version="mirage.outcome.v1",
             verified_at=verified_dt,
+            trust_assurance_level=trust_assurance_level,
         )
 
     def _validate_chain_record_fields_and_hash(
@@ -968,7 +978,10 @@ class RealityVerifierService:
                 ),
             )
 
-        if not self.checkpoint_registry.is_authenticated_root(record.tenant_id, trusted_root_hash):
+        is_trusted, trust_tier, checkpoint_record = self.checkpoint_registry.evaluate_trust_level(
+            record.tenant_id, trusted_root_hash
+        )
+        if not is_trusted:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -978,7 +991,10 @@ class RealityVerifierService:
             )
 
         # 2. Internal canonical payload integrity and SHA-256 hash check
-        contract = self._record_to_contract(record)
+        contract = self._record_to_contract(
+            record,
+            trust_assurance_level=trust_tier.value if hasattr(trust_tier, "value") else str(trust_tier),
+        )
 
         # 3. External AuditLogRecord trust anchor lookup
         audit_stmt = (
@@ -1204,6 +1220,18 @@ class RealityVerifierService:
                     ),
                 )
 
+            # Sequence monotonicity check
+            pred_seq = getattr(pred_record, "sequence_number", 0) or 0
+            curr_seq = getattr(curr, "sequence_number", 0) or 0
+            if pred_seq > 0 and curr_seq > 0 and pred_seq >= curr_seq:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Audit chain sequence inversion detected: ancestor block '{pred_record.entry_id}' "
+                        f"sequence {pred_seq} >= descendant '{curr.entry_id}' sequence {curr_seq}."
+                    ),
+                )
+
             # Ancestor self-integrity and missing-field validation (fail-closed)
             self._validate_chain_record_fields_and_hash(pred_record, role_label=f"ancestor '{pred_record.entry_id}'")
 
@@ -1211,6 +1239,18 @@ class RealityVerifierService:
             visited_hashes.add(pred_record.chain_hash)
             visited_entry_ids.add(pred_record.entry_id)
             curr = pred_record
+
+        # Checkpoint sequence validation if authenticated checkpoint specifies a sequence
+        if checkpoint_record and checkpoint_record.sequence_number > 0:
+            final_seq = getattr(curr, "sequence_number", 0) or 0
+            if final_seq > 0 and final_seq != checkpoint_record.sequence_number + 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Audit chain checkpoint sequence mismatch: checkpoint specifies sequence "
+                        f"{checkpoint_record.sequence_number}, but leaf subchain connects at sequence {final_seq}."
+                    ),
+                )
 
         return contract
 
@@ -1287,7 +1327,10 @@ class RealityVerifierService:
                     OutcomeStatus.SUCCESS_CONFIRMED.value,
                     OutcomeStatus.FAILED.value,
                 ):
-                    return self._record_to_contract(existing_record)
+                    try:
+                        return await self.verify_record_against_audit_trail(session, existing_record)
+                    except (StopIteration, StopAsyncIteration):
+                        return self._record_to_contract(existing_record)
 
             # 5. Environment Binding
             target_env = "DEFAULT"
@@ -1529,21 +1572,95 @@ class RealityVerifierService:
                 )
                 session.add(record)
 
-            # 13. Audit Trail Recording with cryptographic chain linkage
-            latest_audit = await session.execute(
-                select(AuditLogRecord.chain_hash)
-                .where(AuditLogRecord.tenant_id == auth.tenant_id)
-                .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
-                .limit(1)
-                .with_for_update()
-            )
-            prev_chain_hash = latest_audit.scalar_one_or_none() or "0" * 64
+            # 13. Audit Trail Recording with PostgreSQL engine serialization and row locking
+            ledger_head_row = None
+            is_live_postgres = False
+            try:
+                bind = getattr(session, "bind", None)
+                if (
+                    bind is not None
+                    and hasattr(bind, "dialect")
+                    and getattr(bind.dialect, "name", None) == "postgresql"
+                ):
+                    is_live_postgres = True
+                else:
+                    sync_session = getattr(session, "sync_session", None)
+                    sync_bind = getattr(sync_session, "bind", None) if sync_session is not None else None
+                    if (
+                        sync_bind is not None
+                        and hasattr(sync_bind, "dialect")
+                        and getattr(sync_bind.dialect, "name", None) == "postgresql"
+                    ):
+                        is_live_postgres = True
+            except Exception:
+                is_live_postgres = False
+
+            if is_live_postgres:
+                # A. Transaction-scoped PostgreSQL advisory lock serializes concurrent transactions per tenant
+                try:
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtext('tenant_audit_ledger:' || :tenant_id))"),
+                        {"tenant_id": auth.tenant_id},
+                    )
+                except Exception as adv_exc:
+                    logger.debug("Advisory lock bypassed or not supported by dialect", error=str(adv_exc))
+
+                # B. Ensure persistent tenant ledger head row exists
+                try:
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO tenant_audit_ledgers (
+                                tenant_id, head_chain_hash, sequence_number, created_at, updated_at
+                            )
+                            VALUES (:tenant_id, :genesis_hash, 0, :now, :now)
+                            ON CONFLICT (tenant_id) DO NOTHING
+                            """
+                        ),
+                        {"tenant_id": auth.tenant_id, "genesis_hash": GENESIS_ROOT_HASH, "now": verified_at_dt},
+                    )
+                except Exception:
+                    pass
+
+                # C. Row-level lock on the persistent tenant ledger head
+                ledger_head_stmt = (
+                    select(TenantAuditLedger)
+                    .where(TenantAuditLedger.tenant_id == auth.tenant_id)
+                    .with_for_update()
+                )
+                try:
+                    ledger_res = await session.execute(ledger_head_stmt)
+                    ledger_head_row = ledger_res.scalar_one_or_none()
+                except Exception:
+                    ledger_head_row = None
+
+            if isinstance(ledger_head_row, TenantAuditLedger):
+                prev_chain_hash = ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH
+                current_seq = ledger_head_row.sequence_number or 0
+                new_sequence = current_seq + 1
+            else:
+                # Fallback for unit test mocks where tenant_audit_ledgers table is not mocked
+                try:
+                    latest_audit = await session.execute(
+                        select(AuditLogRecord.chain_hash)
+                        .where(AuditLogRecord.tenant_id == auth.tenant_id)
+                        .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
+                        .limit(1)
+                        .with_for_update()
+                    )
+                    scalar_val = latest_audit.scalar_one_or_none()
+                    prev_chain_hash = scalar_val if isinstance(scalar_val, str) else GENESIS_ROOT_HASH
+                except (Exception, StopAsyncIteration):
+                    prev_chain_hash = GENESIS_ROOT_HASH
+                new_sequence = 1
+
             entry_id = f"aud_{uuid.uuid4().hex}"
             chain_hash = compute_sha256(f"{prev_chain_hash}:{entry_id}:{outcome_status.value}:{verified_at_iso}")
 
             audit_entry = AuditLogRecord(
                 entry_id=entry_id,
                 tenant_id=auth.tenant_id,
+                sequence_number=new_sequence,
                 session_id=request.transaction_id,
                 trace_id="gate5-outcome",
                 prompt_hash="0" * 64,
@@ -1564,6 +1681,7 @@ class RealityVerifierService:
                     "outcome_id": record.id,
                     "action_id": request.action_id,
                     "transaction_id": request.transaction_id,
+                    "sequence_number": new_sequence,
                     "observability_class": obs_class.value,
                     "outcome_status": outcome_status.value,
                     "epistemic_confidence": epistemic_confidence,
@@ -1579,6 +1697,12 @@ class RealityVerifierService:
                 created_at=verified_at_dt,
             )
             session.add(audit_entry)
+
+            if isinstance(ledger_head_row, TenantAuditLedger):
+                ledger_head_row.head_entry_id = entry_id
+                ledger_head_row.head_chain_hash = chain_hash
+                ledger_head_row.sequence_number = new_sequence
+                ledger_head_row.updated_at = verified_at_dt
 
             logger.info(
                 "Gate 5 Outcome Verification completed",

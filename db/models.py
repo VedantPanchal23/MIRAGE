@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -288,9 +288,11 @@ class AuditLogRecord(Base):
     """Immutable audit entry with cryptographic hash chaining."""
 
     __tablename__ = "audit_logs"
+    __table_args__ = (UniqueConstraint("tenant_id", "sequence_number", name="uq_audit_logs_tenant_sequence"),)
 
     entry_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    sequence_number: Mapped[int | None] = mapped_column(BigInteger, default=None, nullable=True)
     session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     trace_id: Mapped[str] = mapped_column(String(64), nullable=False)
     prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -315,6 +317,52 @@ class AuditLogRecord(Base):
         default=lambda: datetime.now(UTC),
         nullable=False,
         index=True,
+    )
+
+
+class TenantAuditLedger(Base):
+    """Authoritative per-tenant ledger head for serialized transaction locking and sequence tracking."""
+
+    __tablename__ = "tenant_audit_ledgers"
+
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
+    )
+    head_entry_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    head_chain_hash: Mapped[str] = mapped_column(String(64), default="0" * 64, nullable=False)
+    sequence_number: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class AuditCheckpointRecord(Base):
+    """Authoritative persistent record of verified and signed trust anchors / checkpoints."""
+
+    __tablename__ = "audit_checkpoints"
+    __table_args__ = (UniqueConstraint("tenant_id", "checkpoint_hash", name="uq_audit_checkpoints_tenant_hash"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    checkpoint_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    sequence_number: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    ledger_identity: Mapped[str] = mapped_column(String(64), default="audit_logs", nullable=False)
+    signer_identity: Mapped[str] = mapped_column(String(128), nullable=False)
+    signature: Mapped[str] = mapped_column(String(256), nullable=False)
+    trust_tier: Mapped[str] = mapped_column(String(32), default="LOCAL_CHECKPOINT", nullable=False)
+    revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    issued_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
 
 

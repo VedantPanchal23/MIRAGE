@@ -344,7 +344,7 @@ class TestPostgresOutcomeMigration:
         cfg.set_main_option("sqlalchemy.url", sync_url)
 
         # 1. Downgrade migration 009 (reverts to 008)
-        command.downgrade(cfg, "-1")
+        command.downgrade(cfg, "008_gate4_output_assurance")
 
         with sync_engine.connect() as conn:
             table_check = conn.execute(

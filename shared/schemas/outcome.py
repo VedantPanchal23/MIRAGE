@@ -150,6 +150,10 @@ class OutcomeVerificationContract(BaseModel):
         default_factory=lambda: datetime.now(UTC).isoformat(),
         description="UTC timestamp of outcome verification",
     )
+    trust_assurance_level: str = Field(
+        default="GENESIS_SENTINEL",
+        description="Cryptographic trust tier: GENESIS_SENTINEL, LOCAL_UNANCHORED, or EXTERNALLY_ANCHORED",
+    )
 
 
 class OutcomeReconciliationRequest(BaseModel):

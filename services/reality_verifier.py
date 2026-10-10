@@ -15,9 +15,11 @@ import time
 import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+import httpcore
 import httpx
 from fastapi import HTTPException, status
 from sqlalchemy import select, text
@@ -284,6 +286,73 @@ class DatabaseStateAdapter(BaseOutcomeAdapter):
         )
 
 
+class SafeAsyncNetworkBackend(httpcore.AsyncNetworkBackend):
+    """Network backend intercepting TCP socket connections to enforce IP allowlist at the connection boundary.
+
+    Defends against Time-of-Check to Time-of-Use (TOCTOU) DNS rebinding attacks where an adversarial
+    domain returns a valid public IP during preflight check but resolves to an internal loopback
+    or cloud metadata IP (e.g. 127.0.0.1, 169.254.169.254) at socket connection time.
+    """
+
+    def __init__(self, is_ip_allowed_fn: Callable[[str], bool], allow_local: bool = False) -> None:
+        self._backend = httpcore.AnyIOBackend()
+        self._is_ip_allowed_fn = is_ip_allowed_fn
+        self._allow_local = allow_local
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.AsyncNetworkStream:
+        stream = await self._backend.connect_tcp(
+            host, port, timeout=timeout, local_address=local_address, socket_options=socket_options
+        )
+        server_addr = stream.get_extra_info("server_addr")
+        if server_addr and not self._allow_local:
+            peer_ip = str(server_addr[0])
+            if not self._is_ip_allowed_fn(peer_ip):
+                await stream.aclose()
+                raise httpcore.ConnectError(
+                    f"SSRF / DNS rebinding security block: connection to peer IP '{peer_ip}' is forbidden"
+                )
+        return stream
+
+    async def connect_unix_socket(
+        self,
+        path: str,
+        timeout: float | None = None,
+        socket_options: Any = None,
+    ) -> httpcore.AsyncNetworkStream:
+        _ = (path, timeout, socket_options)
+        raise httpcore.ConnectError("Unix domain sockets forbidden for outcome verification probes")
+
+    async def sleep(self, seconds: float) -> None:
+        await self._backend.sleep(seconds)
+
+
+class SafeAsyncHTTPTransport(httpx.AsyncHTTPTransport):
+    """Hardened AsyncHTTPTransport binding SafeAsyncNetworkBackend to prevent DNS rebinding and SSRF."""
+
+    def __init__(
+        self,
+        is_ip_allowed_fn: Callable[[str], bool],
+        allow_local: bool = False,
+        **kwargs: Any,
+    ) -> None:
+        kwargs["trust_env"] = False
+        super().__init__(**kwargs)
+        backend = SafeAsyncNetworkBackend(is_ip_allowed_fn, allow_local=allow_local)
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=self._pool._ssl_context,
+            network_backend=backend,
+            http1=True,
+            http2=False,
+        )
+
+
 class HttpResourceAdapter(BaseOutcomeAdapter):
     """Hardened HTTP GET/HEAD verification probe checking external REST endpoints.
 
@@ -408,9 +477,15 @@ class HttpResourceAdapter(BaseOutcomeAdapter):
 
         expected_status = config.get("expected_status", 200)
 
-        # Execute HTTP probe with redirect control (follow_redirects=False)
+        # Execute HTTP probe with redirect control and socket-boundary SSRF/DNS-rebinding protection
         try:
-            async with httpx.AsyncClient(timeout=request.timeout_seconds, follow_redirects=False) as client:
+            transport = SafeAsyncHTTPTransport(self._is_ip_allowed, allow_local=allow_local)
+            async with httpx.AsyncClient(
+                transport=transport,
+                timeout=request.timeout_seconds,
+                follow_redirects=False,
+                trust_env=False,
+            ) as client:
                 resp = await client.get(target_url)
                 evidence["http_status"] = resp.status_code
                 evidence["headers"] = dict(resp.headers)
@@ -690,6 +765,61 @@ class RealityVerifierService:
             schema_version="mirage.outcome.v1",
             verified_at=verified_dt,
         )
+
+    async def verify_record_against_audit_trail(
+        self,
+        session: Any,
+        record: OutcomeVerificationRecord,
+    ) -> OutcomeVerificationContract:
+        """Verify OutcomeVerificationRecord integrity internally and against AuditLogRecord.
+
+        Validates both self-consistency against canonical payload and external consistency
+        against the append-only cryptographic AuditLogRecord trust anchor.
+        """
+        # 1. Internal canonical payload integrity and SHA-256 hash check
+        contract = self._record_to_contract(record)
+
+        # 2. External AuditLogRecord trust anchor check
+        audit_stmt = (
+            select(AuditLogRecord)
+            .where(
+                AuditLogRecord.tenant_id == record.tenant_id,
+                AuditLogRecord.event_type == "GATE5_OUTCOME_VERIFIED",
+            )
+            .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
+        )
+        audit_records = (await session.execute(audit_stmt)).scalars().all()
+        matching_audit = None
+        for a in audit_records:
+            payload = a.event_payload or {}
+            if payload.get("outcome_id") == record.id or (
+                payload.get("action_id") == record.action_id
+                and payload.get("transaction_id") == record.transaction_id
+            ):
+                matching_audit = a
+                break
+
+        if matching_audit is not None:
+            if matching_audit.response_hash != record.verification_hash:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Cryptographic audit trail divergence: OutcomeVerificationRecord '{record.id}' "
+                        f"verification_hash '{record.verification_hash}' does not match immutable "
+                        f"AuditLogRecord response_hash '{matching_audit.response_hash}'."
+                    ),
+                )
+            if matching_audit.decision != record.outcome_status:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Cryptographic audit trail divergence: OutcomeVerificationRecord '{record.id}' "
+                        f"status '{record.outcome_status}' does not match immutable "
+                        f"AuditLogRecord decision '{matching_audit.decision}'."
+                    ),
+                )
+
+        return contract
 
     async def verify_action_outcome(
         self,
@@ -1117,8 +1247,17 @@ class RealityVerifierService:
         conflict_reasons: list[str] = []
 
         for pat in _COMPLETION_ASSERTION_PATTERNS:
-            if pat.search(response_text):
-                claims_completion = True
+            for m in pat.finditer(response_text):
+                start_idx = max(0, m.start() - 30)
+                preceding_context = response_text[start_idx : m.start()].lower()
+                negated = any(
+                    neg in preceding_context
+                    for neg in ["not ", "never ", "failed to ", "unable to ", "could not ", "did not "]
+                )
+                if not negated:
+                    claims_completion = True
+                    break
+            if claims_completion:
                 break
 
         if not claims_completion:

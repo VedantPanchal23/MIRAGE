@@ -76,6 +76,11 @@ def upgrade() -> None:
         "outcome_verification_records",
         ["tenant_id", "idempotency_key"],
     )
+    op.create_unique_constraint(
+        "uq_outcome_records_tenant_action",
+        "outcome_verification_records",
+        ["tenant_id", "action_id"],
+    )
 
     _tenant_rls("outcome_verification_records")
 

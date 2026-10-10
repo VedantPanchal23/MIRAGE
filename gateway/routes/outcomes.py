@@ -58,7 +58,7 @@ async def get_outcome_by_id(
                 detail=f"Outcome record '{outcome_id}' not found for tenant '{auth.tenant_id}'",
             )
 
-        return reality_verifier_service._record_to_contract(record)
+        return await reality_verifier_service.verify_record_against_audit_trail(session, record)
 
 
 @router.get(
@@ -82,7 +82,10 @@ async def list_outcomes_for_transaction(
         )
         records = (await session.execute(stmt)).scalars().all()
 
-        return [reality_verifier_service._record_to_contract(rec) for rec in records]
+        return [
+            await reality_verifier_service.verify_record_against_audit_trail(session, rec)
+            for rec in records
+        ]
 
 
 @router.post(
@@ -107,7 +110,7 @@ async def reconcile_output_and_outcome(
                 detail=f"Outcome record '{request.outcome_id}' not found for tenant '{auth.tenant_id}'",
             )
 
-        contract = reality_verifier_service._record_to_contract(record)
+        contract = await reality_verifier_service.verify_record_against_audit_trail(session, record)
 
         return reality_verifier_service.reconcile_output_with_outcome(
             response_text=request.response_text,

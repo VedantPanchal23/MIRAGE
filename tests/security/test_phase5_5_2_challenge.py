@@ -27,6 +27,7 @@ from services.reality_verifier import (
     SafeAsyncNetworkBackend,
 )
 from shared.schemas.action import ActionState
+from shared.schemas.audit import compute_sha256
 from shared.schemas.auth import AuthContext, Role
 from shared.schemas.outcome import (
     ObservabilityClass,
@@ -208,9 +209,14 @@ async def test_audit_trail_tamper_detection_matching_record():
         policy_reference=None,
         capability_id="api:invoke",
         reason="test",
-        event_payload={"outcome_id": "outc_552_legit"},
+        event_payload={
+            "outcome_id": "outc_552_legit",
+            "action_id": "act_ch_01",
+            "transaction_id": "txn_ch_01",
+            "verified_at": now.isoformat(),
+        },
         prev_hash="0" * 64,
-        chain_hash="chain_552_01",
+        chain_hash=compute_sha256(f"{'0' * 64}:aud_552_01:SUCCESS_CONFIRMED:{now.isoformat()}"),
         created_at=now,
     )
 
@@ -294,7 +300,11 @@ async def test_audit_trail_tamper_detection_divergent_hash():
         policy_reference=None,
         capability_id="api:invoke",
         reason="test",
-        event_payload={"outcome_id": "outc_552_forged"},
+        event_payload={
+            "outcome_id": "outc_552_forged",
+            "action_id": "act_ch_01",
+            "transaction_id": "txn_ch_01",
+        },
         prev_hash="0" * 64,
         chain_hash="chain_552_orig",
         created_at=now,

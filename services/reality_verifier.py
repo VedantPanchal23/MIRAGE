@@ -12,6 +12,7 @@ import json
 import re
 import socket
 import time
+import unicodedata
 import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
@@ -93,7 +94,56 @@ _COMPLETION_ASSERTION_PATTERNS = (
         r"\b(?:the )?(?:deployment|service|release|app) is (?:now )?live\b",
         re.IGNORECASE,
     ),
+    re.compile(
+        r"\b(?:(?:the|first|second|this) )?(?:[a-z0-9_]+ )?"
+        r"(?:transfer|payment|order|orders|action|transaction|operation|update|task) (?:has )?succeeded\b",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        r"\b(?:it|this) has (?:now )?(?:completed|finished|succeeded)\b",
+        re.IGNORECASE,
+    ),
 )
+
+
+def _normalize_text(text: str) -> str:
+    """Normalize unicode, whitespace, and typographic quotes to standard ASCII."""
+    norm = unicodedata.normalize("NFKC", text)
+    norm = re.sub(r"[\u200B-\u200D\uFEFF]", "", norm)
+    norm = norm.replace("“", '"').replace("”", '"').replace("‘", "'").replace("’", "'")
+    norm = re.sub(r"\s+", " ", norm).strip()
+    return norm
+
+
+def _strip_quotes_and_citations(text: str) -> str:
+    """Strip text inside quotation marks and markdown blockquotes so quotations are not treated as agent assertions."""
+    # Strip markdown blockquotes
+    text = re.sub(r"^\s*>.*$", "", text, flags=re.MULTILINE)
+    # Strip double quotes
+    text = re.sub(r'"[^"\n]*"', " ", text)
+    # Strip single quotes around phrases
+    text = re.sub(r"(?:^|\s)'(?:[^'\n]|'')*'(?:\s|$)", " ", text)
+    return text
+
+
+def _extract_clauses(text: str) -> list[str]:
+    """Split text into independent clauses using sentence terminators and contrastive conjunctions."""
+    sentences = re.split(r"[.!?;\n]+", text)
+    clauses: list[str] = []
+    contrastive_re = re.compile(
+        r"\b(?:but|however|although|though|yet|nevertheless|whereas|while)\b", re.IGNORECASE
+    )
+    for s in sentences:
+        s = s.strip()
+        if not s:
+            continue
+        subparts = contrastive_re.split(s)
+        for part in subparts:
+            part = part.strip()
+            if part:
+                clauses.append(part)
+    return clauses
+
 
 # Canonical monotonic outcome state machine transition rules
 VALID_OUTCOME_TRANSITIONS: dict[OutcomeStatus, set[OutcomeStatus]] = {
@@ -310,8 +360,13 @@ class SafeAsyncNetworkBackend(httpcore.AsyncNetworkBackend):
         stream = await self._backend.connect_tcp(
             host, port, timeout=timeout, local_address=local_address, socket_options=socket_options
         )
-        server_addr = stream.get_extra_info("server_addr")
-        if server_addr and not self._allow_local:
+        if not self._allow_local:
+            server_addr = stream.get_extra_info("server_addr")
+            if not server_addr:
+                await stream.aclose()
+                raise httpcore.ConnectError(
+                    "SSRF / DNS rebinding security block: unable to verify peer address at connection boundary"
+                )
             peer_ip = str(server_addr[0])
             if not self._is_ip_allowed_fn(peer_ip):
                 await stream.aclose()
@@ -350,6 +405,8 @@ class SafeAsyncHTTPTransport(httpx.AsyncHTTPTransport):
             network_backend=backend,
             http1=True,
             http2=False,
+            max_keepalive_connections=0,
+            keepalive_expiry=0.0,
         )
 
 
@@ -774,12 +831,13 @@ class RealityVerifierService:
         """Verify OutcomeVerificationRecord integrity internally and against AuditLogRecord.
 
         Validates both self-consistency against canonical payload and external consistency
-        against the append-only cryptographic AuditLogRecord trust anchor.
+        against the append-only cryptographic AuditLogRecord trust anchor. Fails closed (HTTP 409)
+        if the trust anchor is missing, conflicting, tampered, or detached from the audit chain.
         """
         # 1. Internal canonical payload integrity and SHA-256 hash check
         contract = self._record_to_contract(record)
 
-        # 2. External AuditLogRecord trust anchor check
+        # 2. External AuditLogRecord trust anchor lookup
         audit_stmt = (
             select(AuditLogRecord)
             .where(
@@ -789,33 +847,140 @@ class RealityVerifierService:
             .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
         )
         audit_records = (await session.execute(audit_stmt)).scalars().all()
-        matching_audit = None
+
+        matching_audits: list[AuditLogRecord] = []
         for a in audit_records:
             payload = a.event_payload or {}
-            if payload.get("outcome_id") == record.id or (
+            is_outcome_match = payload.get("outcome_id") == record.id
+            is_action_txn_match = (
                 payload.get("action_id") == record.action_id
-                and payload.get("transaction_id") == record.transaction_id
-            ):
-                matching_audit = a
-                break
+                and (
+                    payload.get("transaction_id") == record.transaction_id
+                    or a.transaction_id == record.transaction_id
+                )
+            )
+            if is_outcome_match or is_action_txn_match:
+                matching_audits.append(a)
 
-        if matching_audit is not None:
-            if matching_audit.response_hash != record.verification_hash:
+        # Fail closed: OutcomeVerificationRecord cannot be verified without an authoritative anchor
+        if not matching_audits:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor missing: OutcomeVerificationRecord '{record.id}' has no corresponding "
+                    f"authoritative AuditLogRecord trust anchor in tenant '{record.tenant_id}'."
+                ),
+            )
+
+        if len(matching_audits) > 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Ambiguous or conflicting audit anchors detected: found {len(matching_audits)} matching "
+                    f"AuditLogRecord entries for outcome '{record.id}'."
+                ),
+            )
+
+        matching_audit = matching_audits[0]
+        payload = matching_audit.event_payload or {}
+
+        # 3. Unambiguous 4-way correlation check: outcome_id, action_id, tenant_id, transaction_id
+        if payload.get("outcome_id") != record.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
+                    f"outcome_id '{payload.get('outcome_id')}' does not match record '{record.id}'."
+                ),
+            )
+        if payload.get("action_id") and payload.get("action_id") != record.action_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
+                    f"action_id '{payload.get('action_id')}' does not match record '{record.action_id}'."
+                ),
+            )
+        if (
+            matching_audit.transaction_id != record.transaction_id
+            and payload.get("transaction_id") != record.transaction_id
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
+                    f"transaction_id '{matching_audit.transaction_id}' does not match record '{record.transaction_id}'."
+                ),
+            )
+        if matching_audit.tenant_id != record.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
+                    f"tenant_id '{matching_audit.tenant_id}' does not match record '{record.tenant_id}'."
+                ),
+            )
+
+        # 4. Hash and Decision verification against audit record
+        if matching_audit.response_hash != record.verification_hash:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cryptographic audit trail divergence: OutcomeVerificationRecord '{record.id}' "
+                    f"verification_hash '{record.verification_hash}' does not match immutable "
+                    f"AuditLogRecord response_hash '{matching_audit.response_hash}'."
+                ),
+            )
+        if matching_audit.decision != record.outcome_status:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Cryptographic audit trail divergence: OutcomeVerificationRecord '{record.id}' "
+                    f"status '{record.outcome_status}' does not match immutable "
+                    f"AuditLogRecord decision '{matching_audit.decision}'."
+                ),
+            )
+
+        # 5. Cryptographic Chain Integrity and Linkage verification
+        verified_at_val = payload.get("verified_at")
+        if verified_at_val:
+            expected_chain = compute_sha256(
+                f"{matching_audit.prev_hash}:{matching_audit.entry_id}:{matching_audit.decision}:{verified_at_val}"
+            )
+            if matching_audit.chain_hash != expected_chain:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        f"Cryptographic audit trail divergence: OutcomeVerificationRecord '{record.id}' "
-                        f"verification_hash '{record.verification_hash}' does not match immutable "
-                        f"AuditLogRecord response_hash '{matching_audit.response_hash}'."
+                        f"Audit chain corruption detected: AuditLogRecord '{matching_audit.entry_id}' "
+                        f"chain_hash '{matching_audit.chain_hash}' does not match computed hash '{expected_chain}'."
                     ),
                 )
-            if matching_audit.decision != record.outcome_status:
+
+        # 6. Chain Linkage: verify predecessor block exists in tenant audit trail
+        if matching_audit.prev_hash != "0" * 64:
+            pred_stmt = select(AuditLogRecord).where(
+                AuditLogRecord.tenant_id == record.tenant_id,
+                AuditLogRecord.chain_hash == matching_audit.prev_hash,
+            )
+            pred_record = (await session.execute(pred_stmt)).scalar_one_or_none()
+            if not pred_record:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        f"Cryptographic audit trail divergence: OutcomeVerificationRecord '{record.id}' "
-                        f"status '{record.outcome_status}' does not match immutable "
-                        f"AuditLogRecord decision '{matching_audit.decision}'."
+                        f"Audit chain broken linkage: predecessor block with chain_hash '{matching_audit.prev_hash}' "
+                        f"not found in audit trail for tenant '{record.tenant_id}'."
+                    ),
+                )
+            if (
+                pred_record.created_at
+                and matching_audit.created_at
+                and pred_record.created_at > matching_audit.created_at
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Audit chain reordering detected: predecessor block timestamp "
+                        f"'{pred_record.created_at}' is later than current record '{matching_audit.created_at}'."
                     ),
                 )
 
@@ -1178,6 +1343,7 @@ class RealityVerifierService:
                     "discrepancies": discrepancies,
                     "target_environment": target_env,
                     "idempotency_key": idempotency_key,
+                    "verified_at": verified_at_iso,
                 },
                 prev_hash=prev_chain_hash,
                 chain_hash=chain_hash,
@@ -1243,32 +1409,117 @@ class RealityVerifierService:
                 recommended_disposition="REJECT",
             )
 
+        # 3. Clause-aware normalization and polarity evaluation
+        norm_text = _normalize_text(response_text)
+        unquoted = _strip_quotes_and_citations(norm_text)
+        clauses = _extract_clauses(unquoted)
+
         claims_completion = False
+        has_explicit_failure = False
         conflict_reasons: list[str] = []
 
-        for pat in _COMPLETION_ASSERTION_PATTERNS:
-            for m in pat.finditer(response_text):
-                start_idx = max(0, m.start() - 30)
-                preceding_context = response_text[start_idx : m.start()].lower()
-                negated = any(
-                    neg in preceding_context
-                    for neg in ["not ", "never ", "failed to ", "unable to ", "could not ", "did not "]
-                )
-                if not negated:
-                    claims_completion = True
+        for clause in clauses:
+            clause_lower = clause.lower()
+            if any(
+                u in clause_lower
+                for u in [
+                    "cannot confirm",
+                    "could not confirm",
+                    "unclear whether",
+                    "unable to confirm",
+                    "unable to verify",
+                    "not confirmed",
+                    "failed to confirm",
+                    "no confirmation that",
+                    "no evidence that",
+                ]
+            ):
+                continue
+
+            if any(
+                f in clause_lower
+                for f in [
+                    "operation failed",
+                    "action failed",
+                    "failed, so",
+                    "failed to execute",
+                    "execution failed",
+                    "failed completely",
+                    "was unsuccessful",
+                    "did not succeed",
+                ]
+            ):
+                has_explicit_failure = True
+
+            for pat in _COMPLETION_ASSERTION_PATTERNS:
+                for m in pat.finditer(clause):
+                    start_idx = max(0, m.start() - 35)
+                    prefix = clause[start_idx : m.start()].lower()
+                    negated = any(
+                        neg in prefix
+                        for neg in [
+                            "not ",
+                            "never ",
+                            "failed to ",
+                            "unable to ",
+                            "could not ",
+                            "did not ",
+                            "was not ",
+                            "were not ",
+                            "has not ",
+                            "have not ",
+                            "is not ",
+                            "are not ",
+                        ]
+                    )
+                    if not negated:
+                        claims_completion = True
+                        break
+                if claims_completion:
                     break
-            if claims_completion:
-                break
 
+        status_val = outcome_contract.outcome_status
+
+        # If the output does NOT assert completion:
         if not claims_completion:
-            return OutcomeReconciliationResult(
-                is_consistent=True,
-                epistemic_conflict_detected=False,
-                conflict_reasons=[],
-                recommended_disposition="PERMIT",
-            )
+            # If the verified outcome was FAILED, UNKNOWN, UNOBSERVABLE, PARTIAL, or ACKNOWLEDGED_UNVERIFIED:
+            # The model is honest and refrains from false success claims.
+            if status_val in (
+                OutcomeStatus.FAILED,
+                OutcomeStatus.UNKNOWN,
+                OutcomeStatus.UNOBSERVABLE,
+                OutcomeStatus.PARTIAL,
+                OutcomeStatus.ACKNOWLEDGED_UNVERIFIED,
+            ):
+                return OutcomeReconciliationResult(
+                    is_consistent=True,
+                    epistemic_conflict_detected=False,
+                    conflict_reasons=[],
+                    recommended_disposition="PERMIT",
+                )
 
-        # 3. Simulation Check: Simulated evidence NEVER justifies claims of physical success
+            # If the verified outcome was confirmed success, but output explicitly asserted failure:
+            if status_val in (OutcomeStatus.SUCCESS_CONFIRMED, OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED):
+                if has_explicit_failure:
+                    return OutcomeReconciliationResult(
+                        is_consistent=False,
+                        epistemic_conflict_detected=True,
+                        conflict_reasons=[
+                            "Contradiction: Output claims action failure, but Gate 5 reality verification "
+                            "confirmed successful state transition."
+                        ],
+                        recommended_disposition="REWRITE_WITH_CAVEAT",
+                    )
+                # Output expressed uncertainty without false claims
+                return OutcomeReconciliationResult(
+                    is_consistent=True,
+                    epistemic_conflict_detected=False,
+                    conflict_reasons=[],
+                    recommended_disposition="PERMIT",
+                )
+
+        # Output DOES claim completion:
+        # 4. Simulation Check: Simulated evidence NEVER justifies claims of physical success
         if outcome_contract.is_simulated:
             conflict_reasons.append(
                 "Epistemic Invariant Violation: Output asserts real-world success, but verification evidence "
@@ -1281,9 +1532,7 @@ class RealityVerifierService:
                 recommended_disposition="REWRITE_WITH_CAVEAT",
             )
 
-        status_val = outcome_contract.outcome_status
-
-        # 4. Confirmed Success Checks
+        # 5. Confirmed Success Checks
         if status_val in (OutcomeStatus.SUCCESS_CONFIRMED, OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED):
             return OutcomeReconciliationResult(
                 is_consistent=True,
@@ -1292,7 +1541,7 @@ class RealityVerifierService:
                 recommended_disposition="PERMIT",
             )
 
-        # 5. Partial, Failed, Unobservable, Inferred, Unknown Handling
+        # 6. Partial, Failed, Unobservable, Inferred, Unknown Handling
         conflict_msg = (
             f"Epistemic Invariant Violation: Output claims successful action completion, but Gate 5 "
             f"reality status is '{status_val.value}' with confidence {outcome_contract.epistemic_confidence}. "

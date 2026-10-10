@@ -213,7 +213,8 @@ async def test_audit_anchor_mismatched_outcome_id():
         await service.verify_record_against_audit_trail(mock_session, rec)
 
     assert exc_info.value.status_code == 409
-    assert "correlation mismatch" in exc_info.value.detail
+    # Under strict non-fallback matching, an audit record for another outcome is not selected
+    assert "Audit anchor missing" in exc_info.value.detail
 
 
 @pytest.mark.security
@@ -382,6 +383,790 @@ def test_audit_anchor_superuser_privilege_limitation_documented():
     limitation = "A database superuser can modify both tables and recompute the cryptographic chain."
     assert "unprivileged database roles" in guarantee
     assert "superuser" in limitation
+
+
+# =============================================================================
+# PART A.2: Recursive Full-Chain Validation & Strict Correlation Tests
+# =============================================================================
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_audit_chain_recursive_multi_hop_valid_to_genesis():
+    """3-block audit chain correctly validates recursively through ancestors to genesis root."""
+    service = RealityVerifierService()
+    rec, _ = build_canonical_outcome()
+
+    t0 = datetime(2026, 10, 10, 10, 0, 0, tzinfo=UTC)
+    t1 = datetime(2026, 10, 10, 10, 5, 0, tzinfo=UTC)
+    t2 = datetime(2026, 10, 10, 10, 10, 0, tzinfo=UTC)
+
+    # Genesis block 0
+    prev_0 = "0" * 64
+    chain_0 = compute_sha256(f"{prev_0}:aud_block_0:SUCCESS_CONFIRMED:{t0.isoformat()}")
+    aud_0 = AuditLogRecord(
+        entry_id="aud_block_0",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash="resp_0",
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="genesis_block",
+        event_payload={"verified_at": t0.isoformat()},
+        prev_hash=prev_0,
+        chain_hash=chain_0,
+        created_at=t0,
+    )
+
+    # Intermediate block 1
+    prev_1 = chain_0
+    chain_1 = compute_sha256(f"{prev_1}:aud_block_1:SUCCESS_CONFIRMED:{t1.isoformat()}")
+    aud_1 = AuditLogRecord(
+        entry_id="aud_block_1",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash="resp_1",
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="intermediate_block",
+        event_payload={"verified_at": t1.isoformat()},
+        prev_hash=prev_1,
+        chain_hash=chain_1,
+        created_at=t1,
+    )
+
+    # Leaf block (matching rec)
+    prev_leaf = chain_1
+    chain_leaf = compute_sha256(f"{prev_leaf}:aud_leaf:SUCCESS_CONFIRMED:{t2.isoformat()}")
+    aud_leaf = AuditLogRecord(
+        entry_id="aud_leaf",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash=rec.verification_hash,
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="leaf_block",
+        event_payload={
+            "outcome_id": rec.id,
+            "action_id": rec.action_id,
+            "transaction_id": rec.transaction_id,
+            "verified_at": t2.isoformat(),
+        },
+        prev_hash=prev_leaf,
+        chain_hash=chain_leaf,
+        created_at=t2,
+    )
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[aud_leaf]))
+    mock_session.execute = AsyncMock(
+        side_effect=[
+            MagicMock(scalars=MagicMock(return_value=mock_scalars)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=aud_1)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=aud_0)),
+        ]
+    )
+
+    contract = await service.verify_record_against_audit_trail(mock_session, rec)
+    assert contract.outcome_id == rec.id
+    assert contract.outcome_status == OutcomeStatus.SUCCESS_CONFIRMED
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_audit_chain_recursive_broken_link_at_depth_2():
+    """Broken link at depth 2 (missing predecessor block for ancestor) fails closed with HTTP 409."""
+    service = RealityVerifierService()
+    rec, _ = build_canonical_outcome()
+
+    t1 = datetime(2026, 10, 10, 10, 5, 0, tzinfo=UTC)
+    t2 = datetime(2026, 10, 10, 10, 10, 0, tzinfo=UTC)
+
+    missing_hash = "missing_hash_" + "0" * 51
+    chain_1 = compute_sha256(f"{missing_hash}:aud_block_1:SUCCESS_CONFIRMED:{t1.isoformat()}")
+    aud_1 = AuditLogRecord(
+        entry_id="aud_block_1",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash="resp_1",
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="intermediate_block",
+        event_payload={"verified_at": t1.isoformat()},
+        prev_hash=missing_hash,
+        chain_hash=chain_1,
+        created_at=t1,
+    )
+
+    prev_leaf = chain_1
+    chain_leaf = compute_sha256(f"{prev_leaf}:aud_leaf:SUCCESS_CONFIRMED:{t2.isoformat()}")
+    aud_leaf = AuditLogRecord(
+        entry_id="aud_leaf",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash=rec.verification_hash,
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="leaf_block",
+        event_payload={
+            "outcome_id": rec.id,
+            "action_id": rec.action_id,
+            "transaction_id": rec.transaction_id,
+            "verified_at": t2.isoformat(),
+        },
+        prev_hash=prev_leaf,
+        chain_hash=chain_leaf,
+        created_at=t2,
+    )
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[aud_leaf]))
+    mock_session.execute = AsyncMock(
+        side_effect=[
+            MagicMock(scalars=MagicMock(return_value=mock_scalars)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=aud_1)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=None)),  # Missing at depth 2!
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.verify_record_against_audit_trail(mock_session, rec)
+
+    assert exc_info.value.status_code == 409
+    assert "broken linkage" in exc_info.value.detail
+    assert "depth 2" in exc_info.value.detail
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_audit_chain_recursive_tampered_ancestor_hash_at_depth_2():
+    """Corrupted hash at depth 2 ancestor triggers fail-closed error."""
+    service = RealityVerifierService()
+    rec, _ = build_canonical_outcome()
+
+    t1 = datetime(2026, 10, 10, 10, 5, 0, tzinfo=UTC)
+    t2 = datetime(2026, 10, 10, 10, 10, 0, tzinfo=UTC)
+
+    prev_1 = "0" * 64
+    chain_1 = "corrupted_chain_1_" + "0" * 46
+    aud_1 = AuditLogRecord(
+        entry_id="aud_block_1",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash="resp_1",
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="intermediate_block",
+        event_payload={"verified_at": t1.isoformat()},
+        prev_hash=prev_1,
+        chain_hash=chain_1,
+        created_at=t1,
+    )
+
+    prev_leaf = chain_1
+    chain_leaf = compute_sha256(f"{prev_leaf}:aud_leaf:SUCCESS_CONFIRMED:{t2.isoformat()}")
+    aud_leaf = AuditLogRecord(
+        entry_id="aud_leaf",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash=rec.verification_hash,
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="leaf_block",
+        event_payload={
+            "outcome_id": rec.id,
+            "action_id": rec.action_id,
+            "transaction_id": rec.transaction_id,
+            "verified_at": t2.isoformat(),
+        },
+        prev_hash=prev_leaf,
+        chain_hash=chain_leaf,
+        created_at=t2,
+    )
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[aud_leaf]))
+    mock_session.execute = AsyncMock(
+        side_effect=[
+            MagicMock(scalars=MagicMock(return_value=mock_scalars)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=aud_1)),
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.verify_record_against_audit_trail(mock_session, rec)
+
+    assert exc_info.value.status_code == 409
+    assert "Audit chain corruption detected at ancestor 'aud_block_1'" in exc_info.value.detail
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_audit_chain_recursive_reordered_timestamp_at_depth_2():
+    """Ancestor block at depth 2 with timestamp later than descendant is detected and rejected."""
+    service = RealityVerifierService()
+    rec, _ = build_canonical_outcome()
+
+    t0 = datetime(2026, 12, 31, 23, 59, 59, tzinfo=UTC)  # In future relative to t1!
+    t1 = datetime(2026, 10, 10, 10, 5, 0, tzinfo=UTC)
+    t2 = datetime(2026, 10, 10, 10, 10, 0, tzinfo=UTC)
+
+    prev_0 = "0" * 64
+    chain_0 = compute_sha256(f"{prev_0}:aud_block_0:SUCCESS_CONFIRMED:{t0.isoformat()}")
+    aud_0 = AuditLogRecord(
+        entry_id="aud_block_0",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash="resp_0",
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="genesis_block",
+        event_payload={"verified_at": t0.isoformat()},
+        prev_hash=prev_0,
+        chain_hash=chain_0,
+        created_at=t0,
+    )
+
+    prev_1 = chain_0
+    chain_1 = compute_sha256(f"{prev_1}:aud_block_1:SUCCESS_CONFIRMED:{t1.isoformat()}")
+    aud_1 = AuditLogRecord(
+        entry_id="aud_block_1",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash="resp_1",
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="intermediate_block",
+        event_payload={"verified_at": t1.isoformat()},
+        prev_hash=prev_1,
+        chain_hash=chain_1,
+        created_at=t1,
+    )
+
+    prev_leaf = chain_1
+    chain_leaf = compute_sha256(f"{prev_leaf}:aud_leaf:SUCCESS_CONFIRMED:{t2.isoformat()}")
+    aud_leaf = AuditLogRecord(
+        entry_id="aud_leaf",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash=rec.verification_hash,
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="leaf_block",
+        event_payload={
+            "outcome_id": rec.id,
+            "action_id": rec.action_id,
+            "transaction_id": rec.transaction_id,
+            "verified_at": t2.isoformat(),
+        },
+        prev_hash=prev_leaf,
+        chain_hash=chain_leaf,
+        created_at=t2,
+    )
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[aud_leaf]))
+    mock_session.execute = AsyncMock(
+        side_effect=[
+            MagicMock(scalars=MagicMock(return_value=mock_scalars)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=aud_1)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=aud_0)),
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.verify_record_against_audit_trail(mock_session, rec)
+
+    assert exc_info.value.status_code == 409
+    assert "Audit chain reordering detected" in exc_info.value.detail
+    assert "aud_block_0" in exc_info.value.detail
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_audit_chain_recursive_cyclic_loop_detected():
+    """Cyclic loop in audit chain hash pointers is detected and fails closed with HTTP 409."""
+    service = RealityVerifierService()
+    rec, _ = build_canonical_outcome()
+
+    t1 = datetime(2026, 10, 10, 10, 5, 0, tzinfo=UTC)
+    t2 = datetime(2026, 10, 10, 10, 10, 0, tzinfo=UTC)
+
+    # aud_leaf points to aud_1, and aud_1 points back to aud_leaf!
+    chain_leaf = compute_sha256(f"prev_placeholder:aud_leaf:SUCCESS_CONFIRMED:{t2.isoformat()}")
+    prev_1 = chain_leaf
+    chain_1 = compute_sha256(f"{prev_1}:aud_block_1:SUCCESS_CONFIRMED:{t1.isoformat()}")
+
+    prev_leaf = chain_1
+    chain_leaf = compute_sha256(f"{prev_leaf}:aud_leaf:SUCCESS_CONFIRMED:{t2.isoformat()}")
+    aud_1 = AuditLogRecord(
+        entry_id="aud_block_1",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash="resp_1",
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="cycle_block",
+        event_payload={},
+        prev_hash=chain_leaf,  # Loop back!
+        chain_hash=chain_1,
+        created_at=t1,
+    )
+
+    aud_leaf = AuditLogRecord(
+        entry_id="aud_leaf",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash=rec.verification_hash,
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="leaf_block",
+        event_payload={
+            "outcome_id": rec.id,
+            "action_id": rec.action_id,
+            "transaction_id": rec.transaction_id,
+            "verified_at": t2.isoformat(),
+        },
+        prev_hash=chain_1,
+        chain_hash=chain_leaf,
+        created_at=t2,
+    )
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[aud_leaf]))
+    mock_session.execute = AsyncMock(
+        side_effect=[
+            MagicMock(scalars=MagicMock(return_value=mock_scalars)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=aud_1)),
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.verify_record_against_audit_trail(mock_session, rec)
+
+    assert exc_info.value.status_code == 409
+    assert "cyclic loop detected" in exc_info.value.detail
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_audit_chain_recursive_floating_orphan_subchain_rejected():
+    """Floating orphan subchain not anchored to genesis root is rejected."""
+    service = RealityVerifierService()
+    rec, _ = build_canonical_outcome()
+
+    t0 = datetime(2026, 10, 10, 10, 0, 0, tzinfo=UTC)
+    t1 = datetime(2026, 10, 10, 10, 5, 0, tzinfo=UTC)
+
+    # aud_0 prev_hash is some random unrooted hash instead of '0'*64
+    fake_orphan_root = "unrooted_orphan_" + "0" * 48
+    chain_0 = compute_sha256(f"{fake_orphan_root}:aud_block_0:SUCCESS_CONFIRMED:{t0.isoformat()}")
+    aud_0 = AuditLogRecord(
+        entry_id="aud_block_0",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash="resp_0",
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="orphan_block",
+        event_payload={"verified_at": t0.isoformat()},
+        prev_hash=fake_orphan_root,
+        chain_hash=chain_0,
+        created_at=t0,
+    )
+
+    prev_leaf = chain_0
+    chain_leaf = compute_sha256(f"{prev_leaf}:aud_leaf:SUCCESS_CONFIRMED:{t1.isoformat()}")
+    aud_leaf = AuditLogRecord(
+        entry_id="aud_leaf",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash=rec.verification_hash,
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="leaf_block",
+        event_payload={
+            "outcome_id": rec.id,
+            "action_id": rec.action_id,
+            "transaction_id": rec.transaction_id,
+            "verified_at": t1.isoformat(),
+        },
+        prev_hash=prev_leaf,
+        chain_hash=chain_leaf,
+        created_at=t1,
+    )
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[aud_leaf]))
+    mock_session.execute = AsyncMock(
+        side_effect=[
+            MagicMock(scalars=MagicMock(return_value=mock_scalars)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=aud_0)),
+            MagicMock(scalar_one_or_none=MagicMock(return_value=None)),  # fake_orphan_root not found!
+        ]
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.verify_record_against_audit_trail(mock_session, rec)
+
+    assert exc_info.value.status_code == 409
+    assert "broken linkage" in exc_info.value.detail
+    assert "Chain does not anchor to trusted root" in exc_info.value.detail
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_audit_chain_custom_trusted_root_checkpoint():
+    """Verification against explicit trusted root checkpoint succeeds when leaf directly anchors to it."""
+    service = RealityVerifierService()
+    rec, _ = build_canonical_outcome()
+
+    checkpoint_root = "checkpoint_trusted_hash_" + "0" * 40
+    now_iso = datetime.now(UTC).isoformat()
+    chain_leaf = compute_sha256(f"{checkpoint_root}:aud_leaf:SUCCESS_CONFIRMED:{now_iso}")
+
+    aud_leaf = AuditLogRecord(
+        entry_id="aud_leaf",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash=rec.verification_hash,
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="leaf_block",
+        event_payload={
+            "outcome_id": rec.id,
+            "action_id": rec.action_id,
+            "transaction_id": rec.transaction_id,
+            "verified_at": now_iso,
+        },
+        prev_hash=checkpoint_root,
+        chain_hash=chain_leaf,
+        created_at=datetime.now(UTC),
+    )
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[aud_leaf]))
+    mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+
+    contract = await service.verify_record_against_audit_trail(
+        mock_session, rec, trusted_root_hash=checkpoint_root
+    )
+    assert contract.outcome_id == rec.id
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_correlation_fallback_matching_rejected_when_outcome_id_differs():
+    """Adversarial check: an audit record with matching action/transaction but different outcome_id is NEVER matched."""
+    service = RealityVerifierService()
+    rec, _ = build_canonical_outcome()
+
+    # Create an audit record that shares action_id, transaction_id, and tenant_id,
+    # but belongs to another outcome ("outc_different_sibling")
+    now_iso = datetime.now(UTC).isoformat()
+    sibling_audit = AuditLogRecord(
+        entry_id="aud_sibling",
+        tenant_id=rec.tenant_id,
+        session_id=rec.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash=rec.verification_hash,
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=rec.transaction_id,
+        decision="SUCCESS_CONFIRMED",
+        policy_reference=None,
+        capability_id="payment:settle",
+        reason="sibling_audit",
+        event_payload={
+            "outcome_id": "outc_different_sibling",
+            "action_id": rec.action_id,
+            "transaction_id": rec.transaction_id,
+            "verified_at": now_iso,
+        },
+        prev_hash="0" * 64,
+        chain_hash=compute_sha256(f"{'0'*64}:aud_sibling:SUCCESS_CONFIRMED:{now_iso}"),
+        created_at=datetime.now(UTC),
+    )
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[sibling_audit]))
+    mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.verify_record_against_audit_trail(mock_session, rec)
+
+    assert exc_info.value.status_code == 409
+    # Must fail closed: cannot fallback to match via action_id or transaction_id
+    assert "Audit anchor missing" in exc_info.value.detail
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_correlation_strict_missing_action_id_in_payload_rejected():
+    """Audit record with matching outcome_id but missing or empty action_id in payload is rejected."""
+    service = RealityVerifierService()
+    rec, audit = build_canonical_outcome()
+    audit.event_payload["action_id"] = ""
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[audit]))
+    mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.verify_record_against_audit_trail(mock_session, rec)
+
+    assert exc_info.value.status_code == 409
+    assert "action_id" in exc_info.value.detail
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_correlation_strict_column_transaction_id_mismatch_rejected():
+    """Audit record with column transaction_id mismatch is rejected."""
+    service = RealityVerifierService()
+    rec, audit = build_canonical_outcome()
+    audit.transaction_id = "txn_mismatched_column_id"
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[audit]))
+    mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.verify_record_against_audit_trail(mock_session, rec)
+
+    assert exc_info.value.status_code == 409
+    assert "column transaction_id" in exc_info.value.detail
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_correlation_strict_payload_transaction_id_mismatch_rejected():
+    """Audit record with payload transaction_id mismatch is rejected."""
+    service = RealityVerifierService()
+    rec, audit = build_canonical_outcome()
+    audit.event_payload["transaction_id"] = "txn_mismatched_payload_id"
+
+    mock_session = AsyncMock()
+    mock_scalars = MagicMock(all=MagicMock(return_value=[audit]))
+    mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await service.verify_record_against_audit_trail(mock_session, rec)
+
+    assert exc_info.value.status_code == 409
+    assert "payload transaction_id" in exc_info.value.detail
+
+
+def test_reconciliation_correlation_empty_string_rejected():
+    """Whitespace or empty correlation attributes in reconciliation fail closed to REJECT."""
+    service = RealityVerifierService()
+    contract = OutcomeVerificationContract(
+        outcome_id="outc_rec_test",
+        action_id="act_rec_test",
+        tenant_id="tenant_rec_test",
+        transaction_id="txn_rec_test",
+        outcome_status=OutcomeStatus.SUCCESS_CONFIRMED,
+        observability_class=ObservabilityClass.OBS_DIRECT,
+        epistemic_confidence=1.0,
+        verifier_adapter="HttpResourceAdapter",
+        target_resource="https://api.test/resource",
+        target_environment="PROD",
+        is_simulated=False,
+        verification_hash="hash_rec_test",
+    )
+
+    # Empty/whitespace auth_tenant_id
+    r1 = service.reconcile_output_with_outcome(
+        "Successfully completed operation.", contract, auth_tenant_id="   "
+    )
+    assert not r1.is_consistent
+    assert r1.recommended_disposition == "REJECT"
+    assert "Cross-tenant outcome violation" in r1.conflict_reasons[0]
+
+    # Empty/whitespace transaction_id
+    r2 = service.reconcile_output_with_outcome(
+        "Successfully completed operation.", contract, transaction_id=""
+    )
+    assert not r2.is_consistent
+    assert r2.recommended_disposition == "REJECT"
+    assert "Transaction correlation mismatch" in r2.conflict_reasons[0]
+
+    # Empty/whitespace action_id
+    r3 = service.reconcile_output_with_outcome(
+        "Successfully completed operation.", contract, action_id=" \t "
+    )
+    assert not r3.is_consistent
+    assert r3.recommended_disposition == "REJECT"
+    assert "Action correlation mismatch" in r3.conflict_reasons[0]
 
 
 # =============================================================================

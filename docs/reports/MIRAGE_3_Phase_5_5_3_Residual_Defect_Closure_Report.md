@@ -24,13 +24,13 @@ Following the Phase 5.5.2 certification milestone, this independent verification
 
 ### Summary of Audit Results
 
-- **Residual Defects Closed:** 4 of 4 (100% closed and proved with empirical tests).
-- **Dedicated Phase 5.5.3 Tests:** 30/30 PASSED in `tests/security/test_phase5_5_3_residual_closure.py`.
+- **Residual Defects Closed:** 4 of 4 (100% closed and proved with empirical tests), plus full-chain recursive root validation and strict zero-fallback correlation hardening.
+- **Dedicated Phase 5.5.3 Tests:** **42/42 PASSED** in `tests/security/test_phase5_5_3_residual_closure.py` (including 12 new recursive chain and strict correlation tests).
 - **Live PostgreSQL 16 Migration Tests:** 6/6 PASSED in `tests/security/test_postgres_outcome_migration.py`.
 - **Phase 5.5.2 Hardened Challenge Tests:** 18/18 PASSED in `tests/security/test_phase5_5_2_challenge.py`.
 - **Phase 5.5.1 Hardened Security Tests:** 12/12 PASSED in `tests/security/test_phase5_5_1_independent_audit.py`.
 - **Phase 5.5 Hardening Test Suite:** 30/30 PASSED in `tests/security/test_phase5_5_hardening.py`.
-- **Full Repository Test Suite:** **577/577 PASSED (0 failures, 63 warnings)** across security, integration, and unit suites in 528.16s.
+- **Full Repository Test Suite:** **589/589 PASSED (0 failures, 63 warnings)** across security, integration, and unit suites in 731.29s (12m 11s).
 - **Static Analysis & Type Checking:** Ruff check passed with 0 errors; Mypy `--strict` passed with 0 issues on all modified source files.
 - **Frontend Production Build:** Vite build succeeded in 2.10s (Zero TypeScript, pure React 18 / JSX / JS).
 - **Live Execution Assurance Demonstration:** 9/9 scenarios succeeded end-to-end.
@@ -77,25 +77,32 @@ Following the Phase 5.5.2 certification milestone, this independent verification
 
 ## 3. Technical Remediations Implemented
 
-### 3.1. Remediation 1: Fail-Closed Cryptographic Audit Anchor
+### 3.1. Remediation 1: Fail-Closed Cryptographic Audit Anchor & Recursive Full-Chain Root Validation
 
-In `services/reality_verifier.py`, `RealityVerifierService.verify_record_against_audit_trail` was rewritten to strictly enforce the following security invariants:
+In `services/reality_verifier.py`, `RealityVerifierService.verify_record_against_audit_trail` was rewritten and hardened to strictly enforce the following security invariants:
 
-1. **Mandatory Audit Record Existence (Fail-Closed):** If `len(audit_entries) == 0`, immediately raise `HTTPException(409, "Cryptographic audit trail anchor missing: No authoritative audit log entry found for outcome ...")`.
-2. **Ambiguity / Conflict Rejection:** If `len(audit_entries) > 1`, immediately raise `HTTPException(409, "Ambiguous audit trail anchor: Multiple conflicting audit entries found ...")`.
-3. **Four-Way Correlation Binding:** The audit record must match:
-   - `tenant_id == record.tenant_id`
-   - `action_id == record.action_id`
+1. **Mandatory Audit Record Existence (Fail-Closed):** If `len(matching_audits) == 0`, immediately raise `HTTPException(409, "Audit anchor missing: OutcomeVerificationRecord ... has no corresponding authoritative AuditLogRecord trust anchor ...")`.
+2. **Ambiguity / Conflict Rejection:** If `len(matching_audits) > 1`, immediately raise `HTTPException(409, "Ambiguous or conflicting audit anchors detected: found ... matching AuditLogRecord entries ...")`.
+3. **Strict Zero-Fallback Correlation Matching:** Candidate anchors are filtered strictly by `payload.get("outcome_id") == record.id`. Loose disjunctive fallback matching on `(action_id, transaction_id)` was completely eliminated to prevent audit entries from sibling outcomes from masquerading as trust anchors.
+4. **Strict Four-Way Correlation Binding:** Unambiguously verifies:
    - `payload["outcome_id"] == record.id`
-   - `payload["transaction_id"] == record.transaction_id`
-4. **Digest & Decision Equality:**
-   - `matching_audit.event_payload.get("verification_hash") == record.verification_hash`
-   - `matching_audit.event_payload.get("outcome_status") == record.outcome_status.value`
-5. **Cryptographic Chain Validation:** The entry's `chain_hash` is recomputed using the canonical formula:
-   $$\text{chain\_hash} = \text{SHA256}(\text{prev\_hash} : \text{id} : \text{event\_type} : \text{verified\_at})$$
+   - `payload["action_id"] == record.action_id` (rejecting empty or None)
+   - `matching_audit.tenant_id == record.tenant_id`
+   - `matching_audit.transaction_id == record.transaction_id` (column check)
+   - `payload["transaction_id"] == record.transaction_id` (payload check)
+5. **Digest & Decision Concordance:**
+   - `matching_audit.response_hash == record.verification_hash`
+   - `matching_audit.decision == record.outcome_status`
+6. **Cryptographic Chain Self-Integrity:** The leaf entry's `chain_hash` is recomputed using the canonical formula:
+   $$\text{chain\_hash} = \text{SHA256}(\text{prev\_hash} : \text{entry\_id} : \text{decision} : \text{verified\_at})$$
    Divergence between the stored and computed chain hash raises `HTTP 409 Conflict`.
-6. **Predecessor Block & Temporal Monotonicity Check:** If `prev_hash != "0"*64`, the predecessor block is queried and verified to exist with `pred_record.created_at <= matching_audit.created_at`.
-7. **Threat Model Boundary Explicitly Documented:** Application-layer hash chaining protects against application tampering, tenant cross-talk, and unprivileged SQL roles (`mirage_app` without UPDATE/DELETE privileges). It is explicitly acknowledged that a PostgreSQL superuser with raw administrative database access could modify both tables and recompute hash chains.
+7. **Full-Chain Recursive Traversal to Trusted Root:** Rather than stopping after a shallow 1-hop predecessor check, the verifier executes a recursive traversal loop back to the trusted genesis root (default `"0"*64`) or an explicit checkpoint:
+   - **Link Continuity:** Every ancestor block $R_i$ must exist in `AuditLogRecord` for that tenant.
+   - **Cycle Prevention:** Maintains a `visited_hashes` set; encountering a seen `prev_hash` or `chain_hash` raises `HTTP 409 Conflict` (cycle detected).
+   - **Temporal Monotonicity:** Enforces $R_{i-1}.\text{created\_at} \le R_i.\text{created\_at}$ at every hop.
+   - **Ancestor Cryptographic Self-Integrity:** Verifies $\text{chain\_hash}$ at every ancestor block where $\text{verified\_at}$ is recorded.
+   - **Depth Limits:** Bounds traversal by `max_chain_depth` (default 500) to protect against resource exhaustion.
+8. **Threat Model Boundary Explicitly Documented:** Application-layer hash chaining protects against application tampering, tenant cross-talk, and unprivileged SQL roles (`mirage_app` without UPDATE/DELETE privileges). It is explicitly acknowledged that a PostgreSQL superuser with raw administrative database access could modify both tables and recompute hash chains.
 
 ### 3.2. Remediation 2: Connection-Boundary Transport & Real TCP Socket Interception
 
@@ -149,12 +156,12 @@ Created `tests/security/test_postgres_outcome_migration.py` against live Postgre
 
 | Test Suite File | Test Scope | Passed | Failed | Duration |
 |:---|:---|:---:|:---:|:---:|
-| `tests/security/test_phase5_5_3_residual_closure.py` | Audit anchor, real TCP wire transport, clause-aware reconciliation | 30 | 0 | 6.80s |
+| `tests/security/test_phase5_5_3_residual_closure.py` | Full-chain recursive validation, zero-fallback correlation, real TCP wire transport, clause-aware reconciliation | 42 | 0 | 6.82s |
 | `tests/security/test_postgres_outcome_migration.py` | PostgreSQL 16 catalog, RLS, duplicates, Alembic rollback/upgrade | 6 | 0 | 5.95s |
 | `tests/security/test_phase5_5_2_challenge.py` | In-flight action rejection, DNS rebinding, cryptographic chain | 18 | 0 | 5.92s |
 | `tests/security/test_phase5_5_1_independent_audit.py` | Read-path tamper detection, blind-sink override, void postconditions | 12 | 0 | 7.04s |
 | `tests/security/test_phase5_5_hardening.py` | Gate 5 adversarial hardening, SQL injection, replay, timeouts | 30 | 0 | 6.90s |
-| **Comprehensive Test Suite (`pytest`)** | **All Security, Integration, and Unit Suites Repository-Wide** | **577** | **0** | **528.16s** |
+| **Comprehensive Test Suite (`pytest`)** | **All Security, Integration, and Unit Suites Repository-Wide** | **589** | **0** | **731.29s (12m 11s)** |
 
 ### 4.2. Static Analysis & Type Checking
 
@@ -265,6 +272,9 @@ When an HTTP request was dispatched via `httpx.AsyncClient(transport=SafeAsyncHT
 | Real PostgreSQL rejects duplicate (tenant_id, action_id) | `docs/Data_Model.md` §3 | `db/migrations/versions/009_add_outcome_verification_records.py` | `test_postgres_outcome_migration.py::test_real_pg_rejection_of_duplicate_tenant_action` (PASSED) |
 | System catalog verifies unique constraint | `docs/Data_Model.md` §3 | `pg_constraint.conname = 'uq_outcome_records_tenant_action'` | `test_postgres_outcome_migration.py::test_real_pg_catalog_unique_constraint_exists` (PASSED) |
 | Alembic downgrade/upgrade cycle is clean | `docs/Deployment_and_Operations.md` §8 | Alembic migrations 008 <-> head | `test_postgres_outcome_migration.py::test_migration_downgrade_and_reupgrade_cycle` (PASSED) |
+| Full-chain recursive validation back to trusted root | `docs/Observability_and_Audit.md` §4 | `services/reality_verifier.py::verify_record_against_audit_trail` | `test_phase5_5_3_residual_closure.py::test_audit_chain_recursive_multi_hop_valid_to_genesis` (PASSED) |
+| Ancestor tampering, breakage, or cycles at depth $\ge 2$ rejected | `docs/Observability_and_Audit.md` §4 | `services/reality_verifier.py::verify_record_against_audit_trail` | `test_phase5_5_3_residual_closure.py::test_audit_chain_recursive_broken_link_at_depth_2` (PASSED) |
+| Strict zero-fallback correlation matching (no sibling matching) | `docs/Reality_Verification.md` §6 | `services/reality_verifier.py::verify_record_against_audit_trail` | `test_phase5_5_3_residual_closure.py::test_correlation_fallback_matching_rejected_when_outcome_id_differs` (PASSED) |
 
 ---
 

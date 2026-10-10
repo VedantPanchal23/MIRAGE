@@ -827,11 +827,14 @@ class RealityVerifierService:
         self,
         session: Any,
         record: OutcomeVerificationRecord,
+        trusted_root_hash: str = "0" * 64,
+        max_chain_depth: int = 500,
     ) -> OutcomeVerificationContract:
         """Verify OutcomeVerificationRecord integrity internally and against AuditLogRecord.
 
         Validates both self-consistency against canonical payload and external consistency
-        against the append-only cryptographic AuditLogRecord trust anchor. Fails closed (HTTP 409)
+        against the append-only cryptographic AuditLogRecord trust anchor. Recursively traces
+        the cryptographic chain back to trusted root (default genesis '0'*64). Fails closed (HTTP 409)
         if the trust anchor is missing, conflicting, tampered, or detached from the audit chain.
         """
         # 1. Internal canonical payload integrity and SHA-256 hash check
@@ -851,15 +854,8 @@ class RealityVerifierService:
         matching_audits: list[AuditLogRecord] = []
         for a in audit_records:
             payload = a.event_payload or {}
-            is_outcome_match = payload.get("outcome_id") == record.id
-            is_action_txn_match = (
-                payload.get("action_id") == record.action_id
-                and (
-                    payload.get("transaction_id") == record.transaction_id
-                    or a.transaction_id == record.transaction_id
-                )
-            )
-            if is_outcome_match or is_action_txn_match:
+            # Strict correlation matching: NO loose fallback matching on action or transaction alone
+            if payload.get("outcome_id") == record.id:
                 matching_audits.append(a)
 
         # Fail closed: OutcomeVerificationRecord cannot be verified without an authoritative anchor
@@ -893,23 +889,12 @@ class RealityVerifierService:
                     f"outcome_id '{payload.get('outcome_id')}' does not match record '{record.id}'."
                 ),
             )
-        if payload.get("action_id") and payload.get("action_id") != record.action_id:
+        if not payload.get("action_id") or payload.get("action_id") != record.action_id:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
                     f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
                     f"action_id '{payload.get('action_id')}' does not match record '{record.action_id}'."
-                ),
-            )
-        if (
-            matching_audit.transaction_id != record.transaction_id
-            and payload.get("transaction_id") != record.transaction_id
-        ):
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
-                    f"transaction_id '{matching_audit.transaction_id}' does not match record '{record.transaction_id}'."
                 ),
             )
         if matching_audit.tenant_id != record.tenant_id:
@@ -918,6 +903,23 @@ class RealityVerifierService:
                 detail=(
                     f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
                     f"tenant_id '{matching_audit.tenant_id}' does not match record '{record.tenant_id}'."
+                ),
+            )
+        # Strict transaction_id check on both record column and payload
+        if matching_audit.transaction_id != record.transaction_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord column transaction_id "
+                    f"'{matching_audit.transaction_id}' does not match record '{record.transaction_id}'."
+                ),
+            )
+        if payload.get("transaction_id") != record.transaction_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord payload transaction_id "
+                    f"'{payload.get('transaction_id')}' does not match record '{record.transaction_id}'."
                 ),
             )
 
@@ -941,7 +943,7 @@ class RealityVerifierService:
                 ),
             )
 
-        # 5. Cryptographic Chain Integrity and Linkage verification
+        # 5. Cryptographic Chain Self-Integrity verification
         verified_at_val = payload.get("verified_at")
         if verified_at_val:
             expected_chain = compute_sha256(
@@ -956,33 +958,87 @@ class RealityVerifierService:
                     ),
                 )
 
-        # 6. Chain Linkage: verify predecessor block exists in tenant audit trail
-        if matching_audit.prev_hash != "0" * 64:
+        # 6. Full-Chain Recursive Validation Back to Trusted Root
+        curr = matching_audit
+        visited_hashes: set[str] = {curr.chain_hash}
+        chain_depth = 0
+
+        while curr.prev_hash != trusted_root_hash:
+            chain_depth += 1
+            if chain_depth > max_chain_depth:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Audit chain traversal exceeded max depth {max_chain_depth} "
+                        f"without reaching trusted root '{trusted_root_hash}' for tenant '{record.tenant_id}'."
+                    ),
+                )
+            if curr.prev_hash in visited_hashes:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Audit chain cyclic loop detected at hash '{curr.prev_hash}' "
+                        f"for tenant '{record.tenant_id}'."
+                    ),
+                )
+
             pred_stmt = select(AuditLogRecord).where(
                 AuditLogRecord.tenant_id == record.tenant_id,
-                AuditLogRecord.chain_hash == matching_audit.prev_hash,
+                AuditLogRecord.chain_hash == curr.prev_hash,
             )
             pred_record = (await session.execute(pred_stmt)).scalar_one_or_none()
             if not pred_record:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        f"Audit chain broken linkage: predecessor block with chain_hash '{matching_audit.prev_hash}' "
-                        f"not found in audit trail for tenant '{record.tenant_id}'."
+                        f"Audit chain broken linkage: predecessor block with chain_hash '{curr.prev_hash}' "
+                        f"not found in audit trail for tenant '{record.tenant_id}' (traversed depth {chain_depth}). "
+                        f"Chain does not anchor to trusted root '{trusted_root_hash}'."
                     ),
                 )
+
+            if pred_record.chain_hash in visited_hashes or pred_record.prev_hash in visited_hashes:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Audit chain cyclic loop detected at ancestor '{pred_record.entry_id}' "
+                        f"for tenant '{record.tenant_id}'."
+                    ),
+                )
+
+            # Monotonicity check
             if (
                 pred_record.created_at
-                and matching_audit.created_at
-                and pred_record.created_at > matching_audit.created_at
+                and curr.created_at
+                and pred_record.created_at > curr.created_at
             ):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        f"Audit chain reordering detected: predecessor block timestamp "
-                        f"'{pred_record.created_at}' is later than current record '{matching_audit.created_at}'."
+                        f"Audit chain reordering detected: ancestor block '{pred_record.entry_id}' timestamp "
+                        f"'{pred_record.created_at}' is later than descendant '{curr.entry_id}' timestamp "
+                        f"'{curr.created_at}'."
                     ),
                 )
+
+            # Predecessor self-integrity check
+            p_payload = pred_record.event_payload or {}
+            p_verified_at = p_payload.get("verified_at")
+            if p_verified_at and pred_record.decision:
+                expected_p_hash = compute_sha256(
+                    f"{pred_record.prev_hash}:{pred_record.entry_id}:{pred_record.decision}:{p_verified_at}"
+                )
+                if pred_record.chain_hash != expected_p_hash:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Audit chain corruption detected at ancestor '{pred_record.entry_id}': "
+                            f"chain_hash '{pred_record.chain_hash}' does not match computed hash '{expected_p_hash}'."
+                        ),
+                    )
+
+            visited_hashes.add(curr.prev_hash)
+            curr = pred_record
 
         return contract
 
@@ -1375,39 +1431,42 @@ class RealityVerifierService:
     ) -> OutcomeReconciliationResult:
         """Verify Output <-> Outcome consistency: prevent models from falsely claiming verified success."""
         # 1. Tenant boundary check
-        if auth_tenant_id and outcome_contract.tenant_id != auth_tenant_id:
-            return OutcomeReconciliationResult(
-                is_consistent=False,
-                epistemic_conflict_detected=True,
-                conflict_reasons=[
-                    f"Cross-tenant outcome violation: outcome tenant '{outcome_contract.tenant_id}' "
-                    f"does not match authenticated tenant '{auth_tenant_id}'"
-                ],
-                recommended_disposition="REJECT",
-            )
+        if auth_tenant_id is not None:
+            if not auth_tenant_id.strip() or outcome_contract.tenant_id != auth_tenant_id.strip():
+                return OutcomeReconciliationResult(
+                    is_consistent=False,
+                    epistemic_conflict_detected=True,
+                    conflict_reasons=[
+                        f"Cross-tenant outcome violation: outcome tenant '{outcome_contract.tenant_id}' "
+                        f"does not match authenticated tenant '{auth_tenant_id}'"
+                    ],
+                    recommended_disposition="REJECT",
+                )
 
         # 2. Transaction and Action correlation check
-        if transaction_id and outcome_contract.transaction_id != transaction_id:
-            return OutcomeReconciliationResult(
-                is_consistent=False,
-                epistemic_conflict_detected=True,
-                conflict_reasons=[
-                    f"Transaction correlation mismatch: outcome belongs to '{outcome_contract.transaction_id}', "
-                    f"caller specified '{transaction_id}'"
-                ],
-                recommended_disposition="REJECT",
-            )
+        if transaction_id is not None:
+            if not transaction_id.strip() or outcome_contract.transaction_id != transaction_id.strip():
+                return OutcomeReconciliationResult(
+                    is_consistent=False,
+                    epistemic_conflict_detected=True,
+                    conflict_reasons=[
+                        f"Transaction correlation mismatch: outcome belongs to '{outcome_contract.transaction_id}', "
+                        f"caller specified '{transaction_id}'"
+                    ],
+                    recommended_disposition="REJECT",
+                )
 
-        if action_id and outcome_contract.action_id != action_id:
-            return OutcomeReconciliationResult(
-                is_consistent=False,
-                epistemic_conflict_detected=True,
-                conflict_reasons=[
-                    f"Action correlation mismatch: outcome belongs to action '{outcome_contract.action_id}', "
-                    f"caller specified '{action_id}'"
-                ],
-                recommended_disposition="REJECT",
-            )
+        if action_id is not None:
+            if not action_id.strip() or outcome_contract.action_id != action_id.strip():
+                return OutcomeReconciliationResult(
+                    is_consistent=False,
+                    epistemic_conflict_detected=True,
+                    conflict_reasons=[
+                        f"Action correlation mismatch: outcome belongs to action '{outcome_contract.action_id}', "
+                        f"caller specified '{action_id}'"
+                    ],
+                    recommended_disposition="REJECT",
+                )
 
         # 3. Clause-aware normalization and polarity evaluation
         norm_text = _normalize_text(response_text)

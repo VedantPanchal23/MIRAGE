@@ -978,8 +978,8 @@ class RealityVerifierService:
                 ),
             )
 
-        is_trusted, trust_tier, checkpoint_record = self.checkpoint_registry.evaluate_trust_level(
-            record.tenant_id, trusted_root_hash
+        is_trusted, trust_tier, checkpoint_record = await self.checkpoint_registry.evaluate_trust_level_async(
+            record.tenant_id, trusted_root_hash, session=session
         )
         if not is_trusted:
             raise HTTPException(
@@ -1327,10 +1327,7 @@ class RealityVerifierService:
                     OutcomeStatus.SUCCESS_CONFIRMED.value,
                     OutcomeStatus.FAILED.value,
                 ):
-                    try:
-                        return await self.verify_record_against_audit_trail(session, existing_record)
-                    except (StopIteration, StopAsyncIteration):
-                        return self._record_to_contract(existing_record)
+                    return await self.verify_record_against_audit_trail(session, existing_record)
 
             # 5. Environment Binding
             target_env = "DEFAULT"
@@ -1597,30 +1594,24 @@ class RealityVerifierService:
 
             if is_live_postgres:
                 # A. Transaction-scoped PostgreSQL advisory lock serializes concurrent transactions per tenant
-                try:
-                    await session.execute(
-                        text("SELECT pg_advisory_xact_lock(hashtext('tenant_audit_ledger:' || :tenant_id))"),
-                        {"tenant_id": auth.tenant_id},
-                    )
-                except Exception as adv_exc:
-                    logger.debug("Advisory lock bypassed or not supported by dialect", error=str(adv_exc))
+                await session.execute(
+                    text("SELECT pg_advisory_xact_lock(hashtext('tenant_audit_ledger:' || :tenant_id))"),
+                    {"tenant_id": auth.tenant_id},
+                )
 
                 # B. Ensure persistent tenant ledger head row exists
-                try:
-                    await session.execute(
-                        text(
-                            """
-                            INSERT INTO tenant_audit_ledgers (
-                                tenant_id, head_chain_hash, sequence_number, created_at, updated_at
-                            )
-                            VALUES (:tenant_id, :genesis_hash, 0, :now, :now)
-                            ON CONFLICT (tenant_id) DO NOTHING
-                            """
-                        ),
-                        {"tenant_id": auth.tenant_id, "genesis_hash": GENESIS_ROOT_HASH, "now": verified_at_dt},
-                    )
-                except Exception:
-                    pass
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO tenant_audit_ledgers (
+                            tenant_id, head_chain_hash, sequence_number, created_at, updated_at
+                        )
+                        VALUES (:tenant_id, :genesis_hash, 0, :now, :now)
+                        ON CONFLICT (tenant_id) DO NOTHING
+                        """
+                    ),
+                    {"tenant_id": auth.tenant_id, "genesis_hash": GENESIS_ROOT_HASH, "now": verified_at_dt},
+                )
 
                 # C. Row-level lock on the persistent tenant ledger head
                 ledger_head_stmt = (
@@ -1628,11 +1619,13 @@ class RealityVerifierService:
                     .where(TenantAuditLedger.tenant_id == auth.tenant_id)
                     .with_for_update()
                 )
-                try:
-                    ledger_res = await session.execute(ledger_head_stmt)
-                    ledger_head_row = ledger_res.scalar_one_or_none()
-                except Exception:
-                    ledger_head_row = None
+                ledger_res = await session.execute(ledger_head_stmt)
+                ledger_head_row = ledger_res.scalar_one_or_none()
+                if not ledger_head_row:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Authoritative tenant audit ledger head missing for tenant '{auth.tenant_id}'",
+                    )
 
             if isinstance(ledger_head_row, TenantAuditLedger):
                 prev_chain_hash = ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH

@@ -87,16 +87,52 @@ class CheckpointModel(BaseModel):
 
 
 class NotaryKeyRegistry:
-    """Authoritative in-memory key management boundary for trusted notary signers."""
+    """Authoritative in-memory key management boundary for trusted notary signers.
 
-    def __init__(self, initial_keys: dict[str, bytes] | None = None) -> None:
+    Cryptographic Trust Boundary & HMAC Limitations:
+    Note: MIRAGE audit checkpoints signed via symmetric HMAC-SHA256 establish internal
+    authenticity against tampering and cross-tenant forgery within the trust perimeter.
+    However, symmetric keys shared between signers and verifiers provide authenticity,
+    not third-party cryptographic non-repudiation (which requires asymmetric keypairs
+    such as Ed25519 or ECDSA).
+    """
+
+    def __init__(
+        self,
+        initial_keys: dict[str, bytes] | None = None,
+        allow_dev_keys: bool | None = None,
+    ) -> None:
         self._keys: dict[str, bytes] = {}
         if initial_keys:
             for signer_id, key_bytes in initial_keys.items():
                 self.register_key(signer_id, key_bytes)
         else:
-            # Register default development/test notary key
-            self._keys["notary:system_primary"] = b"mirage-default-notary-secret-key-32b!"
+            try:
+                from shared.config import get_settings
+                settings = get_settings()
+                is_prod = str(getattr(settings, "environment", "")).lower() == "production"
+                effective_allow = allow_dev_keys
+                if effective_allow is None:
+                    effective_allow = (not is_prod) and getattr(settings, "allow_dev_notary_keys", True)
+
+                # Check if configured via notary_keys_json
+                keys_json = getattr(settings, "notary_keys_json", None)
+                if keys_json:
+                    try:
+                        parsed = json.loads(keys_json)
+                        if isinstance(parsed, dict):
+                            for s_id, k_val in parsed.items():
+                                if isinstance(k_val, str):
+                                    self.register_key(s_id, k_val.encode("utf-8"))
+                    except Exception:
+                        pass
+
+                if not self._keys and effective_allow:
+                    # Register default development/test notary key ONLY in non-production
+                    self._keys["notary:system_primary"] = b"mirage-default-notary-secret-key-32b!"
+            except Exception:
+                if allow_dev_keys is True:
+                    self._keys["notary:system_primary"] = b"mirage-default-notary-secret-key-32b!"
 
     def register_key(self, signer_identity: str, key_bytes: bytes) -> None:
         """Register or rotate a notary signing key."""
@@ -270,6 +306,99 @@ class TrustedCheckpointRegistry:
             return False, TrustAssuranceLevel.LOCAL_UNANCHORED, None
 
         return True, cp.trust_tier, cp
+
+    async def evaluate_trust_level_async(
+        self, tenant_id: str, root_hash: str, session: Any = None
+    ) -> tuple[bool, TrustAssuranceLevel, CheckpointModel | None]:
+        """Evaluate cryptographic trust status with database-backed loading and verification."""
+        # 1. Fast in-memory check
+        is_trusted, level, cp = self.evaluate_trust_level(tenant_id, root_hash)
+        if is_trusted:
+            return is_trusted, level, cp
+
+        if not isinstance(root_hash, str):
+            return False, TrustAssuranceLevel.LOCAL_UNANCHORED, None
+        h = root_hash.lower().strip()
+        if h == GENESIS_ROOT_HASH or not is_valid_sha256_hex(h):
+            return False, TrustAssuranceLevel.LOCAL_UNANCHORED, None
+
+        # 2. Database-backed loading under strict tenant isolation
+        if session is not None:
+            tid = tenant_id.strip() if isinstance(tenant_id, str) else ""
+            try:
+                from sqlalchemy import select
+
+                from db.models import AuditCheckpointRecord, AuditLogRecord
+
+                stmt = select(AuditCheckpointRecord).where(
+                    AuditCheckpointRecord.tenant_id == tid,
+                    AuditCheckpointRecord.checkpoint_hash == h,
+                )
+                res = await session.execute(stmt)
+                cp_row = res.scalar_one_or_none()
+                if cp_row is not None:
+                    # Check revocation
+                    if cp_row.revoked:
+                        return False, TrustAssuranceLevel.LOCAL_UNANCHORED, None
+
+                    # Check expiration
+                    now = datetime.now(UTC)
+                    if cp_row.expires_at and cp_row.expires_at <= now:
+                        return False, TrustAssuranceLevel.LOCAL_UNANCHORED, None
+
+                    # Signature verification against NotaryKeyRegistry
+                    key_bytes = self.notary_keys.get_key(cp_row.signer_identity)
+                    if not key_bytes:
+                        return False, TrustAssuranceLevel.LOCAL_UNANCHORED, None
+
+                    canon = compute_checkpoint_canonical_string(
+                        tenant_id=cp_row.tenant_id,
+                        ledger_identity=cp_row.ledger_identity,
+                        sequence_number=cp_row.sequence_number,
+                        checkpoint_hash=h,
+                        issued_at_iso=cp_row.issued_at.isoformat(),
+                        signer_identity=cp_row.signer_identity,
+                    )
+                    if not verify_checkpoint_signature(key_bytes, canon, cp_row.signature):
+                        return False, TrustAssuranceLevel.LOCAL_UNANCHORED, None
+
+                    # Verify sequence binding against audit_logs
+                    if cp_row.sequence_number > 0:
+                        audit_stmt = select(AuditLogRecord).where(
+                            AuditLogRecord.tenant_id == tid,
+                            AuditLogRecord.sequence_number == cp_row.sequence_number,
+                        )
+                        audit_row = (await session.execute(audit_stmt)).scalar_one_or_none()
+                        if not audit_row or audit_row.chain_hash != h:
+                            return False, TrustAssuranceLevel.LOCAL_UNANCHORED, None
+
+                    tier_val = (
+                        TrustAssuranceLevel(cp_row.trust_tier)
+                        if cp_row.trust_tier in TrustAssuranceLevel.__members__.values()
+                        else TrustAssuranceLevel.EXTERNALLY_ANCHORED
+                    )
+                    model = CheckpointModel(
+                        checkpoint_id=cp_row.id,
+                        tenant_id=cp_row.tenant_id,
+                        checkpoint_hash=h,
+                        sequence_number=cp_row.sequence_number,
+                        ledger_identity=cp_row.ledger_identity,
+                        signer_identity=cp_row.signer_identity,
+                        signature=cp_row.signature,
+                        trust_tier=tier_val,
+                        revoked=cp_row.revoked,
+                        revoked_at=cp_row.revoked_at,
+                        revoked_by=cp_row.revoked_by,
+                        revocation_reason=cp_row.revocation_reason,
+                        issued_at=cp_row.issued_at,
+                        expires_at=cp_row.expires_at,
+                    )
+                    self._checkpoints.setdefault(tid, {})[h] = model
+                    return True, tier_val, model
+            except Exception:
+                return False, TrustAssuranceLevel.LOCAL_UNANCHORED, None
+
+        return False, TrustAssuranceLevel.LOCAL_UNANCHORED, None
 
     def is_authenticated_root(self, tenant_id: str, root_hash: str) -> bool:
         """Verify whether a root hash is an active, authenticated trust anchor for the tenant."""

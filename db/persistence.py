@@ -19,6 +19,7 @@ from db.models import (
     KBDocumentRecord,
     OperatorAlert,
     Tenant,
+    TenantAuditLedger,
     VerificationSession,
 )
 from shared.config import get_settings
@@ -205,24 +206,57 @@ class PostgresPersistenceService:
                 if claim_records:
                     await session.flush()
 
-                # Query latest audit record under exclusive tenant lock
-                latest_audit_stmt = (
-                    select(AuditLogRecord.chain_hash)
-                    .where(AuditLogRecord.tenant_id == tenant_id)
-                    .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
-                    .limit(1)
-                )
-                audit_res = await session.execute(latest_audit_stmt)
-                latest_hash = audit_res.scalar_one_or_none()
-                prev_hash = latest_hash if latest_hash is not None else ("0" * 64)
+                # Ensure persistent tenant ledger head exists and lock under row lock
+                ledger_head_row = None
+                try:
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO tenant_audit_ledgers (
+                                tenant_id, head_chain_hash, sequence_number, created_at, updated_at
+                            )
+                            VALUES (:tenant_id, :genesis_hash, 0, :now, :now)
+                            ON CONFLICT (tenant_id) DO NOTHING
+                            """
+                        ),
+                        {"tenant_id": tenant_id, "genesis_hash": "0" * 64, "now": created_at},
+                    )
+                    ledger_stmt = (
+                        select(TenantAuditLedger)
+                        .where(TenantAuditLedger.tenant_id == tenant_id)
+                        .with_for_update()
+                    )
+                    ledger_res = await session.execute(ledger_stmt)
+                    ledger_head_row = ledger_res.scalar_one_or_none()
+                except Exception:
+                    ledger_head_row = None
+
+                if isinstance(ledger_head_row, TenantAuditLedger):
+                    prev_hash = ledger_head_row.head_chain_hash or ("0" * 64)
+                    new_seq = (ledger_head_row.sequence_number or 0) + 1
+                else:
+                    # Query latest audit record under tenant lock
+                    latest_audit_stmt = (
+                        select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
+                        .where(AuditLogRecord.tenant_id == tenant_id)
+                        .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
+                        .limit(1)
+                    )
+                    audit_res = await session.execute(latest_audit_stmt)
+                    latest_row = audit_res.first()
+                    prev_hash = latest_row[0] if latest_row and latest_row[0] is not None else ("0" * 64)
+                    last_seq = latest_row[1] if latest_row and len(latest_row) > 1 and latest_row[1] is not None else 0
+                    new_seq = last_seq + 1
 
                 now_iso = created_at.isoformat()
+                entry_id = f"aud_{time.time_ns():020d}_{uuid.uuid4().hex[:8]}"
                 block_data = f"{prev_hash}:{session_id}:{hrs_score:.4f}:{now_iso}"
                 chain_hash = compute_sha256(block_data)
 
                 audit_entry = AuditLogRecord(
-                    entry_id=f"aud_{time.time_ns():020d}_{uuid.uuid4().hex[:8]}",
+                    entry_id=entry_id,
                     tenant_id=tenant_id,
+                    sequence_number=new_seq,
                     session_id=session_id,
                     trace_id=trace_id,
                     prompt_hash=prompt_hash,
@@ -237,6 +271,13 @@ class PostgresPersistenceService:
                     created_at=created_at,
                 )
                 session.add(audit_entry)
+
+                if isinstance(ledger_head_row, TenantAuditLedger):
+                    ledger_head_row.head_entry_id = entry_id
+                    ledger_head_row.head_chain_hash = chain_hash
+                    ledger_head_row.sequence_number = new_seq
+                    ledger_head_row.updated_at = created_at
+
                 await session.flush()
 
             except DuplicateSessionError:

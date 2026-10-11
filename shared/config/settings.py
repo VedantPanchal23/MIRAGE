@@ -39,6 +39,14 @@ class Settings(BaseSettings):
     jwt_issuer: str = Field(default="mirage-control-plane")
     jwt_audience: str = Field(default="mirage-gateway")
     demo_auth_enabled: bool = Field(default=False)
+    notary_keys_json: str | None = Field(
+        default=None,
+        description="JSON-serialized mapping of signer_identity to notary secret key for NotaryKeyRegistry",
+    )
+    allow_dev_notary_keys: bool | None = Field(
+        default=None,
+        description="Allow default dev notary key in non-production environments",
+    )
 
     # --------------------------------------------------------------------------
     # PostgreSQL Database
@@ -119,6 +127,17 @@ class Settings(BaseSettings):
         if v and info.data.get("environment") == EnvironmentType.PRODUCTION:
             raise ValueError("DEMO_AUTH_ENABLED is prohibited in production")
         return v
+
+    @field_validator("allow_dev_notary_keys")
+    @classmethod
+    def reject_dev_notary_keys_in_production(cls, v: bool | None, info: ValidationInfo) -> bool:
+        """Prevent default development notary keys in production mode."""
+        env = info.data.get("environment")
+        if env == EnvironmentType.PRODUCTION:
+            if v is True:
+                raise ValueError("ALLOW_DEV_NOTARY_KEYS is prohibited in production")
+            return False
+        return True if v is None else v
 
     # --------------------------------------------------------------------------
     # Qdrant Vector Database

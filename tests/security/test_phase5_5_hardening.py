@@ -41,7 +41,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException
 
-from db.models import ActionContract, OutcomeVerificationRecord
+from db.models import ActionContract, AuditLogRecord, OutcomeVerificationRecord
 from services.reality_verifier import (
     AsyncEventAdapter,
     DatabaseStateAdapter,
@@ -49,6 +49,7 @@ from services.reality_verifier import (
     RealityVerifierService,
 )
 from shared.schemas.action import ActionState
+from shared.schemas.audit import GENESIS_ROOT_HASH, compute_sha256
 from shared.schemas.auth import AuthContext, Role
 from shared.schemas.outcome import (
     ObservabilityClass,
@@ -505,13 +506,20 @@ async def test_replayed_event_detection(auth_tenant_alpha):
         idempotency_key="idem_replayed_01",
     )
 
+    now_dt = datetime.now(UTC)
+    now_iso = now_dt.isoformat()
+    entry_id = "aud_existing_01"
+    decision = OutcomeStatus.SUCCESS_CONFIRMED.value
+    prev_hash = GENESIS_ROOT_HASH
+    chain_hash = compute_sha256(f"{prev_hash}:{entry_id}:{decision}:{now_iso}")
+
     existing_rec = OutcomeVerificationRecord(
         id="outc_existing_01",
         tenant_id=auth_tenant_alpha.tenant_id,
         transaction_id=action.transaction_id,
         action_id=action.id,
         observability_class="OBS_DIRECT",
-        outcome_status=OutcomeStatus.SUCCESS_CONFIRMED.value,
+        outcome_status=decision,
         epistemic_confidence=1.0,
         verifier_adapter="DatabaseStateAdapter",
         is_simulated=False,
@@ -523,8 +531,37 @@ async def test_replayed_event_detection(auth_tenant_alpha):
         verification_hash="0" * 64,
         idempotency_key="idem_replayed_01",
         target_environment="DEV",
-        created_at=datetime.now(UTC),
-        verified_at=datetime.now(UTC),
+        created_at=now_dt,
+        verified_at=now_dt,
+    )
+
+    audit_rec = AuditLogRecord(
+        entry_id=entry_id,
+        tenant_id=auth_tenant_alpha.tenant_id,
+        sequence_number=1,
+        session_id=action.transaction_id,
+        trace_id="gate5-outcome",
+        prompt_hash="0" * 64,
+        response_hash="0" * 64,
+        hrs_score=0.0,
+        risk_tier="LOW",
+        claims_count=1,
+        claims_summary=[],
+        correction_applied=False,
+        event_type="GATE5_OUTCOME_VERIFIED",
+        actor_identity_id="system_actor",
+        transaction_id=action.transaction_id,
+        decision=decision,
+        prev_hash=prev_hash,
+        chain_hash=chain_hash,
+        event_payload={
+            "outcome_id": "outc_existing_01",
+            "action_id": action.id,
+            "transaction_id": action.transaction_id,
+            "decision": decision,
+            "verified_at": now_iso,
+        },
+        created_at=now_dt,
     )
 
     with patch("services.reality_verifier.db_session.get_tenant_session") as mock_ctx:
@@ -534,9 +571,11 @@ async def test_replayed_event_detection(auth_tenant_alpha):
         mock_res_action.scalar_one_or_none.return_value = action
         mock_res_existing = MagicMock()
         mock_res_existing.scalar_one_or_none.return_value = existing_rec
+        mock_res_audit = MagicMock()
+        mock_res_audit.scalars.return_value.all.return_value = [audit_rec]
 
-        # First query returns action, second query returns existing record
-        mock_session.execute.side_effect = [mock_res_action, mock_res_existing]
+        # 1: action, 2: existing_record, 3: matching audit record in verify_record_against_audit_trail
+        mock_session.execute.side_effect = [mock_res_action, mock_res_existing, mock_res_audit]
         mock_ctx.return_value.__aenter__.return_value = mock_session
 
         contract = await service.verify_action_outcome(req, auth_tenant_alpha)

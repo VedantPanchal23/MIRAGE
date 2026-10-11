@@ -18,9 +18,8 @@ Validates that:
 import uuid
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-import httpx
 import pytest
 from fastapi import HTTPException
 from starlette.testclient import TestClient
@@ -514,35 +513,32 @@ def test_calibration_metadata_discloses_non_certified_baseline() -> None:
 
 def test_proxy_chat_completions_redacts_secrets_and_honestly_flags_verification() -> None:
     """Proxy route must redact secrets returned from model and compute honest mirage['verified'] flag."""
-    tenant_id = f"t_proxy_sec_{uuid.uuid4().hex[:8]}"
-    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.API_CLIENT)
+    from services.providers.base import BaseProviderAdapter, ProviderResponse, UsageInfo
+    from services.providers.factory import clear_adapter_overrides, register_adapter_override
 
-    mock_llm_response = {
-        "id": "chatcmpl-test",
-        "object": "chat.completion",
-        "created": 12345678,
-        "model": "gpt-4o",
-        "choices": [
-            {
-                "index": 0,
-                "message": {
-                    "role": "assistant",
-                    "content": "Deploy complete. Key: ghp_1234567890abcdefghijklmnopqrstuvwxyzAB use it.",
-                },
-                "finish_reason": "stop",
-            }
-        ],
-        "usage": {"prompt_tokens": 10, "completion_tokens": 20, "total_tokens": 30},
-    }
+    class _SecretMockAdapter(BaseProviderAdapter):
+        @property
+        def provider_name(self) -> str:
+            return "mock"
 
-    # Mock httpx in proxy to return LLM response with secret
-    mock_resp = httpx.Response(
-        status_code=200,
-        json=mock_llm_response,
-        request=httpx.Request("POST", "https://api.groq.com/openai/v1/chat/completions"),
-    )
-    with patch("httpx.AsyncClient.post", new_callable=AsyncMock) as mock_post:
-        mock_post.return_value = mock_resp
+        async def generate(self, prompt: Any, model_id: str, **kwargs: Any) -> ProviderResponse:
+            _ = (prompt, kwargs)
+            return ProviderResponse(
+                content="Deploy complete. Key: ghp_1234567890abcdefghijklmnopqrstuvwxyzAB use it.",
+                usage=UsageInfo(prompt_tokens=10, completion_tokens=20, total_tokens=30, cached_tokens=0),
+                latency_ms=10.0,
+                model_id=model_id,
+                provider="mock",
+                finish_reason="stop",
+            )
+
+    sec_adapter = _SecretMockAdapter()
+    register_adapter_override("mock", sec_adapter)
+    register_adapter_override("openai", sec_adapter)
+
+    try:
+        tenant_id = f"t_proxy_sec_{uuid.uuid4().hex[:8]}"
+        headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.API_CLIENT)
 
         payload = {
             "model": "gpt-4o",
@@ -563,3 +559,5 @@ def test_proxy_chat_completions_redacts_secrets_and_honestly_flags_verification(
         assert body["mirage"]["verified"] is False
         assert resp.headers.get("X-Mirage-Verified") == "false"
         assert resp.headers.get("X-Mirage-Safety-Safe") == "false"
+    finally:
+        clear_adapter_overrides()

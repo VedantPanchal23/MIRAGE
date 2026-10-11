@@ -22,6 +22,7 @@ class ReservationStatus(StrEnum):
     SETTLED = "SETTLED"
     RELEASED = "RELEASED"
     EXPIRED = "EXPIRED"
+    RECONCILIATION_REQUIRED = "RECONCILIATION_REQUIRED"
 
 
 class TenantBudget(BaseModel):
@@ -60,6 +61,9 @@ class BudgetReservationRequest(BaseModel):
     estimated_cost_micros: int = Field(..., gt=0, description="Upper-bound cost reservation in micros")
     reservation_key: str = Field(..., description="Idempotency key for this reservation")
     timeout_seconds: int = Field(default=300, ge=10, le=3600, description="Reservation TTL before expiration")
+    attempt_number: int = Field(default=1, ge=1, description="Execution attempt counter")
+    selected_provider: str | None = Field(default=None, description="Routed provider")
+    selected_model: str | None = Field(default=None, description="Routed model")
 
 
 class BudgetReservation(BaseModel):
@@ -71,6 +75,9 @@ class BudgetReservation(BaseModel):
     reservation_key: str = Field(..., description="Reservation idempotency key")
     amount_micros: int = Field(..., ge=0, description="Reserved amount in micros")
     status: ReservationStatus = Field(default=ReservationStatus.RESERVED)
+    attempt_number: int = Field(default=1, ge=1)
+    selected_provider: str | None = Field(default=None)
+    selected_model: str | None = Field(default=None)
     expires_at: datetime = Field(...)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     settled_at: datetime | None = Field(default=None)
@@ -87,6 +94,9 @@ class BudgetSettlementRequest(BaseModel):
     completion_tokens: int = Field(..., ge=0, description="Output tokens generated")
     cached_tokens: int = Field(default=0, ge=0, description="Tokens read from prompt cache")
     stage: str = Field(default="PRIMARY_INFERENCE", description="Assurance stage incurring cost")
+    attempt_number: int = Field(default=1, ge=1, description="Execution attempt counter")
+    idempotency_key: str | None = Field(default=None, description="Settlement idempotency key")
+    pricing_profile_id: str | None = Field(default=None, description="Pricing profile used")
 
 
 class TransactionCostRecordSchema(BaseModel):
@@ -102,4 +112,6 @@ class TransactionCostRecordSchema(BaseModel):
     cached_tokens: int = Field(default=0, ge=0)
     cost_micros: int = Field(..., ge=0, description="Final cost in micros")
     stage: str = Field(default="PRIMARY_INFERENCE")
+    attempt_number: int = Field(default=1, ge=1)
+    pricing_profile_id: str | None = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

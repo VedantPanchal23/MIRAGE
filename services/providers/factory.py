@@ -1,19 +1,58 @@
-"""Factory and registry for LLM Provider Adapters in MIRAGE 3.0."""
+"""Factory and registry for LLM Provider Adapters in MIRAGE 3.0.
+
+Enforces strict fail-closed configuration validation, SSRF endpoint protection,
+and disallows unconfigured mock fallbacks in production environments.
+"""
+
+from urllib.parse import urlparse
 
 from services.providers.anthropic_adapter import AnthropicProviderAdapter
 from services.providers.base import BaseProviderAdapter
 from services.providers.gemini_adapter import GeminiProviderAdapter
+from services.providers.groq_adapter import GroqProviderAdapter
 from services.providers.mock_adapter import MockProviderAdapter
 from services.providers.ollama_adapter import OllamaProviderAdapter
 from services.providers.openai_adapter import OpenAIProviderAdapter
 from shared.config import get_settings
+from shared.config.settings import EnvironmentType
 
 _OVERRIDES: dict[str, BaseProviderAdapter] = {}
 
+PROHIBITED_METADATA_HOSTS = {
+    "169.254.169.254",
+    "metadata.google.internal",
+    "100.100.100.200",
+}
+
+
+class ProviderConfigurationError(Exception):
+    """Raised when provider configuration or destination validation fails."""
+
+    pass
+
+
+def validate_provider_base_url(url: str, allow_local: bool = False) -> str:
+    """Validate provider base URL against approved destination policies and SSRF vectors."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ProviderConfigurationError(f"Invalid URL scheme '{parsed.scheme}'; must be http or https")
+
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ProviderConfigurationError("Provider URL hostname cannot be empty")
+
+    if host in PROHIBITED_METADATA_HOSTS:
+        raise ProviderConfigurationError(f"Prohibited metadata destination: '{host}'")
+
+    if not allow_local and (host in ("localhost", "127.0.0.1", "::1") or host.startswith("127.")):
+        raise ProviderConfigurationError(f"Local loopback host '{host}' is prohibited for cloud providers")
+
+    return url
+
 
 def register_adapter_override(provider_name: str, adapter: BaseProviderAdapter) -> None:
-    """Register an adapter override (e.g. for deterministic testing)."""
-    _OVERRIDES[provider_name.lower()] = adapter
+    """Register an adapter override (for deterministic offline unit testing)."""
+    _OVERRIDES[provider_name.lower().strip()] = adapter
 
 
 def clear_adapter_overrides() -> None:
@@ -22,7 +61,11 @@ def clear_adapter_overrides() -> None:
 
 
 def get_provider_adapter(provider_name: str) -> BaseProviderAdapter:
-    """Get the appropriate provider adapter instance based on name and settings."""
+    """Resolve the authoritative provider adapter instance.
+
+    Strictly fails closed with ProviderConfigurationError if the provider is unknown,
+    if required credentials are missing, or if mock adapters are attempted in production.
+    """
     norm_name = provider_name.lower().strip()
     if norm_name in _OVERRIDES:
         return _OVERRIDES[norm_name]
@@ -30,29 +73,64 @@ def get_provider_adapter(provider_name: str) -> BaseProviderAdapter:
     settings = get_settings()
 
     if norm_name == "mock":
+        if settings.environment == EnvironmentType.PRODUCTION:
+            raise ProviderConfigurationError("Mock provider is strictly prohibited in production mode")
+        if not getattr(settings, "allow_mock_providers", True):
+            raise ProviderConfigurationError("Mock provider execution is disabled by configuration")
         return MockProviderAdapter()
+
     elif norm_name == "openai":
-        api_key = getattr(settings, "openai_api_key", "")
+        api_key = getattr(settings, "openai_api_key", "").strip()
         base_url = getattr(settings, "openai_base_url", "https://api.openai.com/v1")
-        # In test/dev without API key, fallback cleanly to mock if unconfigured
         if not api_key:
-            return MockProviderAdapter()
+            if settings.environment in (EnvironmentType.TEST, EnvironmentType.DEVELOPMENT) and getattr(
+                settings, "allow_mock_providers", False
+            ):
+                return MockProviderAdapter()
+            raise ProviderConfigurationError("Missing required OPENAI_API_KEY")
+        validate_provider_base_url(base_url, allow_local=False)
         return OpenAIProviderAdapter(api_key=api_key, base_url=base_url)
+
     elif norm_name == "anthropic":
-        api_key = getattr(settings, "anthropic_api_key", "")
+        api_key = getattr(settings, "anthropic_api_key", "").strip()
         base_url = getattr(settings, "anthropic_base_url", "https://api.anthropic.com/v1")
         if not api_key:
-            return MockProviderAdapter()
+            if settings.environment in (EnvironmentType.TEST, EnvironmentType.DEVELOPMENT) and getattr(
+                settings, "allow_mock_providers", False
+            ):
+                return MockProviderAdapter()
+            raise ProviderConfigurationError("Missing required ANTHROPIC_API_KEY")
+        validate_provider_base_url(base_url, allow_local=False)
         return AnthropicProviderAdapter(api_key=api_key, base_url=base_url)
+
     elif norm_name == "google":
-        api_key = getattr(settings, "gemini_api_key", "")
+        api_key = getattr(settings, "gemini_api_key", "").strip()
         base_url = getattr(settings, "gemini_base_url", "https://generativelanguage.googleapis.com/v1beta")
         if not api_key:
-            return MockProviderAdapter()
+            if settings.environment in (EnvironmentType.TEST, EnvironmentType.DEVELOPMENT) and getattr(
+                settings, "allow_mock_providers", False
+            ):
+                return MockProviderAdapter()
+            raise ProviderConfigurationError("Missing required GEMINI_API_KEY")
+        validate_provider_base_url(base_url, allow_local=False)
         return GeminiProviderAdapter(api_key=api_key, base_url=base_url)
+
+    elif norm_name == "groq":
+        api_key = getattr(settings, "groq_api_key", "").strip()
+        base_url = getattr(settings, "llm_upstream_url", "https://api.groq.com/openai/v1")
+        if not api_key:
+            if settings.environment in (EnvironmentType.TEST, EnvironmentType.DEVELOPMENT) and getattr(
+                settings, "allow_mock_providers", False
+            ):
+                return MockProviderAdapter()
+            raise ProviderConfigurationError("Missing required GROQ_API_KEY")
+        validate_provider_base_url(base_url, allow_local=False)
+        return GroqProviderAdapter(api_key=api_key, base_url=base_url)
+
     elif norm_name == "ollama":
         base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
+        validate_provider_base_url(base_url, allow_local=True)
         return OllamaProviderAdapter(base_url=base_url)
+
     else:
-        # Default fallback: return mock adapter rather than failing silently
-        return MockProviderAdapter()
+        raise ProviderConfigurationError(f"Unknown or unsupported provider: '{provider_name}'")

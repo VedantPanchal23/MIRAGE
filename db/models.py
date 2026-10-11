@@ -683,6 +683,10 @@ class ModelRegistryRecord(Base):
     is_zero_retention: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     reliability_index: Mapped[float] = mapped_column(Float, default=0.85, nullable=False)
     expected_latency_ms: Mapped[float] = mapped_column(Float, default=800.0, nullable=False)
+    deployment_type: Mapped[str] = mapped_column(String(64), default="cloud_shared", nullable=False)
+    privacy_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    privacy_policy_version: Mapped[str | None] = mapped_column(String(32), default="v1.0", nullable=True)
+    endpoint_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
@@ -696,6 +700,7 @@ class ModelPricingProfileRecord(Base):
     """Versioned pricing profile for a registered AI model."""
 
     __tablename__ = "model_pricing_profiles"
+    __table_args__ = (UniqueConstraint("model_id", "effective_date", name="uq_model_pricing_model_effective"),)
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     model_id: Mapped[str] = mapped_column(
@@ -752,6 +757,9 @@ class BudgetReservationRecord(Base):
     reservation_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     amount_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="RESERVED", nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    selected_provider: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    selected_model: Mapped[str | None] = mapped_column(String(128), nullable=True)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
@@ -763,12 +771,18 @@ class TransactionCostRecord(Base):
     """Itemized audit record of durable billable cost incurred by an AI Transaction."""
 
     __tablename__ = "transaction_cost_records"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "transaction_id", "attempt_number", name="uq_transaction_cost_idempotency"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
     )
     transaction_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    pricing_profile_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     model_id: Mapped[str] = mapped_column(String(128), nullable=False)
     provider: Mapped[str] = mapped_column(String(64), nullable=False)
     prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)

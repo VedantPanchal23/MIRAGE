@@ -177,12 +177,32 @@ class Settings(BaseSettings):
     otel_service_name: str = Field(default="mirage-gateway")
 
     # --------------------------------------------------------------------------
-    # External LLM Providers (Zero-cost free tiers)
+    # External LLM Providers (Zero-cost free tiers & Enterprise endpoints)
     # --------------------------------------------------------------------------
     groq_api_key: str = Field(default="")
     openrouter_api_key: str = Field(default="")
     huggingface_api_key: str = Field(default="")
     llm_upstream_url: str = Field(default="https://api.groq.com/openai/v1")
+    openai_api_key: str = Field(default="")
+    openai_base_url: str = Field(default="https://api.openai.com/v1")
+    anthropic_api_key: str = Field(default="")
+    anthropic_base_url: str = Field(default="https://api.anthropic.com/v1")
+    gemini_api_key: str = Field(default="")
+    gemini_base_url: str = Field(default="https://generativelanguage.googleapis.com/v1beta")
+    ollama_base_url: str = Field(default="http://localhost:11434")
+    allow_mock_providers: bool | None = Field(default=None)
+
+    @field_validator("allow_mock_providers")
+    @classmethod
+    def reject_mock_providers_in_production(cls, v: bool | None, info: ValidationInfo) -> bool:
+        """Forbid mock providers in production environment; default to False in prod, True in dev/test."""
+        env = info.data.get("environment")
+        if env == EnvironmentType.PRODUCTION:
+            if v is True:
+                raise ValueError("ALLOW_MOCK_PROVIDERS is strictly prohibited in production mode")
+            return False
+        return True if v is None else v
+
 
     # --------------------------------------------------------------------------
     # Model Thresholds & Parameters

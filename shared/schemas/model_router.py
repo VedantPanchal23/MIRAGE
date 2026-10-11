@@ -41,6 +41,19 @@ class ModelCapabilityProfile(BaseModel):
     is_zero_retention: bool = Field(
         default=False, description="Whether endpoint guarantees zero data retention (HIPAA/BAA)"
     )
+    deployment_type: str = Field(
+        default="cloud_shared",
+        description="Deployment model: cloud_shared, cloud_dedicated_vpc, on_prem_local, air_gapped",
+    )
+    privacy_verified_at: datetime | None = Field(
+        default=None, description="Timestamp of cryptographic or audit privacy attestation"
+    )
+    privacy_policy_version: str | None = Field(
+        default="v1.0", description="Privacy policy or BAA agreement version"
+    )
+    endpoint_url: str | None = Field(
+        default=None, description="Explicit execution endpoint URL"
+    )
     reliability_index: float = Field(
         default=0.85, ge=0.0, le=1.0, description="Historical accuracy and calibration score"
     )
@@ -119,5 +132,7 @@ class RoutingDecision(BaseModel):
         default_factory=list, description="Explainable audit of rejected models"
     )
     decision_hash: str = Field(..., description="Cryptographic SHA-256 hash of routing decision inputs and output")
+    pricing_profile_id: str = Field(default="", description="ID of authoritative active pricing profile used")
     reason: str = Field(..., description="Explanation of why this model was chosen")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+

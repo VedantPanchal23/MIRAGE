@@ -658,11 +658,11 @@ class TestNotaryTrustHardening:
             s = MagicMock()
             s.environment = EnvironmentType.PRODUCTION
             s.allow_dev_notary_keys = False
-            s.notary_keys_json = json.dumps({"notary:custom_signer": "my-secret-key-32b-length-here!"})
+            s.notary_keys_json = json.dumps({"notary:custom_signer": "my-secret-key-32b-length-here!32"})
             mock_settings.return_value = s
 
             reg = NotaryKeyRegistry()
-            assert reg.get_key("notary:custom_signer") == b"my-secret-key-32b-length-here!"
+            assert reg.get_key("notary:custom_signer") == b"my-secret-key-32b-length-here!32"
             assert reg.get_key("notary:system_primary") is None
 
     def test_settings_validator_rejects_dev_notary_keys_in_production(self) -> None:
@@ -841,7 +841,7 @@ class TestDurableCheckpointPersistence:
         )
 
         assert contract.outcome_id == outcome_id
-        assert contract.trust_assurance_level == TrustAssuranceLevel.EXTERNALLY_ANCHORED.value
+        assert contract.trust_assurance_level == TrustAssuranceLevel.LOCAL_UNANCHORED.value
         # Checkpoint is now cached in memory
         assert chk_hash in checkpoint_reg._checkpoints[tid]
 
@@ -1021,7 +1021,7 @@ class TestControlPlaneAuthorization:
         secret_key = b"mirage-default-notary-secret-key-32b!"
         reality_verifier_service.checkpoint_registry.notary_keys.register_key(signer_id, secret_key)
 
-        chk_hash = "f" * 64
+        chk_hash = GENESIS_ROOT_HASH
         now = datetime.now(UTC)
         now_iso = now.isoformat()
 

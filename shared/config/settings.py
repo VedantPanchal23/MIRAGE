@@ -128,6 +128,29 @@ class Settings(BaseSettings):
             raise ValueError("DEMO_AUTH_ENABLED is prohibited in production")
         return v
 
+    @field_validator("notary_keys_json")
+    @classmethod
+    def validate_notary_keys_json_format(cls, v: str | None, _info: ValidationInfo) -> str | None:
+        """Validate notary keys JSON formatting and contents."""
+        if v is None or not v.strip():
+            return None
+        import json
+
+        try:
+            parsed = json.loads(v)
+        except Exception as exc:
+            raise ValueError(f"Invalid NOTARY_KEYS_JSON format: {exc}") from exc
+        if not isinstance(parsed, dict):
+            raise ValueError("NOTARY_KEYS_JSON must be a JSON object mapping signer_identity to secret key")
+        for signer, key in parsed.items():
+            if not isinstance(signer, str) or not signer.strip():
+                raise ValueError("Signer identity in NOTARY_KEYS_JSON must be a non-empty string")
+            if not isinstance(key, str) or len(key.strip()) < 32:
+                raise ValueError(
+                    f"Notary key for '{signer}' in NOTARY_KEYS_JSON must be at least 32 characters (256 bits)"
+                )
+        return v
+
     @field_validator("allow_dev_notary_keys")
     @classmethod
     def reject_dev_notary_keys_in_production(cls, v: bool | None, info: ValidationInfo) -> bool:

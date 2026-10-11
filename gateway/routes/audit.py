@@ -44,25 +44,79 @@ class NLQueryRequest(BaseModel):
 async def verify_audit_chain(
     tenant_id: str = Depends(require_permission(Permission.AUDIT_READ)),
 ) -> dict[str, Any]:
-    """Verify the cryptographic SHA-256 hash chain across all audit logs for the calling tenant."""
-    try:
-        res = await AuditService.verify_audit_hash_chain_authoritative(tenant_id=tenant_id)
-        if res.get("chain_status") != "EMPTY" or not res.get("valid"):
-            return res
-    except Exception as exc:
-        logger.warning("PostgreSQL audit chain check unavailable, falling back to local store", error=str(exc))
+    """Verify the cryptographic SHA-256 hash chain across all audit logs for the calling tenant.
 
-    return AuditService.verify_audit_hash_chain(tenant_id=tenant_id)
+    Fails closed: Authoritative PostgreSQL verification is required.
+    Does NOT fall back to in-memory/local stores on DB failure or unavailability.
+    """
+    try:
+        return await AuditService.verify_audit_hash_chain_authoritative(tenant_id=tenant_id)
+    except Exception as exc:
+        logger.error("Authoritative PostgreSQL audit chain verification failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Authoritative audit chain verification unavailable: {exc}",
+        ) from exc
+
+
+@router.get("/diagnostics/local-chain")
+async def get_diagnostic_local_chain(
+    tenant_id: str = Depends(require_permission(Permission.AUDIT_READ)),
+) -> dict[str, Any]:
+    """Diagnostic-only check of process-local in-memory audit store.
+
+    Explicitly labeled: Does NOT satisfy authoritative compliance or Gate 5 verification requirements.
+    """
+    res = AuditService.verify_audit_hash_chain(tenant_id=tenant_id)
+    return {
+        **res,
+        "source": "local_diagnostic_store",
+        "assurance_level": "DIAGNOSTIC_ONLY",
+        "authoritative": False,
+        "warning": "This result reflects process-local memory only and is NOT authoritative.",
+    }
 
 
 @router.get("/report/{session_id}")
 async def get_compliance_report(
     session_id: str,
-    _tenant_id: str = Depends(require_permission(Permission.AUDIT_READ)),
+    tenant_id: str = Depends(require_permission(Permission.AUDIT_READ)),
 ) -> dict[str, Any]:
-    """Generate a compliance verification certificate and report for an inspected session."""
-    report = AuditService.generate_compliance_report(session_id=session_id)
-    return report
+    """Generate a compliance verification certificate and report for an inspected session.
+
+    Fails closed: Requires real session in PostgreSQL. Never generates dummy certificates.
+    """
+    from db.persistence import default_persistence_service
+
+    session_record, claims_records = await default_persistence_service.get_session_with_claims(
+        tenant_id=tenant_id, session_id=session_id
+    )
+    if not session_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found for tenant '{tenant_id}'",
+        )
+
+    session_data = {
+        "session_id": session_record.session_id,
+        "tenant_id": session_record.tenant_id,
+        "model_id": session_record.model_id,
+        "timestamp": session_record.created_at.isoformat() if session_record.created_at else "",
+        "hrs_score": session_record.hrs_score,
+        "risk_tier": session_record.risk_tier,
+        "correction_applied": session_record.correction_applied,
+        "claims": [
+            {
+                "claim_id": c.id,
+                "text": c.claim_text,
+                "status": c.status,
+                "risk_score": c.risk_score,
+            }
+            for c in claims_records
+        ],
+        "signal_attribution": claims_records[0].signal_attribution if claims_records else {},
+    }
+    return AuditService.generate_compliance_report(session_id=session_id, session_data=session_data)
 
 
 @router.get("/report/{session_id}/pdf")
@@ -70,43 +124,43 @@ async def get_compliance_report_pdf(
     session_id: str,
     tenant_id: str = Depends(require_permission(Permission.AUDIT_READ)),
 ) -> Response:
-    """Generate and stream a single-session compliance verification certificate as PDF."""
+    """Generate and stream a single-session compliance verification certificate as PDF.
+
+    Fails closed: Requires real session in PostgreSQL. Never generates dummy PDF certificates.
+    """
     from analytics.pdf_service import default_pdf_generator
-    from db.models import ClaimRecord, VerificationSession
     from db.persistence import default_persistence_service
 
-    session_record: VerificationSession | None = None
-    claims_records: list[ClaimRecord] = []
-    try:
-        session_record, claims_records = await default_persistence_service.get_session_with_claims(
-            tenant_id=tenant_id, session_id=session_id
+    session_record, claims_records = await default_persistence_service.get_session_with_claims(
+        tenant_id=tenant_id, session_id=session_id
+    )
+    if not session_record:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Session '{session_id}' not found for tenant '{tenant_id}'",
         )
-    except Exception as exc:
-        logger.warning("Postgres lookup for session certificate fallback", error=str(exc))
 
-    if session_record:
-        session_data = {
-            "session_id": session_record.session_id,
-            "tenant_id": session_record.tenant_id,
-            "model_id": session_record.model_id,
-            "timestamp": session_record.created_at.isoformat() if session_record.created_at else "",
-            "hrs_score": session_record.hrs_score,
-            "risk_tier": session_record.risk_tier,
-            "correction_applied": session_record.correction_applied,
-            "claims": [
-                {
-                    "text": c.claim_text,
-                    "status": c.status,
-                    "risk_score": c.risk_score,
-                }
-                for c in claims_records
-            ],
-            "signal_attribution": claims_records[0].signal_attribution if claims_records else {},
-        }
-    else:
-        session_data = AuditService.generate_compliance_report(session_id=session_id)
-
-    pdf_bytes = default_pdf_generator.generate_session_certificate_pdf(session_data)
+    session_data = {
+        "session_id": session_record.session_id,
+        "tenant_id": session_record.tenant_id,
+        "model_id": session_record.model_id,
+        "timestamp": session_record.created_at.isoformat() if session_record.created_at else "",
+        "hrs_score": session_record.hrs_score,
+        "risk_tier": session_record.risk_tier,
+        "correction_applied": session_record.correction_applied,
+        "claims": [
+            {
+                "claim_id": c.id,
+                "text": c.claim_text,
+                "status": c.status,
+                "risk_score": c.risk_score,
+            }
+            for c in claims_records
+        ],
+        "signal_attribution": claims_records[0].signal_attribution if claims_records else {},
+    }
+    report_data = AuditService.generate_compliance_report(session_id=session_id, session_data=session_data)
+    pdf_bytes = default_pdf_generator.generate_session_certificate_pdf(report_data["session"])
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -118,15 +172,18 @@ async def get_compliance_report_pdf(
 async def export_tenant_audit_logs(
     tenant_id: str = Depends(require_permission(Permission.AUDIT_EXPORT)),
 ) -> Response:
-    """Export all audit logs and verification records for tenant in JSON Lines format (GDPR Art. 20)."""
-    lines: list[str] = []
+    """Export all audit logs and verification records for tenant in JSON Lines format (GDPR Art. 20).
+
+    Fails closed: Authoritative PostgreSQL export is required. No local mock fallback.
+    """
     try:
         lines = await AuditService.export_tenant_data_jsonl_authoritative(tenant_id=tenant_id)
     except Exception as exc:
-        logger.warning("PostgreSQL export query failed, checking local store", error=str(exc))
-
-    if not lines:
-        lines = AuditService.export_tenant_data_jsonl(tenant_id=tenant_id)
+        logger.error("Authoritative export query failed", error=str(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Authoritative audit export unavailable: {exc}",
+        ) from exc
 
     jsonl_content = "\n".join(lines)
     return Response(
@@ -160,7 +217,7 @@ class RegisterCheckpointRequest(BaseModel):
     ledger_identity: str = Field(default="audit_logs")
     signer_identity: str = Field(..., description="Identifier of authorized notary signer")
     signature: str = Field(..., description="Cryptographic HMAC-SHA256 signature")
-    trust_tier: str = Field(default="EXTERNALLY_ANCHORED")
+    trust_tier: str = Field(default="LOCAL_UNANCHORED")
     issued_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime | None = None
 
@@ -185,12 +242,37 @@ async def register_audit_checkpoint(
             ),
         )
 
+    # External witness anchoring is unsupported without independent external witness evidence
+    if request.trust_tier == "EXTERNALLY_ANCHORED":
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "External witness attestation (EXTERNALLY_ANCHORED) is currently unsupported; "
+                "internal HMAC notarization provides LOCAL_UNANCHORED assurance only."
+            ),
+        )
+
     # Validate hash format
     if not is_valid_sha256_hex(request.checkpoint_hash):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid checkpoint hash format: '{request.checkpoint_hash}'",
         )
+
+    # Validate sequence 0 is reserved strictly for genesis sentinel
+    from shared.schemas.audit import GENESIS_ROOT_HASH
+
+    if request.sequence_number == 0 and request.checkpoint_hash.lower() != GENESIS_ROOT_HASH:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Sequence number 0 is reserved strictly for genesis sentinel root hash.",
+        )
+
+    derived_tier = (
+        TrustAssuranceLevel.GENESIS_SENTINEL.value
+        if request.sequence_number == 0
+        else TrustAssuranceLevel.LOCAL_UNANCHORED.value
+    )
 
     # Validate notary signature
     key_bytes = reality_verifier_service.checkpoint_registry.notary_keys.get_key(request.signer_identity)
@@ -253,7 +335,7 @@ async def register_audit_checkpoint(
                 ledger_identity=request.ledger_identity,
                 signer_identity=request.signer_identity,
                 signature=request.signature,
-                trust_tier=request.trust_tier,
+                trust_tier=derived_tier,
                 revoked=False,
                 issued_at=request.issued_at,
                 expires_at=request.expires_at,
@@ -266,7 +348,7 @@ async def register_audit_checkpoint(
                     "ledger_identity": request.ledger_identity,
                     "signer_identity": request.signer_identity,
                     "signature": request.signature,
-                    "trust_tier": request.trust_tier,
+                    "trust_tier": derived_tier,
                     "revoked": False,
                     "issued_at": request.issued_at,
                     "expires_at": request.expires_at,
@@ -284,7 +366,7 @@ async def register_audit_checkpoint(
         ledger_identity=request.ledger_identity,
         signer_identity=request.signer_identity,
         signature=request.signature,
-        trust_tier=TrustAssuranceLevel.EXTERNALLY_ANCHORED,
+        trust_tier=TrustAssuranceLevel(derived_tier),
         issued_at=request.issued_at,
         expires_at=request.expires_at,
     )
@@ -297,7 +379,7 @@ async def register_audit_checkpoint(
         "checkpoint_hash": request.checkpoint_hash,
         "sequence_number": request.sequence_number,
         "signer_identity": request.signer_identity,
-        "trust_tier": request.trust_tier,
+        "trust_tier": derived_tier,
     }
 
 
@@ -334,7 +416,7 @@ async def revoke_audit_checkpoint(
             )
         )
         res = await session.execute(stmt)
-        if res.rowcount == 0:
+        if getattr(res, "rowcount", 0) == 0:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
                 detail=f"Checkpoint '{h}' not found for tenant '{auth.tenant_id}'",

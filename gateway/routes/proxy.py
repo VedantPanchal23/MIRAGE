@@ -6,7 +6,6 @@ from typing import Annotated, Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-
 from pybreaker import CircuitBreakerError
 
 from gateway.middleware.auth import get_current_tenant

@@ -51,11 +51,11 @@ class AuditService:
 
         if not chain:
             return {
-                "valid": True,
+                "valid": False,
                 "tenant_id": tenant_id,
                 "total_records_verified": 0,
                 "chain_status": "EMPTY",
-                "message": "No audit records found for tenant.",
+                "message": "No audit records found for tenant; ledger is empty.",
             }
 
         prev_hash = "0" * 64
@@ -79,6 +79,7 @@ class AuditService:
                 return {
                     "valid": False,
                     "tenant_id": tenant_id,
+                    "chain_status": "TAMPERED",
                     "tampered_at_index": idx,
                     "session_id": session_id,
                     "error": "Broken hash link to previous audit block",
@@ -99,6 +100,7 @@ class AuditService:
                 return {
                     "valid": False,
                     "tenant_id": tenant_id,
+                    "chain_status": "TAMPERED",
                     "tampered_at_index": idx,
                     "session_id": session_id,
                     "error": "Cryptographic payload hash does not match stored hash chain (tamper detected)",
@@ -117,23 +119,16 @@ class AuditService:
 
     @classmethod
     def generate_compliance_report(cls, session_id: str, session_data: dict[str, Any] | None = None) -> dict[str, Any]:
-        """Generate formal, exportable compliance audit report (PRD FR-AUD-02)."""
+        """Generate formal, exportable compliance audit report (PRD FR-AUD-02).
+
+        Fails closed: Authoritative session_data must be provided. Dummy data is prohibited.
+        """
+        if session_data is None:
+            raise ValueError(
+                f"Authoritative session_data is mandatory to generate a compliance report for session '{session_id}'"
+            )
         now = datetime.now(UTC).isoformat()
-        data = session_data or {
-            "session_id": session_id,
-            "tenant_id": "default_tenant",
-            "model_id": "llama-3.1-70b-versatile",
-            "timestamp": now,
-            "hrs_score": 0.044,
-            "risk_tier": "LOW",
-            "ci_lower": 0.012,
-            "ci_upper": 0.088,
-            "claims_count": 2,
-            "contradicted_count": 0,
-            "correction_applied": False,
-            "claims": [{"claim_id": "c_01", "status": "SUPPORTED", "text": "Sample factual assertion."}],
-            "signal_attribution": {"rav": 0.02, "scs": 0.01, "nli": 0.01, "ics": 0.00},
-        }
+        data = session_data
 
         # Calculate cryptographic certificate signature
         signature_raw = f"{session_id}:{data.get('hrs_score')}:{data.get('risk_tier')}:{now}"

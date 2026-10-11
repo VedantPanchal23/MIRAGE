@@ -120,6 +120,32 @@ class PostgresPersistenceService:
 
             # 2. Pre-Commit Phase: Lock, Inserts, Chaining, Flush
             try:
+                # Detect PostgreSQL dialect unambiguously
+                is_postgres = False
+                bind = getattr(session, "bind", None)
+                if (
+                    bind is not None
+                    and hasattr(bind, "dialect")
+                    and getattr(bind.dialect, "name", None) == "postgresql"
+                ):
+                    is_postgres = True
+                else:
+                    sync_session = getattr(session, "sync_session", None)
+                    sync_bind = getattr(sync_session, "bind", None) if sync_session is not None else None
+                    if (
+                        sync_bind is not None
+                        and hasattr(sync_bind, "dialect")
+                        and getattr(sync_bind.dialect, "name", None) == "postgresql"
+                    ):
+                        is_postgres = True
+
+                # Transaction-scoped PostgreSQL advisory lock serializes all writers for this tenant
+                if is_postgres:
+                    await session.execute(
+                        text("SELECT pg_advisory_xact_lock(hashtext('tenant_audit_ledger:' || :tenant_id))"),
+                        {"tenant_id": tenant_id},
+                    )
+
                 # Lock tenant row to serialize concurrent audit writes for this tenant
                 await self.ensure_tenant_exists(session, tenant_id)
 
@@ -224,18 +250,24 @@ class PostgresPersistenceService:
                     ledger_stmt = (
                         select(TenantAuditLedger)
                         .where(TenantAuditLedger.tenant_id == tenant_id)
-                        .with_for_update()
                     )
+                    if is_postgres:
+                        ledger_stmt = ledger_stmt.with_for_update()
                     ledger_res = await session.execute(ledger_stmt)
                     ledger_head_row = ledger_res.scalar_one_or_none()
                 except Exception:
                     ledger_head_row = None
 
+                if is_postgres and ledger_head_row is None:
+                    raise DefinitivePostgresPersistenceError(
+                        "Critical ledger invariant violation: "
+                        f"tenant_audit_ledgers row missing for tenant '{tenant_id}'."
+                    )
+
                 if isinstance(ledger_head_row, TenantAuditLedger):
                     prev_hash = ledger_head_row.head_chain_hash or ("0" * 64)
                     new_seq = (ledger_head_row.sequence_number or 0) + 1
                 else:
-                    # Query latest audit record under tenant lock
                     latest_audit_stmt = (
                         select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
                         .where(AuditLogRecord.tenant_id == tenant_id)
@@ -490,11 +522,11 @@ class PostgresPersistenceService:
 
             if not records:
                 return {
-                    "valid": True,
+                    "valid": False,
                     "tenant_id": tenant_id,
                     "total_records_verified": 0,
                     "chain_status": "EMPTY",
-                    "message": "No audit records found in database for tenant.",
+                    "message": "No audit records found in database for tenant; ledger is empty.",
                 }
 
             prev_hash = "0" * 64
@@ -503,6 +535,7 @@ class PostgresPersistenceService:
                     return {
                         "valid": False,
                         "tenant_id": tenant_id,
+                        "chain_status": "TAMPERED",
                         "tampered_at_index": idx,
                         "session_id": rec.session_id,
                         "error": "Broken hash link to previous audit block",
@@ -516,6 +549,7 @@ class PostgresPersistenceService:
                     return {
                         "valid": False,
                         "tenant_id": tenant_id,
+                        "chain_status": "TAMPERED",
                         "tampered_at_index": idx,
                         "session_id": rec.session_id,
                         "error": "Cryptographic payload hash mismatch (tamper detected)",

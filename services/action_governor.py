@@ -194,12 +194,15 @@ async def _record_action_audit_event(
     payload: dict[str, Any] | None = None,
 ) -> None:
     latest = await session.execute(
-        select(AuditLogRecord.chain_hash)
+        select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
         .where(AuditLogRecord.tenant_id == tenant_id)
         .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
         .limit(1)
     )
-    prev_hash = latest.scalar_one_or_none() or "0" * 64
+    latest_row = latest.first()
+    prev_hash = latest_row[0] if latest_row and latest_row[0] is not None else ("0" * 64)
+    prev_seq = latest_row[1] if latest_row and len(latest_row) > 1 and latest_row[1] is not None else 0
+    seq = prev_seq + 1
     now = datetime.now(UTC)
     entry_id = f"aud_{uuid.uuid4().hex}"
     chain_payload = f"{prev_hash}:{entry_id}:{event_type}:{decision or ''}:{now.isoformat()}"
@@ -209,6 +212,7 @@ async def _record_action_audit_event(
         AuditLogRecord(
             entry_id=entry_id,
             tenant_id=tenant_id,
+            sequence_number=seq,
             session_id=transaction_id or "action-governance",
             trace_id="action-governor",
             prompt_hash=compute_sha256(""),

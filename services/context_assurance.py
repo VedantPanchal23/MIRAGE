@@ -86,12 +86,15 @@ async def _append_audit(
 ) -> None:
     """Append context decision to cryptographic audit chain."""
     latest = await session.execute(
-        select(AuditLogRecord.chain_hash)
+        select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
         .where(AuditLogRecord.tenant_id == tenant_id)
         .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
         .limit(1)
     )
-    prev_hash = latest.scalar_one_or_none() or "0" * 64
+    latest_row = latest.first()
+    prev_hash = latest_row[0] if latest_row and latest_row[0] is not None else ("0" * 64)
+    prev_seq = latest_row[1] if latest_row and len(latest_row) > 1 and latest_row[1] is not None else 0
+    seq = prev_seq + 1
     now = datetime.now(UTC)
     entry_id = f"aud_{uuid.uuid4().hex}"
     chain_hash = compute_sha256(f"{prev_hash}:{entry_id}:{decision}:{now.isoformat()}")
@@ -99,6 +102,7 @@ async def _append_audit(
         AuditLogRecord(
             entry_id=entry_id,
             tenant_id=tenant_id,
+            sequence_number=seq,
             session_id=session_id,
             trace_id="context-assurance",
             prompt_hash=compute_sha256(""),

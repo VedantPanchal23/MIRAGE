@@ -92,7 +92,7 @@ def _claims_from_access_token(
     subject = payload.get("sub")
     if not isinstance(subject, str) or not subject:
         raise _unauthorized("Token is missing mandatory identity claims")
-    return cast(dict[str, Any], payload)
+    return payload
 
 
 async def _context_from_result(result: Any, token_type: str) -> AuthContext | None:

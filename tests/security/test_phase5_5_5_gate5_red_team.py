@@ -503,7 +503,7 @@ class TestCheckpointTrustModel:
             ledger_identity="audit_logs",
             signer_identity="notary:eu_central_root",
             signature=sig,
-            trust_tier=TrustAssuranceLevel.EXTERNALLY_ANCHORED,
+            trust_tier=TrustAssuranceLevel.LOCAL_UNANCHORED,
             issued_at=now,
         )
 
@@ -512,7 +512,7 @@ class TestCheckpointTrustModel:
 
         is_trusted, tier, retrieved_cp = registry.evaluate_trust_level(t_id, c_hash)
         assert is_trusted is True
-        assert tier == TrustAssuranceLevel.EXTERNALLY_ANCHORED
+        assert tier == TrustAssuranceLevel.LOCAL_UNANCHORED
         assert retrieved_cp is not None
         assert retrieved_cp.sequence_number == 42
 
@@ -545,7 +545,7 @@ class TestCheckpointTrustModel:
             ledger_identity="audit_logs",
             signer_identity="notary:us_east",
             signature=sig,
-            trust_tier=TrustAssuranceLevel.EXTERNALLY_ANCHORED,
+            trust_tier=TrustAssuranceLevel.LOCAL_UNANCHORED,
             issued_at=now,
         )
 

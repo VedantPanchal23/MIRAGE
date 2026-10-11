@@ -3,7 +3,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -292,7 +292,7 @@ class AuditLogRecord(Base):
 
     entry_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
-    sequence_number: Mapped[int | None] = mapped_column(BigInteger, default=None, nullable=True)
+    sequence_number: Mapped[int] = mapped_column(BigInteger, nullable=False, server_default=text("1"), default=1)
     session_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     trace_id: Mapped[str] = mapped_column(String(64), nullable=False)
     prompt_hash: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -354,7 +354,7 @@ class AuditCheckpointRecord(Base):
     ledger_identity: Mapped[str] = mapped_column(String(64), default="audit_logs", nullable=False)
     signer_identity: Mapped[str] = mapped_column(String(128), nullable=False)
     signature: Mapped[str] = mapped_column(String(256), nullable=False)
-    trust_tier: Mapped[str] = mapped_column(String(32), default="LOCAL_CHECKPOINT", nullable=False)
+    trust_tier: Mapped[str] = mapped_column(String(32), default="LOCAL_UNANCHORED", nullable=False)
     revoked: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_by: Mapped[str | None] = mapped_column(String(128), nullable=True)

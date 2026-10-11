@@ -9,7 +9,16 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 
 from db import session as db_session
-from db.models import ActionContract, Agent, AITransaction, AuditLogRecord, Budget, Capability, OutputAssuranceRecord, Policy
+from db.models import (
+    ActionContract,
+    Agent,
+    AITransaction,
+    AuditLogRecord,
+    Budget,
+    Capability,
+    OutputAssuranceRecord,
+    Policy,
+)
 from shared.schemas.audit import compute_sha256
 from shared.schemas.auth import AuthContext
 from shared.schemas.control_plane import (
@@ -251,12 +260,15 @@ async def _append_audit(
 ) -> None:
     """Append control-plane decisions to the existing tenant hash chain."""
     latest = await session.execute(
-        select(AuditLogRecord.chain_hash)
+        select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
         .where(AuditLogRecord.tenant_id == tenant_id)
         .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
         .limit(1)
     )
-    prev_hash = latest.scalar_one_or_none() or "0" * 64
+    latest_row = latest.first()
+    prev_hash = latest_row[0] if latest_row and latest_row[0] is not None else ("0" * 64)
+    prev_seq = latest_row[1] if latest_row and len(latest_row) > 1 and latest_row[1] is not None else 0
+    seq = prev_seq + 1
     now = datetime.now(UTC)
     entry_id = f"aud_{uuid.uuid4().hex}"
     chain_hash = compute_sha256(f"{prev_hash}:{entry_id}:{decision}:{now.isoformat()}")
@@ -264,6 +276,7 @@ async def _append_audit(
         AuditLogRecord(
             entry_id=entry_id,
             tenant_id=tenant_id,
+            sequence_number=seq,
             session_id=transaction_id,
             trace_id="control-plane",
             prompt_hash=compute_sha256(""),
@@ -447,8 +460,9 @@ async def transition_transaction(
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
                         detail=(
-                            f"Cannot complete transaction: Output assurance is stale. Action '{post_action.id}' "
-                            f"was modified after output was evaluated ({post_action.updated_at} > {out_rec.created_at})."
+                            "Cannot complete transaction: Output assurance is stale. "
+                            f"Action '{post_action.id}' was modified after output was evaluated "
+                            f"({post_action.updated_at} > {out_rec.created_at})."
                         ),
                     )
         record.state = request.target_state.value

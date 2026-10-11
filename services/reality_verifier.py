@@ -32,7 +32,7 @@ from db.models import (
     OutcomeVerificationRecord,
     TenantAuditLedger,
 )
-from shared.config import get_settings
+from shared.config import EnvironmentType, get_settings
 from shared.logging import get_logger
 from shared.schemas.action import ActionState
 from shared.schemas.audit import (
@@ -1570,27 +1570,26 @@ class RealityVerifierService:
                 session.add(record)
 
             # 13. Audit Trail Recording with PostgreSQL engine serialization and row locking
+            app_settings = get_settings()
             ledger_head_row = None
             is_live_postgres = False
-            try:
-                bind = getattr(session, "bind", None)
+            bind = getattr(session, "bind", None)
+            if bind is not None and hasattr(bind, "dialect") and getattr(bind.dialect, "name", None) == "postgresql":
+                is_live_postgres = True
+            else:
+                sync_session = getattr(session, "sync_session", None)
+                sync_bind = getattr(sync_session, "bind", None) if sync_session is not None else None
                 if (
-                    bind is not None
-                    and hasattr(bind, "dialect")
-                    and getattr(bind.dialect, "name", None) == "postgresql"
+                    sync_bind is not None
+                    and hasattr(sync_bind, "dialect")
+                    and getattr(sync_bind.dialect, "name", None) == "postgresql"
                 ):
                     is_live_postgres = True
-                else:
-                    sync_session = getattr(session, "sync_session", None)
-                    sync_bind = getattr(sync_session, "bind", None) if sync_session is not None else None
-                    if (
-                        sync_bind is not None
-                        and hasattr(sync_bind, "dialect")
-                        and getattr(sync_bind.dialect, "name", None) == "postgresql"
-                    ):
-                        is_live_postgres = True
-            except Exception:
-                is_live_postgres = False
+
+            if app_settings.environment == EnvironmentType.PRODUCTION and not is_live_postgres:
+                raise RuntimeError(
+                    "Production invariant violation: authoritative audit ledger append requires PostgreSQL dialect"
+                )
 
             if is_live_postgres:
                 # A. Transaction-scoped PostgreSQL advisory lock serializes concurrent transactions per tenant
@@ -1621,18 +1620,17 @@ class RealityVerifierService:
                 )
                 ledger_res = await session.execute(ledger_head_stmt)
                 ledger_head_row = ledger_res.scalar_one_or_none()
-                if not ledger_head_row:
+                if ledger_head_row is None:
                     raise HTTPException(
                         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                         detail=f"Authoritative tenant audit ledger head missing for tenant '{auth.tenant_id}'",
                     )
 
-            if isinstance(ledger_head_row, TenantAuditLedger):
                 prev_chain_hash = ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH
                 current_seq = ledger_head_row.sequence_number or 0
                 new_sequence = current_seq + 1
             else:
-                # Fallback for unit test mocks where tenant_audit_ledgers table is not mocked
+                # Narrowly scoped fallback for non-PostgreSQL unit test mocks (e.g. SQLite in test env)
                 try:
                     latest_audit = await session.execute(
                         select(AuditLogRecord.chain_hash)

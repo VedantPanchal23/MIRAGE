@@ -90,6 +90,15 @@ async def get_tenant_session(tenant_id: str) -> AsyncGenerator[AsyncSession, Non
             yield session
 
 
+@asynccontextmanager
+async def get_system_session() -> AsyncGenerator[AsyncSession, None]:
+    """Yield an async SQLAlchemy session with system/superuser bypass context."""
+    async with AsyncSessionLocal() as session:
+        async with session.begin():
+            await session.execute(text("SELECT set_config('app.current_tenant_id', '', true)"))
+            yield session
+
+
 async def check_database_connection() -> bool:
     """Execute a lightweight SELECT 1 to verify database connectivity without leaking data."""
     try:

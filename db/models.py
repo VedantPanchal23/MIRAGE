@@ -666,4 +666,120 @@ class OutcomeVerificationRecord(Base):
     )
 
 
+class ModelRegistryRecord(Base):
+    """Authoritative registry record for an AI model and capability profile."""
+
+    __tablename__ = "model_registry"
+
+    id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    family: Mapped[str] = mapped_column(String(64), default="general", nullable=False)
+    tier: Mapped[str] = mapped_column(String(32), default="CAPABLE", nullable=False)
+    context_window: Mapped[int] = mapped_column(Integer, default=128000, nullable=False)
+    supports_tools: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    supports_vision: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    supports_structured_output: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    supports_system_prompt: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_zero_retention: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    reliability_index: Mapped[float] = mapped_column(Float, default=0.85, nullable=False)
+    expected_latency_ms: Mapped[float] = mapped_column(Float, default=800.0, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class ModelPricingProfileRecord(Base):
+    """Versioned pricing profile for a registered AI model."""
+
+    __tablename__ = "model_pricing_profiles"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    model_id: Mapped[str] = mapped_column(
+        String(128), ForeignKey("model_registry.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    effective_date: Mapped[str] = mapped_column(String(32), default="2026-01-01", nullable=False)
+    currency: Mapped[str] = mapped_column(String(16), default="USD", nullable=False)
+    input_cost_per_million_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    output_cost_per_million_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    cached_input_cost_per_million_micros: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class TenantBudgetRecord(Base):
+    """Authoritative tenant-level budget configuration, reserved funds, and spend ledger."""
+
+    __tablename__ = "tenant_budgets"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, unique=True, index=True
+    )
+    currency: Mapped[str] = mapped_column(String(16), default="USD", nullable=False)
+    total_budget_micros: Mapped[int] = mapped_column(BigInteger, default=100000000, nullable=False)
+    allocated_micros: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    reserved_micros: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    spent_micros: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    reset_period: Mapped[str] = mapped_column(String(32), default="MONTHLY", nullable=False)
+    reset_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    hard_limit: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+
+class BudgetReservationRecord(Base):
+    """Atomic preflight worst-case reservation bound to an AI Transaction."""
+
+    __tablename__ = "budget_reservations"
+    __table_args__ = (UniqueConstraint("tenant_id", "reservation_key", name="uq_budget_reservations_tenant_key"),)
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    transaction_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reservation_key: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    amount_micros: Mapped[int] = mapped_column(BigInteger, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="RESERVED", nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    settled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class TransactionCostRecord(Base):
+    """Itemized audit record of durable billable cost incurred by an AI Transaction."""
+
+    __tablename__ = "transaction_cost_records"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    transaction_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cached_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cost_micros: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
+    stage: Mapped[str] = mapped_column(String(64), default="PRIMARY_INFERENCE", nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+
+
+
 

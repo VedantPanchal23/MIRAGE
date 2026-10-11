@@ -21,6 +21,16 @@ from shared.schemas.audit import (
     verify_checkpoint_signature,
 )
 from shared.schemas.auth import ROLE_PERMISSIONS, AuthContext, Permission, Role
+from shared.schemas.budget import (
+    BudgetReservation,
+    BudgetReservationRequest,
+    BudgetResetPeriod,
+    BudgetSettlementRequest,
+    ReservationStatus,
+    TenantBudget,
+    TenantBudgetUpdateRequest,
+    TransactionCostRecordSchema,
+)
 from shared.schemas.claims import (
     CRITICALITY_WEIGHTS,
     Claim,
@@ -37,6 +47,15 @@ from shared.schemas.hrs import (
     RiskTier,
     SignalAttribution,
     determine_risk_tier,
+)
+from shared.schemas.model_router import (
+    CandidateExclusion,
+    ModelCapabilityProfile,
+    ModelFamily,
+    ModelTier,
+    PricingProfile,
+    RoutingDecision,
+    RoutingRequest,
 )
 from shared.schemas.outcome import (
     ObservabilityClass,
@@ -132,4 +151,19 @@ __all__ = [
     "OutcomeVerificationContract",
     "OutcomeReconciliationRequest",
     "OutcomeReconciliationResult",
+    "ModelTier",
+    "ModelFamily",
+    "ModelCapabilityProfile",
+    "PricingProfile",
+    "CandidateExclusion",
+    "RoutingRequest",
+    "RoutingDecision",
+    "BudgetResetPeriod",
+    "ReservationStatus",
+    "TenantBudget",
+    "TenantBudgetUpdateRequest",
+    "BudgetReservationRequest",
+    "BudgetReservation",
+    "BudgetSettlementRequest",
+    "TransactionCostRecordSchema",
 ]

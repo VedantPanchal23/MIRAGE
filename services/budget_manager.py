@@ -25,6 +25,7 @@ from db import session as db_session
 from db.models import (
     AccountingIncidentRecord,
     BudgetReservationRecord,
+    ProviderInvocationRecord,
     TenantBudgetRecord,
     TransactionCostRecord,
 )
@@ -96,7 +97,7 @@ class BudgetManagerService:
         details: dict[str, Any] | None = None,
     ) -> AccountingIncidentRecord:
         """Durable persistence for accounting anomalies, drift, and post-execution failures."""
-        async with db_session.get_system_session() as session:
+        async with db_session.get_tenant_session(tenant_id) as session:
             inc = AccountingIncidentRecord(
                 id=f"inc_{uuid.uuid4().hex[:16]}",
                 tenant_id=tenant_id,
@@ -120,6 +121,45 @@ class BudgetManagerService:
                 actual_micros=actual_micros,
             )
             return inc
+
+    async def record_provider_invocation(
+        self,
+        tenant_id: str,
+        transaction_id: str,
+        reservation_id: str | None,
+        attempt_number: int,
+        provider: str,
+        model_id: str,
+        status: str,
+        latency_ms: float | None = None,
+        prompt_tokens: int = 0,
+        completion_tokens: int = 0,
+        cached_tokens: int = 0,
+        cost_micros: int | None = None,
+        error_message: str | None = None,
+    ) -> ProviderInvocationRecord:
+        """Durable persistence of each downstream provider dispatch attempt."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            inv = ProviderInvocationRecord(
+                id=f"inv_{uuid.uuid4().hex[:16]}",
+                tenant_id=tenant_id,
+                transaction_id=transaction_id,
+                reservation_id=reservation_id,
+                attempt_number=attempt_number,
+                provider=provider,
+                model_id=model_id,
+                status=status,
+                latency_ms=latency_ms,
+                prompt_tokens=prompt_tokens,
+                completion_tokens=completion_tokens,
+                cached_tokens=cached_tokens,
+                cost_micros=cost_micros,
+                error_message=error_message,
+                created_at=datetime.now(UTC),
+            )
+            session.add(inv)
+            await session.commit()
+            return inv
 
     async def get_or_create_tenant_budget_record(
         self,
@@ -723,7 +763,7 @@ class BudgetManagerService:
 
         for res_id, tenant_id in expired_candidates:
             async with db_session.get_tenant_session(tenant_id) as session:
-                budget_rec = await self.get_or_create_tenant_budget_record(session, tenant_id)
+                # 1. Lock BudgetReservationRecord FIRST to maintain strict lock hierarchy
                 res_stmt = (
                     select(BudgetReservationRecord)
                     .where(
@@ -734,8 +774,11 @@ class BudgetManagerService:
                     .with_for_update()
                 )
                 res_rec = (await session.execute(res_stmt)).scalar_one_or_none()
-                if res_rec is None:
+                if res_rec is None or res_rec.status != ReservationStatus.RESERVED.value:
                     continue
+
+                # 2. Lock TenantBudgetRecord SECOND under established reservation lock
+                budget_rec = await self.get_or_create_tenant_budget_record(session, tenant_id)
 
                 if budget_rec.reserved_micros >= res_rec.amount_micros:
                     budget_rec.reserved_micros -= res_rec.amount_micros

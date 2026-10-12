@@ -236,6 +236,17 @@ async def chat_completions_proxy(
                 )
                 # Provider completed execution but returned unverifiable usage.
                 # Must NOT retry or fallback to prevent duplicate execution or side-effects.
+                await budget_manager_service.record_provider_invocation(
+                    tenant_id=tenant_id,
+                    transaction_id=trace_id,
+                    reservation_id=reservation.id,
+                    attempt_number=attempt_num,
+                    provider=cand_prov,
+                    model_id=cand_model,
+                    status="USAGE_REJECTED",
+                    latency_ms=prov_resp.latency_ms,
+                    error_message=str(pv_err),
+                )
                 await budget_manager_service.record_accounting_incident(
                     tenant_id=tenant_id,
                     reservation_id=reservation.id,
@@ -262,11 +273,34 @@ async def chat_completions_proxy(
             executed_attempt = attempt_num
             execution_successful = True
             await circuit_breaker_service.record_success(cand_prov, cand_model)
+            await budget_manager_service.record_provider_invocation(
+                tenant_id=tenant_id,
+                transaction_id=trace_id,
+                reservation_id=reservation.id,
+                attempt_number=attempt_num,
+                provider=cand_prov,
+                model_id=cand_model,
+                status="SUCCESS",
+                latency_ms=prov_resp.latency_ms,
+                prompt_tokens=p_toks,
+                completion_tokens=c_toks,
+                cached_tokens=ca_toks,
+            )
             break
         except HTTPException:
             raise
         except (ProviderError, ProviderConfigurationError, CircuitBreakerError, Exception) as p_exc:
             await circuit_breaker_service.record_failure(cand_prov, cand_model)
+            await budget_manager_service.record_provider_invocation(
+                tenant_id=tenant_id,
+                transaction_id=trace_id,
+                reservation_id=reservation.id,
+                attempt_number=attempt_num,
+                provider=cand_prov,
+                model_id=cand_model,
+                status="FAILED",
+                error_message=str(p_exc),
+            )
             last_exec_error = p_exc
             logger.warning(
                 "Execution attempt failed, checking fallback ladder",

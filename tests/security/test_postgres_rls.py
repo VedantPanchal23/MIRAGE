@@ -52,12 +52,16 @@ class TestPostgresRowLevelSecurity:
         # 2. Create unprivileged application role
         admin_engine = create_engine(admin_sync_url)
         with admin_engine.connect() as conn:
-            conn.execute(text("DROP ROLE IF EXISTS mirage_app;"))
             conn.execute(
                 text(
                     """
-                    CREATE ROLE mirage_app WITH LOGIN PASSWORD 'mirage_app_pw'
-                        NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+                    DO $$
+                    BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mirage_app') THEN
+                            CREATE ROLE mirage_app WITH LOGIN PASSWORD 'mirage_app_pw'
+                                NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+                        END IF;
+                    END $$;
                     """
                 )
             )

@@ -704,6 +704,8 @@ class ModelRegistryRecord(Base):
         DateTime(timezone=True), nullable=True
     )
     privacy_policy_version: Mapped[str | None] = mapped_column(String(32), default="v1.0", nullable=True)
+    attestation_issuer: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    attestation_signature: Mapped[str | None] = mapped_column(String(256), nullable=True)
     endpoint_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -838,6 +840,33 @@ class AccountingIncidentRecord(Base):
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False, index=True
     )
     resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ProviderInvocationRecord(Base):
+    """Authoritative durable record of each downstream LLM provider dispatch attempt."""
+
+    __tablename__ = "provider_invocations"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    transaction_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    reservation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    provider: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    latency_ms: Mapped[float | None] = mapped_column(Float, nullable=True)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    completion_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cached_tokens: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    cost_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+
 
 
 

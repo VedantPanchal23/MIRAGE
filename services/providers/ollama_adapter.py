@@ -12,6 +12,7 @@ from services.providers.base import (
     ProviderResponse,
     UsageInfo,
 )
+from services.providers.ssrf_validator import SSRFValidationError, create_ssrf_safe_client
 
 
 class OllamaProviderAdapter(BaseProviderAdapter):
@@ -57,10 +58,19 @@ class OllamaProviderAdapter(BaseProviderAdapter):
 
         start_time = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=False) as client:
+            async with create_ssrf_safe_client(allow_local=True, timeout=timeout_seconds) as client:
                 resp = await client.post(f"{self.base_url}/api/chat", json=payload)
                 elapsed_ms = (time.perf_counter() - start_time) * 1000.0
 
+                if 300 <= resp.status_code < 400:
+                    raise ProviderError(
+                        message=(
+                            f"Ollama endpoint returned redirect status {resp.status_code}; redirects are prohibited"
+                        ),
+                        error_type=ProviderErrorType.INVALID_REQUEST,
+                        status_code=resp.status_code,
+                        retryable=False,
+                    )
                 if resp.status_code == 404:
                     raise ProviderError(
                         message=f"Model '{model_id}' not found on local Ollama server",
@@ -98,12 +108,28 @@ class OllamaProviderAdapter(BaseProviderAdapter):
                     tool_calls=[],
                     raw_response=data,
                 )
+        except SSRFValidationError as exc:
+            raise ProviderError(
+                message=f"SSRF violation: outbound connection blocked: {exc}",
+                error_type=ProviderErrorType.CONFIGURATION_ERROR,
+                status_code=403,
+                retryable=False,
+                details=str(exc),
+            ) from exc
         except httpx.TimeoutException as exc:
             raise ProviderError(
                 message=f"Ollama request timed out after {timeout_seconds}s",
                 error_type=ProviderErrorType.TIMEOUT,
                 status_code=504,
                 retryable=True,
+                details=str(exc),
+            ) from exc
+        except httpx.HTTPStatusError as exc:
+            raise ProviderError(
+                message=f"HTTP status error from Ollama (status {exc.response.status_code}): {exc}",
+                error_type=ProviderErrorType.INVALID_REQUEST,
+                status_code=exc.response.status_code if exc.response is not None else 500,
+                retryable=False,
                 details=str(exc),
             ) from exc
         except httpx.RequestError as exc:

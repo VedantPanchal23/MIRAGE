@@ -118,6 +118,8 @@ class ModelRouterService:
                         privacy_attestation_expires_at=getattr(r, "privacy_attestation_expires_at", None),
                         privacy_attestation_revoked_at=getattr(r, "privacy_attestation_revoked_at", None),
                         privacy_policy_version=r.privacy_policy_version,
+                        attestation_issuer=getattr(r, "attestation_issuer", None),
+                        attestation_signature=getattr(r, "attestation_signature", None),
                         endpoint_url=r.endpoint_url,
                         reliability_index=r.reliability_index,
                         expected_latency_ms=r.expected_latency_ms,
@@ -249,6 +251,17 @@ class ModelRouterService:
                                 f"Model '{m.model_id}' deployment type '{m.deployment_type}' does not provide "
                                 f"required physical/VPC isolation for sensitive taints"
                             ),
+                        )
+                    )
+                    continue
+
+                # Check attestation issuer provenance
+                if not m.attestation_issuer or not m.attestation_issuer.strip():
+                    exclusions.append(
+                        CandidateExclusion(
+                            model_id=m.model_id,
+                            rule="GATE1_PRIVACY_ATTESTATION_UNTRUSTED",
+                            reason=f"Model '{m.model_id}' lacks trusted attestation issuer provenance",
                         )
                     )
                     continue
@@ -536,6 +549,9 @@ class ModelRouterService:
 
             if profile.deployment_type not in ("cloud_dedicated_vpc", "on_prem_local", "air_gapped"):
                 return False, f"Model '{candidate_model_id}' lacks isolated deployment", None, 0, ""
+
+            if not profile.attestation_issuer or not profile.attestation_issuer.strip():
+                return False, f"Model '{candidate_model_id}' lacks trusted attestation issuer provenance", None, 0, ""
 
             if profile.provider == "ollama":
                 endpoint = profile.endpoint_url or getattr(settings, "ollama_base_url", "")

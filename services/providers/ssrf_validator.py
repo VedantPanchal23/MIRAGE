@@ -7,11 +7,18 @@ Enforces:
    (loopback, link-local, private, CGNAT, multicast, reserved, and cloud metadata).
 4. Explicit local inference allowlisting (Ollama/on-prem): arbitrary private IPs are prohibited.
 5. Strict redirect prohibition (follow_redirects=False) across all provider HTTP clients.
+6. Connection-boundary socket-level enforcement: custom SSRFSafeNetworkBackend intercepts
+   outbound TCP connections at socket connect time, eliminating DNS rebinding (TOCTOU) vectors.
 """
 
 import ipaddress
 import socket
+from collections.abc import Callable, Iterable
+from typing import Any
 from urllib.parse import urlsplit
+
+import httpx
+from httpcore._backends.auto import AutoBackend
 
 from shared.config import get_settings
 
@@ -205,3 +212,164 @@ def validate_safe_provider_url(
                 )
 
     return url_clean
+
+
+class SSRFSafeNetworkBackend(AutoBackend):
+    """Custom network backend enforcing destination SSRF checks at the socket connection boundary.
+
+    Prevents DNS rebinding / TOCTOU attacks by resolving DNS and verifying every resolved IP address
+    immediately prior to TCP connect, then pinning the connection to the verified IP.
+    """
+
+    def __init__(
+        self,
+        allow_local: bool = False,
+        dns_resolver: Callable[[str, int], list[Any]] | None = None,
+    ) -> None:
+        super().__init__()
+        self.allow_local = allow_local
+        self._dns_resolver = dns_resolver
+
+    async def connect_tcp(
+        self,
+        host: str,
+        port: int,
+        timeout: float | None = None,
+        local_address: str | None = None,
+        socket_options: Iterable[Any] | None = None,
+    ) -> Any:
+        raw_host = (host or "").strip().rstrip(".")
+        if not raw_host:
+            raise SSRFValidationError("Outbound connection host is empty")
+
+        host_lower = raw_host.lower()
+
+        # Cloud metadata hostname check
+        if host_lower in PROHIBITED_METADATA_HOSTS or any(
+            host_lower.endswith(f".{m}") for m in PROHIBITED_METADATA_HOSTS
+        ):
+            raise SSRFValidationError(f"Outbound connection to cloud metadata host '{raw_host}' is blocked")
+
+        # Check if host is an IP literal
+        is_ip = False
+        ip_obj: ipaddress.IPv4Address | ipaddress.IPv6Address | None = None
+        try:
+            ip_obj = ipaddress.ip_address(raw_host.strip("[]"))
+            is_ip = True
+        except ValueError:
+            is_ip = False
+
+        if is_ip and ip_obj is not None:
+            if self.allow_local:
+                _validate_local_endpoint(raw_host, str(ip_obj), port, f"http://{raw_host}:{port}")
+            else:
+                if _check_ip_prohibited(ip_obj):
+                    raise SSRFValidationError(
+                        f"Outbound connection to prohibited IP '{ip_obj}' is blocked (loopback/private/metadata)"
+                    )
+            pinned_ip = str(ip_obj)
+        else:
+            # Hostname: check localhost string if local not allowed
+            if not self.allow_local and (
+                host_lower in ("localhost", "ip6-localhost", "ip6-loopback")
+                or host_lower.endswith(".localhost")
+            ):
+                raise SSRFValidationError(f"Outbound loopback host '{raw_host}' is blocked")
+
+            # Resolve DNS immediately before connecting to defeat DNS rebinding
+            resolver = self._dns_resolver or (
+                lambda h, p: socket.getaddrinfo(h, p, proto=socket.IPPROTO_TCP)
+            )
+            try:
+                addr_info = resolver(raw_host, port)
+            except Exception as dns_err:
+                raise SSRFValidationError(f"DNS resolution failed for '{raw_host}': {dns_err}") from dns_err
+
+            if not addr_info:
+                raise SSRFValidationError(f"DNS resolution returned no addresses for host '{raw_host}'")
+
+            verified_safe_ip: str | None = None
+            for entry in addr_info:
+                sockaddr = entry[4]
+                ip_str = sockaddr[0]
+                try:
+                    resolved_ip = ipaddress.ip_address(ip_str)
+                except ValueError as ip_err:
+                    raise SSRFValidationError(f"Invalid resolved IP '{ip_str}' for host '{raw_host}'") from ip_err
+
+                if self.allow_local:
+                    _validate_local_endpoint(raw_host, ip_str, port, f"http://{raw_host}:{port}")
+                else:
+                    if _check_ip_prohibited(resolved_ip):
+                        raise SSRFValidationError(
+                            f"Host '{raw_host}' resolved to prohibited address '{resolved_ip}' "
+                            "(DNS rebinding / private egress blocked)"
+                        )
+
+                if verified_safe_ip is None:
+                    verified_safe_ip = ip_str
+
+            assert verified_safe_ip is not None
+            pinned_ip = verified_safe_ip
+
+        # Connect directly to the verified safe IP to defeat DNS rebinding
+        return await super().connect_tcp(
+            pinned_ip,
+            port,
+            timeout=timeout,
+            local_address=local_address,
+            socket_options=socket_options,
+        )
+
+    async def connect_unix_socket(
+        self,
+        *_args: Any,
+        **_kwargs: Any,
+    ) -> Any:
+        raise SSRFValidationError("Unix domain sockets are prohibited for outbound LLM provider connections")
+
+
+class SSRFProtectedTransport(httpx.AsyncHTTPTransport):
+    """Async HTTP transport enforcing connection-boundary SSRF safety."""
+
+    def __init__(
+        self,
+        allow_local: bool = False,
+        dns_resolver: Callable[[str, int], list[Any]] | None = None,
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        super().__init__(*args, **kwargs)
+        self._pool._network_backend = SSRFSafeNetworkBackend(
+            allow_local=allow_local,
+            dns_resolver=dns_resolver,
+        )
+
+
+def create_ssrf_safe_transport(
+    allow_local: bool = False,
+    dns_resolver: Callable[[str, int], list[Any]] | None = None,
+    **kwargs: Any,
+) -> httpx.AsyncHTTPTransport:
+    """Create an AsyncHTTPTransport wired with connection-boundary SSRF enforcement."""
+    return SSRFProtectedTransport(
+        allow_local=allow_local,
+        dns_resolver=dns_resolver,
+        **kwargs,
+    )
+
+
+def create_ssrf_safe_client(
+    allow_local: bool = False,
+    timeout: float = 30.0,
+    dns_resolver: Callable[[str, int], list[Any]] | None = None,
+    **kwargs: Any,
+) -> httpx.AsyncClient:
+    """Create an httpx.AsyncClient enforcing connection-boundary SSRF safety and redirect blocking."""
+    transport = create_ssrf_safe_transport(allow_local=allow_local, dns_resolver=dns_resolver)
+    return httpx.AsyncClient(
+        transport=transport,
+        timeout=timeout,
+        follow_redirects=False,
+        **kwargs,
+    )

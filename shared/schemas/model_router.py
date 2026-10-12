@@ -57,6 +57,12 @@ class ModelCapabilityProfile(BaseModel):
     privacy_policy_version: str | None = Field(
         default="v1.0", description="Privacy policy or BAA agreement version"
     )
+    attestation_issuer: str | None = Field(
+        default=None, description="Trusted issuer or notary identity for privacy attestation"
+    )
+    attestation_signature: str | None = Field(
+        default=None, description="Cryptographic signature or hash of privacy attestation"
+    )
     endpoint_url: str | None = Field(
         default=None, description="Explicit execution endpoint URL"
     )

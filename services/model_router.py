@@ -174,7 +174,7 @@ class ModelRouterService:
 
             # 2. Distributed Circuit Breaker check
             is_available, cb_state = await circuit_breaker_service.is_available(m.provider, m.model_id)
-            if not is_available:
+            if not is_available or self.is_circuit_open(m.model_id, m.provider):
                 exclusions.append(
                     CandidateExclusion(
                         model_id=m.model_id,
@@ -529,7 +529,7 @@ class ModelRouterService:
 
         # Circuit breaker
         is_avail, cb_state = await circuit_breaker_service.is_available(profile.provider, profile.model_id)
-        if not is_avail:
+        if not is_avail or self.is_circuit_open(profile.model_id, profile.provider):
             return False, f"Circuit breaker is {cb_state} for model '{candidate_model_id}'", None, 0, ""
 
         # Gate 1 Privacy

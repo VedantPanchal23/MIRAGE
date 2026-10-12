@@ -216,7 +216,7 @@ class BudgetManagerService:
                 allocated_micros=record.allocated_micros,
                 reserved_micros=record.reserved_micros,
                 spent_micros=record.spent_micros,
-                available_micros=max(0, available),
+                available_micros=available,
                 reset_period=BudgetResetPeriod(record.reset_period),
                 reset_at=record.reset_at,
                 hard_limit=record.hard_limit,
@@ -256,7 +256,7 @@ class BudgetManagerService:
                 allocated_micros=record.allocated_micros,
                 reserved_micros=record.reserved_micros,
                 spent_micros=record.spent_micros,
-                available_micros=max(0, available),
+                available_micros=available,
                 reset_period=BudgetResetPeriod(record.reset_period),
                 reset_at=record.reset_at,
                 hard_limit=record.hard_limit,
@@ -340,7 +340,7 @@ class BudgetManagerService:
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=(
                         f"Budget limit exceeded for tenant '{request.tenant_id}'. "
-                        f"Available: {max(0, available)} micros, requested: {request.estimated_cost_micros} micros."
+                        f"Available: {available} micros, requested: {request.estimated_cost_micros} micros."
                     ),
                 )
 
@@ -457,7 +457,7 @@ class BudgetManagerService:
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                     detail=(
                         f"Budget limit exceeded for tenant '{tenant_id}' on fallback expansion. "
-                        f"Available: {max(0, available)} micros, requested: {additional_micros} micros."
+                        f"Available: {available} micros, requested: {additional_micros} micros."
                     ),
                 )
 

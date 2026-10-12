@@ -330,7 +330,7 @@ class SSRFSafeNetworkBackend(AutoBackend):
 
 
 class SSRFProtectedTransport(httpx.AsyncHTTPTransport):
-    """Async HTTP transport enforcing connection-boundary SSRF safety."""
+    """Async HTTP transport enforcing connection-boundary SSRF safety, proxy denial, and zero keepalive reuse."""
 
     def __init__(
         self,
@@ -339,10 +339,31 @@ class SSRFProtectedTransport(httpx.AsyncHTTPTransport):
         *args: Any,
         **kwargs: Any,
     ) -> None:
+        if kwargs.get("proxy") is not None or kwargs.get("proxies") is not None:
+            raise SSRFValidationError(
+                "Explicit proxy configuration is prohibited for outbound LLM provider connections"
+            )
+
+        # Disable ambient environment proxies
+        kwargs["trust_env"] = False
         super().__init__(*args, **kwargs)
-        self._pool._network_backend = SSRFSafeNetworkBackend(
+
+        import httpcore
+
+        backend = SSRFSafeNetworkBackend(
             allow_local=allow_local,
             dns_resolver=dns_resolver,
+        )
+        # Bind through official AsyncConnectionPool network_backend constructor argument
+        # Enforce zero keep-alive connections so every request performs immediate pre-connect verification
+        self._pool = httpcore.AsyncConnectionPool(
+            ssl_context=self._pool._ssl_context,
+            network_backend=backend,
+            http1=True,
+            http2=False,
+            max_connections=50,
+            max_keepalive_connections=0,
+            keepalive_expiry=0.0,
         )
 
 
@@ -366,6 +387,9 @@ def create_ssrf_safe_client(
     **kwargs: Any,
 ) -> httpx.AsyncClient:
     """Create an httpx.AsyncClient enforcing connection-boundary SSRF safety and redirect blocking."""
+    if "proxy" in kwargs or "proxies" in kwargs:
+        raise SSRFValidationError("Explicit proxy configuration is prohibited for outbound LLM provider connections")
+    kwargs["trust_env"] = False
     transport = create_ssrf_safe_transport(allow_local=allow_local, dns_resolver=dns_resolver)
     return httpx.AsyncClient(
         transport=transport,

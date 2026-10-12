@@ -1,6 +1,10 @@
 """Unit tests for MIRAGE 3.0 Model Router service and API routes."""
 
+from datetime import UTC, datetime, timedelta
+from unittest.mock import patch
+
 import pytest
+from fastapi import HTTPException
 from starlette.testclient import TestClient
 
 from gateway.main import app
@@ -64,7 +68,7 @@ async def test_model_router_filters_by_required_capabilities() -> None:
 @pytest.mark.unit
 @pytest.mark.asyncio
 async def test_model_router_enforces_gate1_taint_privacy() -> None:
-    """Sensitive taints (PHI, PII, confidential) require zero-retention or private endpoints."""
+    """Sensitive taints (PHI, PII, confidential) require zero-retention, isolated deployment, and valid attestation."""
     req = RoutingRequest(
         tenant_id="default_tenant",
         task_type="reasoning",
@@ -72,15 +76,40 @@ async def test_model_router_enforces_gate1_taint_privacy() -> None:
         estimated_input_tokens=200,
         estimated_output_tokens=200,
     )
-    decision = await model_router_service.route(req)
 
-    # gpt-4o, claude, gemini lack zero-retention in default registry
-    excluded_models = {e.model_id: e.rule for e in decision.exclusions}
-    assert "gpt-4o" in excluded_models
-    assert excluded_models["gpt-4o"] == "GATE1_DATA_RESIDENCY_PRIVACY"
+    # 1. Without authentic attestation provenance, all unattested models fail closed (HTTP 422)
+    with pytest.raises(HTTPException) as exc_info:
+        await model_router_service.route(req)
+    assert exc_info.value.status_code == 422
+    exclusions = {e["model_id"]: e["rule"] for e in exc_info.value.detail["exclusions"]}
+    assert exclusions["gpt-4o"] == "GATE1_DATA_RESIDENCY_PRIVACY"
+    assert exclusions["mock-frontier"] == "GATE1_PRIVACY_ATTESTATION_UNTRUSTED"
 
-    # Only zero-retention models should qualify (e.g. mock-frontier, mock-capable, allam-2-7b)
-    assert decision.selected_model_id in ("mock-frontier", "mock-capable", "allam-2-7b", "mock-specialized")
+    # 2. When valid attestation provenance is provided, attested zero-retention models qualify
+    models = await model_router_service.list_models()
+    attested_models = [
+        m.model_copy(
+            update={
+                "attestation_issuer": "mirage-trust-notary-v1",
+                "attestation_signature": f"sig_notary_{m.model_id}",
+                "privacy_verified_at": datetime.now(UTC),
+                "privacy_attestation_expires_at": datetime.now(UTC) + timedelta(days=30),
+            }
+        )
+        if m.is_zero_retention
+        else m
+        for m in models
+    ]
+    with patch.object(model_router_service, "list_models", return_value=attested_models):
+        decision = await model_router_service.route(req)
+
+        # gpt-4o, claude, gemini lack zero-retention in default registry
+        excluded_models = {e.model_id: e.rule for e in decision.exclusions}
+        assert "gpt-4o" in excluded_models
+        assert excluded_models["gpt-4o"] == "GATE1_DATA_RESIDENCY_PRIVACY"
+
+        # Only zero-retention models should qualify (e.g. mock-frontier, mock-capable, allam-2-7b)
+        assert decision.selected_model_id in ("mock-frontier", "mock-capable", "allam-2-7b", "mock-specialized")
 
 
 @pytest.mark.unit

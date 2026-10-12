@@ -542,7 +542,7 @@ def test_proxy_chat_completions_redacts_secrets_and_honestly_flags_verification(
 
         payload = {
             "model": "gpt-4o",
-            "messages": [{"role": "user", "content": "Get deployment secret."}],
+            "messages": [{"role": "user", "content": "Get deployment configuration."}],
         }
 
         resp = client.post("/v1/chat/completions", json=payload, headers=headers)

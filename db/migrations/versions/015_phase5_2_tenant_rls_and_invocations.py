@@ -28,7 +28,7 @@ def upgrade() -> None:
     bind = op.get_bind()
     is_postgres = bind.dialect.name == "postgresql"
 
-    # 1. Add attestation provenance columns to model_registry
+    # 1. Add attestation provenance columns to model_registry (nullable, no fabricated backfill)
     op.add_column(
         "model_registry",
         sa.Column("attestation_issuer", sa.String(128), nullable=True),
@@ -37,16 +37,6 @@ def upgrade() -> None:
         "model_registry",
         sa.Column("attestation_signature", sa.String(256), nullable=True),
     )
-
-    if is_postgres:
-        op.execute(
-            """
-            UPDATE model_registry
-            SET attestation_issuer = 'mirage-trust-notary-v1',
-                attestation_signature = 'sig_notary_' || id
-            WHERE privacy_verified_at IS NOT NULL;
-            """
-        )
 
     # 2. Create provider_invocations table for itemized dispatch tracking
     op.create_table(

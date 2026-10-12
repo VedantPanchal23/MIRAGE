@@ -205,6 +205,27 @@ class Settings(BaseSettings):
 
 
     # --------------------------------------------------------------------------
+    # Circuit Breaker & Routing Egress Controls
+    # --------------------------------------------------------------------------
+    circuit_breaker_fail_closed_on_redis: bool = Field(
+        default=False,
+        description="Fail closed when Redis is unreachable for distributed circuit breaker",
+    )
+    local_inference_allowlist: list[str] = Field(
+        default_factory=lambda: ["localhost", "127.0.0.1", "::1"],
+        description="Allowlisted hosts for local inference (Ollama)",
+    )
+
+    @field_validator("circuit_breaker_fail_closed_on_redis")
+    @classmethod
+    def enforce_circuit_breaker_fail_closed_in_production(cls, v: bool, info: ValidationInfo) -> bool:
+        """In production, distributed circuit breaker must fail closed if Redis is unreachable."""
+        env = info.data.get("environment")
+        if env == EnvironmentType.PRODUCTION and not v:
+            return True
+        return v
+
+    # --------------------------------------------------------------------------
     # Model Thresholds & Parameters
     # --------------------------------------------------------------------------
     default_primary_model: str = Field(default="allam-2-7b")

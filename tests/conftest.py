@@ -217,6 +217,7 @@ def live_redis_database() -> Generator[Any, None, None]:
                 "~scs:*",
                 "~config:*",
                 "~rav_embed:*",
+                "~mirage:*",
                 "+@read",
                 "+@write",
                 "+@connection",

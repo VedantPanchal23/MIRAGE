@@ -3,7 +3,19 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import (
+    BigInteger,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -685,6 +697,12 @@ class ModelRegistryRecord(Base):
     expected_latency_ms: Mapped[float] = mapped_column(Float, default=800.0, nullable=False)
     deployment_type: Mapped[str] = mapped_column(String(64), default="cloud_shared", nullable=False)
     privacy_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    privacy_attestation_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    privacy_attestation_revoked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     privacy_policy_version: Mapped[str | None] = mapped_column(String(32), default="v1.0", nullable=True)
     endpoint_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
@@ -721,6 +739,11 @@ class TenantBudgetRecord(Base):
     """Authoritative tenant-level budget configuration, reserved funds, and spend ledger."""
 
     __tablename__ = "tenant_budgets"
+    __table_args__ = (
+        CheckConstraint("reserved_micros >= 0", name="ck_tenant_budget_reserved_non_negative"),
+        CheckConstraint("spent_micros >= 0", name="ck_tenant_budget_spent_non_negative"),
+        CheckConstraint("allocated_micros >= 0", name="ck_tenant_budget_allocated_non_negative"),
+    )
 
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(
@@ -793,6 +816,29 @@ class TransactionCostRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False, index=True
     )
+
+
+class AccountingIncidentRecord(Base):
+    """Authoritative durable record of accounting anomalies, drift, and post-execution failures."""
+
+    __tablename__ = "accounting_incidents"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    reservation_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    transaction_id: Mapped[str | None] = mapped_column(String(64), nullable=True, index=True)
+    incident_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    expected_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    actual_micros: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    resolved: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False, index=True
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
 
 
 

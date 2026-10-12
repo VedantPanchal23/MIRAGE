@@ -95,10 +95,21 @@ class PricingService:
                 f"No active pricing profile found for model '{canonical_id}' effective on or before {current_date_str}"
             )
 
-        # Enforce non-negative rate invariants
-        if record.input_cost_per_million_micros < 0 or record.output_cost_per_million_micros < 0:
+        # Enforce non-negative integer rate invariants
+        for field_name in (
+            "input_cost_per_million_micros",
+            "output_cost_per_million_micros",
+            "cached_input_cost_per_million_micros",
+        ):
+            val = getattr(record, field_name)
+            if isinstance(val, bool) or not isinstance(val, int) or val < 0:
+                raise PricingValidationError(
+                    f"Corrupt pricing profile '{record.id}': invalid {field_name}={val!r}"
+                )
+
+        if not record.currency or not isinstance(record.currency, str):
             raise PricingValidationError(
-                f"Corrupt pricing profile '{record.id}': negative token rates are prohibited"
+                f"Corrupt pricing profile '{record.id}': invalid currency={record.currency!r}"
             )
 
         return record
@@ -120,10 +131,33 @@ class PricingService:
         Uses exact integer arithmetic (ceil via integer division: (raw + 999_999) // 1_000_000)
         to prevent binary floating-point drift or precision loss.
         """
-        if prompt_tokens < 0 or completion_tokens < 0 or cached_tokens < 0:
-            raise PricingValidationError("Token counts must be non-negative integers")
+        for rate_name in (
+            "input_cost_per_million_micros",
+            "output_cost_per_million_micros",
+            "cached_input_cost_per_million_micros",
+        ):
+            r_val = getattr(pricing, rate_name, 0)
+            if isinstance(r_val, bool) or not isinstance(r_val, int) or r_val < 0:
+                raise PricingValidationError(
+                    f"Pricing rate '{rate_name}' must be a non-negative integer, got {r_val!r}"
+                )
 
-        uncached_prompt = max(0, prompt_tokens - cached_tokens)
+        for name, val in [
+            ("prompt_tokens", prompt_tokens),
+            ("completion_tokens", completion_tokens),
+            ("cached_tokens", cached_tokens),
+        ]:
+            if isinstance(val, bool) or not isinstance(val, int) or val < 0:
+                raise PricingValidationError(
+                    f"Token count '{name}' must be a non-negative integer, got {val!r}"
+                )
+
+        if cached_tokens > prompt_tokens:
+            raise PricingValidationError(
+                f"Invalid usage: cached_tokens ({cached_tokens}) cannot exceed prompt_tokens ({prompt_tokens})"
+            )
+
+        uncached_prompt = prompt_tokens - cached_tokens
         raw_units = (
             (uncached_prompt * pricing.input_cost_per_million_micros)
             + (cached_tokens * pricing.cached_input_cost_per_million_micros)
@@ -144,8 +178,18 @@ class PricingService:
         if not usage or not isinstance(usage, dict):
             raise PricingValidationError("Missing or non-dictionary provider usage object")
 
-        prompt_tokens = usage.get("prompt_tokens", 0)
-        completion_tokens = usage.get("completion_tokens", 0)
+        if "prompt_tokens" not in usage:
+            raise PricingValidationError("Missing required 'prompt_tokens' in provider usage payload")
+        if "completion_tokens" not in usage:
+            raise PricingValidationError("Missing required 'completion_tokens' in provider usage payload")
+
+        prompt_tokens = usage["prompt_tokens"]
+        completion_tokens = usage["completion_tokens"]
+
+        if isinstance(prompt_tokens, bool) or not isinstance(prompt_tokens, int) or prompt_tokens < 0:
+            raise PricingValidationError(f"Invalid prompt_tokens: {prompt_tokens!r}")
+        if isinstance(completion_tokens, bool) or not isinstance(completion_tokens, int) or completion_tokens < 0:
+            raise PricingValidationError(f"Invalid completion_tokens: {completion_tokens!r}")
 
         # Handle provider-specific cached token field variants
         cached_tokens = 0
@@ -154,12 +198,13 @@ class PricingService:
         elif "prompt_tokens_details" in usage and isinstance(usage["prompt_tokens_details"], dict):
             cached_tokens = usage["prompt_tokens_details"].get("cached_tokens", 0)
 
-        if not isinstance(prompt_tokens, int) or prompt_tokens < 0:
-            raise PricingValidationError(f"Invalid prompt_tokens: {prompt_tokens}")
-        if not isinstance(completion_tokens, int) or completion_tokens < 0:
-            raise PricingValidationError(f"Invalid completion_tokens: {completion_tokens}")
-        if not isinstance(cached_tokens, int) or cached_tokens < 0:
-            raise PricingValidationError(f"Invalid cached_tokens: {cached_tokens}")
+        if isinstance(cached_tokens, bool) or not isinstance(cached_tokens, int) or cached_tokens < 0:
+            raise PricingValidationError(f"Invalid cached_tokens: {cached_tokens!r}")
+
+        if cached_tokens > prompt_tokens:
+            raise PricingValidationError(
+                f"Invalid usage: cached_tokens ({cached_tokens}) cannot exceed prompt_tokens ({prompt_tokens})"
+            )
 
         return prompt_tokens, completion_tokens, cached_tokens
 

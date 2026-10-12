@@ -15,7 +15,7 @@ from services.budget_manager import budget_manager_service
 from services.circuit_breaker import circuit_breaker_service
 from services.model_router import model_router_service
 from services.output_assurance import output_assurance_service
-from services.pricing_service import pricing_service
+from services.pricing_service import PricingValidationError, pricing_service
 from services.providers.base import ProviderError
 from services.providers.factory import ProviderConfigurationError, get_provider_adapter
 from shared.config import get_settings
@@ -218,11 +218,43 @@ async def chat_completions_proxy(
 
             prov_resp = await llm_circuit.call(_execute_provider)
             completion_text = prov_resp.content
+
+            # Strict usage validation: reject malformed or missing usage without fabricating data
+            try:
+                raw_usage = {
+                    "prompt_tokens": prov_resp.usage.prompt_tokens,
+                    "completion_tokens": prov_resp.usage.completion_tokens,
+                    "total_tokens": prov_resp.usage.total_tokens,
+                    "cached_tokens": prov_resp.usage.cached_tokens,
+                }
+                p_toks, c_toks, ca_toks = pricing_service.parse_usage_dict(raw_usage)
+            except PricingValidationError as pv_err:
+                logger.critical(
+                    "Provider returned unverified or malformed usage payload",
+                    model=cand_model,
+                    error=str(pv_err),
+                )
+                # Provider completed execution but returned unverifiable usage.
+                # Must NOT retry or fallback to prevent duplicate execution or side-effects.
+                await budget_manager_service.record_accounting_incident(
+                    tenant_id=tenant_id,
+                    reservation_id=reservation.id,
+                    transaction_id=trace_id,
+                    incident_type="MALFORMED_PROVIDER_USAGE_DISCREPANCY",
+                    expected_micros=reservation.amount_micros,
+                    actual_micros=None,
+                    details={"error": str(pv_err), "model_id": cand_model, "attempt": attempt_num},
+                )
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Downstream LLM provider returned malformed or unverified usage: {pv_err}",
+                ) from pv_err
+
             usage_info = {
-                "prompt_tokens": prov_resp.usage.prompt_tokens,
-                "completion_tokens": prov_resp.usage.completion_tokens,
-                "total_tokens": prov_resp.usage.total_tokens,
-                "cached_tokens": prov_resp.usage.cached_tokens,
+                "prompt_tokens": p_toks,
+                "completion_tokens": c_toks,
+                "total_tokens": p_toks + c_toks,
+                "cached_tokens": ca_toks,
             }
             executed_model = cand_model
             executed_provider = cand_prov
@@ -231,6 +263,8 @@ async def chat_completions_proxy(
             execution_successful = True
             await circuit_breaker_service.record_success(cand_prov, cand_model)
             break
+        except HTTPException:
+            raise
         except (ProviderError, ProviderConfigurationError, CircuitBreakerError, Exception) as p_exc:
             await circuit_breaker_service.record_failure(cand_prov, cand_model)
             last_exec_error = p_exc
@@ -291,6 +325,19 @@ async def chat_completions_proxy(
         raise
     except Exception as s_exc:
         logger.critical("Post-inference financial settlement failure", error=str(s_exc))
+        await budget_manager_service.record_accounting_incident(
+            tenant_id=tenant_id,
+            reservation_id=reservation.id,
+            transaction_id=trace_id,
+            incident_type="POST_EXECUTION_SETTLEMENT_FAILURE",
+            expected_micros=actual_cost_micros,
+            actual_micros=None,
+            details={
+                "error": str(s_exc),
+                "model_id": executed_model,
+                "attempt": executed_attempt,
+            },
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Financial settlement failure: {s_exc}",

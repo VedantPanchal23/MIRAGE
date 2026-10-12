@@ -84,7 +84,7 @@ class AnthropicProviderAdapter(BaseProviderAdapter):
 
         start_time = time.perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            async with httpx.AsyncClient(timeout=timeout_seconds, follow_redirects=False) as client:
                 resp = await client.post(
                     f"{self.base_url}/messages",
                     headers=headers,

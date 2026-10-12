@@ -11,8 +11,10 @@ Enforces:
 """
 
 import hashlib
+import struct
 import uuid
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import select, text
@@ -21,11 +23,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import session as db_session
 from db.models import (
+    AccountingIncidentRecord,
     BudgetReservationRecord,
     TenantBudgetRecord,
     TransactionCostRecord,
 )
 from services.pricing_service import pricing_service
+from shared.config import get_settings
+from shared.config.settings import EnvironmentType
 from shared.logging import get_logger
 from shared.schemas.budget import (
     BudgetReservation,
@@ -42,8 +47,79 @@ logger = get_logger("budget_manager")
 DEFAULT_TENANT_BUDGET_MICROS = 100_000_000  # $100.00 default allowance
 
 
+def _is_postgresql_session(session: AsyncSession) -> bool:
+    """Detect whether session is executing against a live PostgreSQL database."""
+    sync_session = getattr(session, "sync_session", None)
+    sync_bind = getattr(sync_session, "bind", None) if sync_session is not None else None
+    if sync_bind is not None and hasattr(sync_bind, "dialect"):
+        return getattr(sync_bind.dialect, "name", None) == "postgresql"
+    bind = getattr(session, "bind", None)
+    if bind is not None and hasattr(bind, "dialect"):
+        return getattr(bind.dialect, "name", None) == "postgresql"
+    return False
+
+
+async def _acquire_advisory_lock(session: AsyncSession, lock_namespace: str) -> None:
+    """Acquire a PostgreSQL transaction-scoped advisory lock or fail closed in production."""
+    settings = get_settings()
+    is_live_postgres = _is_postgresql_session(session)
+
+    if settings.environment == EnvironmentType.PRODUCTION and not is_live_postgres:
+        raise RuntimeError(
+            f"Production invariant violation: advisory lock for '{lock_namespace}' requires PostgreSQL dialect"
+        )
+
+    if is_live_postgres:
+        # Compute 64-bit signed integer for pg_advisory_xact_lock
+        lock_id = struct.unpack(">q", hashlib.sha256(lock_namespace.encode("utf-8")).digest()[:8])[0]
+        # Must execute without blanket exception swallowing: any database error aborts operation
+        await session.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": lock_id})
+    else:
+        logger.warning(
+            "Non-PostgreSQL dialect in %s environment: skipping advisory lock for '%s'",
+            settings.environment,
+            lock_namespace,
+        )
+
+
 class BudgetManagerService:
     """Manages tenant budgets, multi-dimensional bounds, atomic reservations, and settlements."""
+
+    async def record_accounting_incident(
+        self,
+        tenant_id: str,
+        incident_type: str,
+        reservation_id: str | None = None,
+        transaction_id: str | None = None,
+        expected_micros: int | None = None,
+        actual_micros: int | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> AccountingIncidentRecord:
+        """Durable persistence for accounting anomalies, drift, and post-execution failures."""
+        async with db_session.get_system_session() as session:
+            inc = AccountingIncidentRecord(
+                id=f"inc_{uuid.uuid4().hex[:16]}",
+                tenant_id=tenant_id,
+                reservation_id=reservation_id,
+                transaction_id=transaction_id,
+                incident_type=incident_type,
+                expected_micros=expected_micros,
+                actual_micros=actual_micros,
+                details=details or {},
+                resolved=False,
+                created_at=datetime.now(UTC),
+            )
+            session.add(inc)
+            await session.commit()
+            logger.critical(
+                "Recorded durable accounting incident",
+                tenant_id=tenant_id,
+                incident_id=inc.id,
+                incident_type=incident_type,
+                expected_micros=expected_micros,
+                actual_micros=actual_micros,
+            )
+            return inc
 
     async def get_or_create_tenant_budget_record(
         self,
@@ -53,12 +129,7 @@ class BudgetManagerService:
     ) -> TenantBudgetRecord:
         """Fetch existing tenant budget record or create default ledger record under advisory lock."""
         # Acquire PostgreSQL advisory transaction lock to serialize first-time initialization
-        lock_id = int(hashlib.sha256(tenant_id.encode()).hexdigest()[:15], 16)
-        try:
-            await session.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": lock_id})
-        except Exception:
-            # On non-PostgreSQL engines or mock sessions, ignore advisory lock failure
-            pass
+        await _acquire_advisory_lock(session, f"tenant_budget_init:{tenant_id}")
 
         stmt = select(TenantBudgetRecord).where(TenantBudgetRecord.tenant_id == tenant_id).with_for_update()
         record = (await session.execute(stmt)).scalar_one_or_none()
@@ -164,13 +235,9 @@ class BudgetManagerService:
 
         async with db_session.get_tenant_session(request.tenant_id) as session:
             # 0. Acquire advisory lock on reservation key to serialize concurrent requests with the same key
-            res_lock_id = int(
-                hashlib.sha256(f"res:{request.tenant_id}:{request.reservation_key}".encode()).hexdigest()[:15], 16
+            await _acquire_advisory_lock(
+                session, f"budget_reservation:{request.tenant_id}:{request.reservation_key}"
             )
-            try:
-                await session.execute(text("SELECT pg_advisory_xact_lock(:lock_id)"), {"lock_id": res_lock_id})
-            except Exception:
-                pass
 
             # 1. Enforce strict reservation idempotency
             exist_stmt = (
@@ -415,6 +482,25 @@ class BudgetManagerService:
                 )
                 cost_rec = (await session.execute(cost_stmt)).scalar_one_or_none()
                 if cost_rec is not None:
+                    # Conflicting settlement replay check
+                    if (
+                        cost_rec.cost_micros != request.actual_cost_micros
+                        or cost_rec.model_id != request.model_id
+                        or cost_rec.provider != request.provider
+                        or cost_rec.prompt_tokens != request.prompt_tokens
+                        or cost_rec.completion_tokens != request.completion_tokens
+                    ):
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Settlement conflict: reservation '{request.reservation_id}' attempt "
+                                f"{request.attempt_number} was previously settled with different parameters "
+                                f"(cost={cost_rec.cost_micros}, model={cost_rec.model_id}, tokens="
+                                f"{cost_rec.prompt_tokens}/{cost_rec.completion_tokens}); "
+                                f"replay attempted with (cost={request.actual_cost_micros}, model={request.model_id}, "
+                                f"tokens={request.prompt_tokens}/{request.completion_tokens})"
+                            ),
+                        )
                     return TransactionCostRecordSchema(
                         id=cost_rec.id,
                         tenant_id=cost_rec.tenant_id,
@@ -455,6 +541,23 @@ class BudgetManagerService:
                     budget_reserved=budget_rec.reserved_micros,
                     reservation_amount=res_rec.amount_micros,
                 )
+                incident = AccountingIncidentRecord(
+                    id=f"inc_{uuid.uuid4().hex[:16]}",
+                    tenant_id=tenant_id,
+                    reservation_id=res_rec.id,
+                    transaction_id=res_rec.transaction_id,
+                    incident_type="SETTLEMENT_DRIFT_INVARIANT_VIOLATION",
+                    expected_micros=res_rec.amount_micros,
+                    actual_micros=budget_rec.reserved_micros,
+                    details={
+                        "reservation_key": res_rec.reservation_key,
+                        "attempt": request.attempt_number,
+                    },
+                    resolved=False,
+                    created_at=datetime.now(UTC),
+                )
+                session.add(incident)
+                await session.commit()
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Financial invariant violated: accounting drift detected for tenant '{tenant_id}'",
@@ -468,7 +571,25 @@ class BudgetManagerService:
                     budget_rec.spent_micros + budget_rec.reserved_micros
                 )
                 if budget_rec.hard_limit and (available_headroom < overage):
-                    # Hard limit violated by overage: flag reservation as requiring reconciliation
+                    # Hard limit violated by overage: flag reservation and persist durable accounting incident
+                    incident = AccountingIncidentRecord(
+                        id=f"inc_{uuid.uuid4().hex[:16]}",
+                        tenant_id=tenant_id,
+                        reservation_id=res_rec.id,
+                        transaction_id=res_rec.transaction_id,
+                        incident_type="SETTLEMENT_OVERAGE_HARD_LIMIT_BREACH",
+                        expected_micros=reserved_amount,
+                        actual_micros=request.actual_cost_micros,
+                        details={
+                            "overage_micros": overage,
+                            "available_headroom": available_headroom,
+                            "model_id": request.model_id,
+                            "attempt": request.attempt_number,
+                        },
+                        resolved=False,
+                        created_at=datetime.now(UTC),
+                    )
+                    session.add(incident)
                     res_rec.status = ReservationStatus.RECONCILIATION_REQUIRED.value
                     await session.commit()
                     logger.warning(
@@ -557,6 +678,20 @@ class BudgetManagerService:
                     budget_reserved=budget_rec.reserved_micros,
                     reservation_amount=res_rec.amount_micros,
                 )
+                incident = AccountingIncidentRecord(
+                    id=f"inc_{uuid.uuid4().hex[:16]}",
+                    tenant_id=tenant_id,
+                    reservation_id=res_rec.id,
+                    transaction_id=res_rec.transaction_id,
+                    incident_type="RELEASE_DRIFT_INVARIANT_VIOLATION",
+                    expected_micros=res_rec.amount_micros,
+                    actual_micros=budget_rec.reserved_micros,
+                    details={"reservation_key": res_rec.reservation_key},
+                    resolved=False,
+                    created_at=datetime.now(UTC),
+                )
+                session.add(incident)
+                await session.commit()
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Financial invariant violated: accounting drift on release for tenant '{tenant_id}'",
@@ -570,42 +705,77 @@ class BudgetManagerService:
             await session.commit()
 
     async def reconcile_orphaned_reservations(self, max_batch_size: int = 100) -> int:
-        """Periodic background reconciliation of timed-out reservations."""
+        """Periodic background reconciliation of timed-out reservations without erasing evidence."""
         now = datetime.now(UTC)
         reconciled_count = 0
 
         async with db_session.get_system_session() as session:
             stmt = (
-                select(BudgetReservationRecord)
+                select(BudgetReservationRecord.id, BudgetReservationRecord.tenant_id)
                 .where(
                     BudgetReservationRecord.status == ReservationStatus.RESERVED.value,
                     BudgetReservationRecord.expires_at < now,
                 )
+                .order_by(BudgetReservationRecord.tenant_id, BudgetReservationRecord.id)
                 .limit(max_batch_size)
-                .with_for_update()
             )
-            expired_recs = (await session.execute(stmt)).scalars().all()
+            expired_candidates = (await session.execute(stmt)).all()
 
-            for res_rec in expired_recs:
-                budget_rec = await self.get_or_create_tenant_budget_record(session, res_rec.tenant_id)
+        for res_id, tenant_id in expired_candidates:
+            async with db_session.get_tenant_session(tenant_id) as session:
+                budget_rec = await self.get_or_create_tenant_budget_record(session, tenant_id)
+                res_stmt = (
+                    select(BudgetReservationRecord)
+                    .where(
+                        BudgetReservationRecord.id == res_id,
+                        BudgetReservationRecord.tenant_id == tenant_id,
+                        BudgetReservationRecord.status == ReservationStatus.RESERVED.value,
+                    )
+                    .with_for_update()
+                )
+                res_rec = (await session.execute(res_stmt)).scalar_one_or_none()
+                if res_rec is None:
+                    continue
+
                 if budget_rec.reserved_micros >= res_rec.amount_micros:
                     budget_rec.reserved_micros -= res_rec.amount_micros
+                    budget_rec.updated_at = now
+                    res_rec.status = ReservationStatus.EXPIRED.value
+                    res_rec.settled_at = now
+                    await session.commit()
+                    reconciled_count += 1
                 else:
-                    logger.critical(
-                        "Drift detected in orphaned reservation reconciliation",
-                        tenant_id=res_rec.tenant_id,
+                    # Invariant violation: NEVER clamp or reset aggregate to zero!
+                    # Preserve evidence and emit durable accounting incident record.
+                    res_rec.status = ReservationStatus.RECONCILIATION_REQUIRED.value
+                    res_rec.settled_at = now
+                    incident = AccountingIncidentRecord(
+                        id=f"inc_{uuid.uuid4().hex[:16]}",
+                        tenant_id=tenant_id,
                         reservation_id=res_rec.id,
+                        transaction_id=res_rec.transaction_id,
+                        incident_type="ORPHAN_RECONCILIATION_DRIFT",
+                        expected_micros=res_rec.amount_micros,
+                        actual_micros=budget_rec.reserved_micros,
+                        details={
+                            "reservation_key": res_rec.reservation_key,
+                            "reason": "reserved_micros in tenant budget is less than expired reservation amount",
+                        },
+                        resolved=False,
+                        created_at=now,
                     )
-                    budget_rec.reserved_micros = 0
-                budget_rec.updated_at = now
+                    session.add(incident)
+                    await session.commit()
+                    logger.critical(
+                        "Drift detected in orphaned reservation reconciliation; preserved evidence",
+                        tenant_id=tenant_id,
+                        reservation_id=res_rec.id,
+                        budget_reserved=budget_rec.reserved_micros,
+                        reservation_amount=res_rec.amount_micros,
+                    )
 
-                res_rec.status = ReservationStatus.EXPIRED.value
-                res_rec.settled_at = now
-                reconciled_count += 1
-
-            if reconciled_count > 0:
-                await session.commit()
-                logger.info("Reconciled orphaned budget reservations", count=reconciled_count)
+        if reconciled_count > 0:
+            logger.info("Reconciled orphaned budget reservations", count=reconciled_count)
 
         return reconciled_count
 

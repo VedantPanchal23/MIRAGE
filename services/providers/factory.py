@@ -4,8 +4,6 @@ Enforces strict fail-closed configuration validation, SSRF endpoint protection,
 and disallows unconfigured mock fallbacks in production environments.
 """
 
-from urllib.parse import urlparse
-
 from services.providers.anthropic_adapter import AnthropicProviderAdapter
 from services.providers.base import BaseProviderAdapter
 from services.providers.gemini_adapter import GeminiProviderAdapter
@@ -13,16 +11,11 @@ from services.providers.groq_adapter import GroqProviderAdapter
 from services.providers.mock_adapter import MockProviderAdapter
 from services.providers.ollama_adapter import OllamaProviderAdapter
 from services.providers.openai_adapter import OpenAIProviderAdapter
+from services.providers.ssrf_validator import SSRFValidationError, validate_safe_provider_url
 from shared.config import get_settings
 from shared.config.settings import EnvironmentType
 
 _OVERRIDES: dict[str, BaseProviderAdapter] = {}
-
-PROHIBITED_METADATA_HOSTS = {
-    "169.254.169.254",
-    "metadata.google.internal",
-    "100.100.100.200",
-}
 
 
 class ProviderConfigurationError(Exception):
@@ -31,23 +24,12 @@ class ProviderConfigurationError(Exception):
     pass
 
 
-def validate_provider_base_url(url: str, allow_local: bool = False) -> str:
+def validate_provider_base_url(url: str, allow_local: bool = False, resolve_dns: bool = True) -> str:
     """Validate provider base URL against approved destination policies and SSRF vectors."""
-    parsed = urlparse(url)
-    if parsed.scheme not in ("http", "https"):
-        raise ProviderConfigurationError(f"Invalid URL scheme '{parsed.scheme}'; must be http or https")
-
-    host = (parsed.hostname or "").lower()
-    if not host:
-        raise ProviderConfigurationError("Provider URL hostname cannot be empty")
-
-    if host in PROHIBITED_METADATA_HOSTS:
-        raise ProviderConfigurationError(f"Prohibited metadata destination: '{host}'")
-
-    if not allow_local and (host in ("localhost", "127.0.0.1", "::1") or host.startswith("127.")):
-        raise ProviderConfigurationError(f"Local loopback host '{host}' is prohibited for cloud providers")
-
-    return url
+    try:
+        return validate_safe_provider_url(url, allow_local=allow_local, resolve_dns=resolve_dns)
+    except SSRFValidationError as err:
+        raise ProviderConfigurationError(str(err)) from err
 
 
 def register_adapter_override(provider_name: str, adapter: BaseProviderAdapter) -> None:

@@ -48,6 +48,12 @@ class ModelCapabilityProfile(BaseModel):
     privacy_verified_at: datetime | None = Field(
         default=None, description="Timestamp of cryptographic or audit privacy attestation"
     )
+    privacy_attestation_expires_at: datetime | None = Field(
+        default=None, description="Expiration timestamp for privacy attestation"
+    )
+    privacy_attestation_revoked_at: datetime | None = Field(
+        default=None, description="Revocation timestamp if attestation was revoked"
+    )
     privacy_policy_version: str | None = Field(
         default="v1.0", description="Privacy policy or BAA agreement version"
     )
@@ -66,6 +72,12 @@ class ModelCapabilityProfile(BaseModel):
     )
     cached_input_cost_per_million_micros: int = Field(
         default=1250000, ge=0, description="Cached prompt input cost per 1M tokens in micros"
+    )
+    pricing_available: bool = Field(
+        default=True, description="Whether active pricing profile was verified and available"
+    )
+    pricing_profile_id: str | None = Field(
+        default=None, description="Authoritative pricing profile ID if available"
     )
     active: bool = Field(default=True, description="Whether model is currently operational")
 

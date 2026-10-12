@@ -22,8 +22,10 @@ from db.models import ModelRegistryRecord
 from services.circuit_breaker import circuit_breaker_service
 from services.pricing_service import (
     PricingProfileNotFoundError,
+    PricingValidationError,
     pricing_service,
 )
+from services.providers.ssrf_validator import SSRFValidationError, validate_safe_provider_url
 from shared.config import get_settings
 from shared.config.settings import EnvironmentType
 from shared.logging import get_logger
@@ -83,15 +85,21 @@ class ModelRouterService:
 
             profiles = []
             for r in records:
+                pricing_available = True
+                pricing_id = None
                 try:
                     price_rec = await pricing_service.get_active_pricing_profile(r.id, session=session)
                     in_cost = price_rec.input_cost_per_million_micros
                     out_cost = price_rec.output_cost_per_million_micros
                     cache_cost = price_rec.cached_input_cost_per_million_micros
-                except PricingProfileNotFoundError:
+                    pricing_id = price_rec.id
+                except (PricingProfileNotFoundError, PricingValidationError) as pr_exc:
+                    # Do NOT silently default rates to 0. Mark pricing as unavailable.
                     in_cost = 0
                     out_cost = 0
                     cache_cost = 0
+                    pricing_available = False
+                    logger.warning("Model lacks valid active pricing profile", model_id=r.id, error=str(pr_exc))
 
                 profiles.append(
                     ModelCapabilityProfile(
@@ -107,6 +115,8 @@ class ModelRouterService:
                         is_zero_retention=r.is_zero_retention,
                         deployment_type=r.deployment_type,
                         privacy_verified_at=r.privacy_verified_at,
+                        privacy_attestation_expires_at=getattr(r, "privacy_attestation_expires_at", None),
+                        privacy_attestation_revoked_at=getattr(r, "privacy_attestation_revoked_at", None),
                         privacy_policy_version=r.privacy_policy_version,
                         endpoint_url=r.endpoint_url,
                         reliability_index=r.reliability_index,
@@ -114,6 +124,8 @@ class ModelRouterService:
                         input_cost_per_million_micros=in_cost,
                         output_cost_per_million_micros=out_cost,
                         cached_input_cost_per_million_micros=cache_cost,
+                        pricing_available=pricing_available,
+                        pricing_profile_id=pricing_id,
                         active=r.active,
                     )
                 )
@@ -142,8 +154,10 @@ class ModelRouterService:
         # Check for sensitive taints at Gate 1
         req_taints_lower = {t.lower().strip() for t in request.taints if t.strip()}
         has_sensitive_taints = bool(req_taints_lower & SENSITIVE_TAINTS)
+        now_dt = datetime.now(UTC)
 
         for m in models:
+
             # 1. Environment and test-only provider restriction
             if m.provider == "mock":
                 if settings.environment == EnvironmentType.PRODUCTION:
@@ -197,6 +211,34 @@ class ModelRouterService:
                     )
                     continue
 
+                # Check attestation expiration
+                if m.privacy_attestation_expires_at is not None and now_dt > m.privacy_attestation_expires_at:
+                    exclusions.append(
+                        CandidateExclusion(
+                            model_id=m.model_id,
+                            rule="GATE1_PRIVACY_ATTESTATION_EXPIRED",
+                            reason=(
+                                f"Model '{m.model_id}' privacy attestation expired at "
+                                f"{m.privacy_attestation_expires_at.isoformat()}"
+                            ),
+                        )
+                    )
+                    continue
+
+                # Check attestation revocation
+                if m.privacy_attestation_revoked_at is not None and now_dt >= m.privacy_attestation_revoked_at:
+                    exclusions.append(
+                        CandidateExclusion(
+                            model_id=m.model_id,
+                            rule="GATE1_PRIVACY_ATTESTATION_REVOKED",
+                            reason=(
+                                f"Model '{m.model_id}' privacy attestation was revoked at "
+                                f"{m.privacy_attestation_revoked_at.isoformat()}"
+                            ),
+                        )
+                    )
+                    continue
+
                 # Must be deployed in private VPC, on-prem, or air-gapped
                 if m.deployment_type not in ("cloud_dedicated_vpc", "on_prem_local", "air_gapped"):
                     exclusions.append(
@@ -211,17 +253,17 @@ class ModelRouterService:
                     )
                     continue
 
-                # Local Ollama endpoint check
+                # Local Ollama endpoint check via SSRF validator
                 if m.provider == "ollama":
-                    endpoint = (m.endpoint_url or getattr(settings, "ollama_base_url", "")).lower()
-                    if not (
-                        "localhost" in endpoint or "127.0.0.1" in endpoint or endpoint.startswith("http://10.")
-                    ):
+                    endpoint = m.endpoint_url or getattr(settings, "ollama_base_url", "")
+                    try:
+                        validate_safe_provider_url(endpoint, allow_local=True, resolve_dns=False)
+                    except SSRFValidationError as s_err:
                         exclusions.append(
                             CandidateExclusion(
                                 model_id=m.model_id,
                                 rule="GATE1_LOCAL_ENDPOINT_UNVERIFIED",
-                                reason=f"Ollama local endpoint '{endpoint}' is unverified or external",
+                                reason=f"Ollama local endpoint '{endpoint}' failed destination policy: {s_err}",
                             )
                         )
                         continue
@@ -321,12 +363,12 @@ class ModelRouterService:
                     prompt_tokens=request.estimated_input_tokens,
                     completion_tokens=request.estimated_output_tokens,
                 )
-            except PricingProfileNotFoundError:
+            except (PricingProfileNotFoundError, PricingValidationError) as p_err:
                 exclusions.append(
                     CandidateExclusion(
                         model_id=m.model_id,
                         rule="PRICING_PROFILE_UNAVAILABLE",
-                        reason=f"No active pricing profile found for model '{m.model_id}'; fail closed",
+                        reason=f"Pricing profile unavailable or invalid for model '{m.model_id}': {p_err}",
                     )
                 )
                 continue
@@ -480,16 +522,34 @@ class ModelRouterService:
         # Gate 1 Privacy
         req_taints_lower = {t.lower().strip() for t in request.taints if t.strip()}
         if bool(req_taints_lower & SENSITIVE_TAINTS):
-            if (
-                not profile.is_zero_retention
-                or profile.privacy_verified_at is None
-                or profile.deployment_type not in ("cloud_dedicated_vpc", "on_prem_local", "air_gapped")
-            ):
-                return False, f"Model '{candidate_model_id}' does not satisfy Gate 1 privacy constraints", None, 0, ""
+            if not profile.is_zero_retention:
+                return False, f"Model '{candidate_model_id}' does not guarantee zero data retention", None, 0, ""
+            if profile.privacy_verified_at is None:
+                return False, f"Model '{candidate_model_id}' lacks verified privacy attestation", None, 0, ""
+
+            now_dt = datetime.now(UTC)
+            if profile.privacy_attestation_expires_at is not None and now_dt >= profile.privacy_attestation_expires_at:
+                return False, f"Model '{candidate_model_id}' privacy attestation expired", None, 0, ""
+
+            if profile.privacy_attestation_revoked_at is not None and now_dt >= profile.privacy_attestation_revoked_at:
+                return False, f"Model '{candidate_model_id}' privacy attestation revoked", None, 0, ""
+
+            if profile.deployment_type not in ("cloud_dedicated_vpc", "on_prem_local", "air_gapped"):
+                return False, f"Model '{candidate_model_id}' lacks isolated deployment", None, 0, ""
+
+            if profile.provider == "ollama":
+                endpoint = profile.endpoint_url or getattr(settings, "ollama_base_url", "")
+                try:
+                    validate_safe_provider_url(endpoint, allow_local=True, resolve_dns=False)
+                except SSRFValidationError as s_err:
+                    return False, f"Ollama local endpoint failed destination policy: {s_err}", None, 0, ""
 
         # Gate 3 Risk
         if request.risk_level >= 3:
             if profile.tier != ModelTier.FRONTIER or profile.reliability_index < 0.85:
+                return False, f"Model '{candidate_model_id}' does not satisfy Gate 3 risk constraints", None, 0, ""
+        elif request.risk_level == 2:
+            if profile.reliability_index < 0.75:
                 return False, f"Model '{candidate_model_id}' does not satisfy Gate 3 risk constraints", None, 0, ""
 
         # Capabilities
@@ -518,8 +578,9 @@ class ModelRouterService:
                     "",
                 )
             return True, None, profile, est_cost, pricing_record.id
-        except PricingProfileNotFoundError:
-            return False, f"Pricing profile unavailable for model '{candidate_model_id}'", None, 0, ""
+        except (PricingProfileNotFoundError, PricingValidationError) as p_err:
+            msg = f"Pricing profile unavailable or invalid for model '{candidate_model_id}': {p_err}"
+            return False, msg, None, 0, ""
 
 
 model_router_service = ModelRouterService()

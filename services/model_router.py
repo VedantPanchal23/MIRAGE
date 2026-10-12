@@ -25,6 +25,7 @@ from services.pricing_service import (
     PricingValidationError,
     pricing_service,
 )
+from services.privacy_attestation import verify_privacy_attestation
 from services.providers.ssrf_validator import SSRFValidationError, validate_safe_provider_url
 from shared.config import get_settings
 from shared.config.settings import EnvironmentType
@@ -189,7 +190,7 @@ class ModelRouterService:
 
             # 3. Gate 1 Privacy & Deployment Constraint
             if has_sensitive_taints:
-                # Must have verified zero-retention attestation
+                # Zero-retention requirement
                 if not m.is_zero_retention:
                     exclusions.append(
                         CandidateExclusion(
@@ -203,65 +204,27 @@ class ModelRouterService:
                     )
                     continue
 
-                if m.privacy_verified_at is None:
+                # Cryptographic Privacy Attestation Verification
+                is_attested, attest_reason = verify_privacy_attestation(
+                    profile=m,
+                    trusted_public_keys=getattr(settings, "trusted_privacy_notary_public_keys", None),
+                    now=now_dt,
+                )
+                if not is_attested:
+                    rule = "GATE1_PRIVACY_ATTESTATION_UNTRUSTED"
+                    if "lacks verified privacy attestation timestamp" in attest_reason:
+                        rule = "GATE1_PRIVACY_ATTESTATION_MISSING"
+                    elif "privacy attestation expired" in attest_reason.lower():
+                        rule = "GATE1_PRIVACY_ATTESTATION_EXPIRED"
+                    elif "privacy attestation was revoked" in attest_reason.lower():
+                        rule = "GATE1_PRIVACY_ATTESTATION_REVOKED"
+                    elif "does not provide required physical/vpc isolation" in attest_reason.lower():
+                        rule = "GATE1_DEPLOYMENT_NOT_ISOLATED"
                     exclusions.append(
                         CandidateExclusion(
                             model_id=m.model_id,
-                            rule="GATE1_PRIVACY_ATTESTATION_MISSING",
-                            reason=f"Model '{m.model_id}' lacks verified privacy attestation timestamp",
-                        )
-                    )
-                    continue
-
-                # Check attestation expiration
-                if m.privacy_attestation_expires_at is not None and now_dt > m.privacy_attestation_expires_at:
-                    exclusions.append(
-                        CandidateExclusion(
-                            model_id=m.model_id,
-                            rule="GATE1_PRIVACY_ATTESTATION_EXPIRED",
-                            reason=(
-                                f"Model '{m.model_id}' privacy attestation expired at "
-                                f"{m.privacy_attestation_expires_at.isoformat()}"
-                            ),
-                        )
-                    )
-                    continue
-
-                # Check attestation revocation
-                if m.privacy_attestation_revoked_at is not None and now_dt >= m.privacy_attestation_revoked_at:
-                    exclusions.append(
-                        CandidateExclusion(
-                            model_id=m.model_id,
-                            rule="GATE1_PRIVACY_ATTESTATION_REVOKED",
-                            reason=(
-                                f"Model '{m.model_id}' privacy attestation was revoked at "
-                                f"{m.privacy_attestation_revoked_at.isoformat()}"
-                            ),
-                        )
-                    )
-                    continue
-
-                # Must be deployed in private VPC, on-prem, or air-gapped
-                if m.deployment_type not in ("cloud_dedicated_vpc", "on_prem_local", "air_gapped"):
-                    exclusions.append(
-                        CandidateExclusion(
-                            model_id=m.model_id,
-                            rule="GATE1_DEPLOYMENT_NOT_ISOLATED",
-                            reason=(
-                                f"Model '{m.model_id}' deployment type '{m.deployment_type}' does not provide "
-                                f"required physical/VPC isolation for sensitive taints"
-                            ),
-                        )
-                    )
-                    continue
-
-                # Check attestation issuer provenance
-                if not m.attestation_issuer or not m.attestation_issuer.strip():
-                    exclusions.append(
-                        CandidateExclusion(
-                            model_id=m.model_id,
-                            rule="GATE1_PRIVACY_ATTESTATION_UNTRUSTED",
-                            reason=f"Model '{m.model_id}' lacks trusted attestation issuer provenance",
+                            rule=rule,
+                            reason=attest_reason,
                         )
                     )
                     continue
@@ -537,21 +500,14 @@ class ModelRouterService:
         if bool(req_taints_lower & SENSITIVE_TAINTS):
             if not profile.is_zero_retention:
                 return False, f"Model '{candidate_model_id}' does not guarantee zero data retention", None, 0, ""
-            if profile.privacy_verified_at is None:
-                return False, f"Model '{candidate_model_id}' lacks verified privacy attestation", None, 0, ""
 
-            now_dt = datetime.now(UTC)
-            if profile.privacy_attestation_expires_at is not None and now_dt >= profile.privacy_attestation_expires_at:
-                return False, f"Model '{candidate_model_id}' privacy attestation expired", None, 0, ""
-
-            if profile.privacy_attestation_revoked_at is not None and now_dt >= profile.privacy_attestation_revoked_at:
-                return False, f"Model '{candidate_model_id}' privacy attestation revoked", None, 0, ""
-
-            if profile.deployment_type not in ("cloud_dedicated_vpc", "on_prem_local", "air_gapped"):
-                return False, f"Model '{candidate_model_id}' lacks isolated deployment", None, 0, ""
-
-            if not profile.attestation_issuer or not profile.attestation_issuer.strip():
-                return False, f"Model '{candidate_model_id}' lacks trusted attestation issuer provenance", None, 0, ""
+            is_attested, attest_reason = verify_privacy_attestation(
+                profile=profile,
+                trusted_public_keys=getattr(settings, "trusted_privacy_notary_public_keys", None),
+                now=datetime.now(UTC),
+            )
+            if not is_attested:
+                return False, f"Privacy attestation verification failed: {attest_reason}", None, 0, ""
 
             if profile.provider == "ollama":
                 endpoint = profile.endpoint_url or getattr(settings, "ollama_base_url", "")

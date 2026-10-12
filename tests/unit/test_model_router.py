@@ -85,22 +85,47 @@ async def test_model_router_enforces_gate1_taint_privacy() -> None:
     assert exclusions["gpt-4o"] == "GATE1_DATA_RESIDENCY_PRIVACY"
     assert exclusions["mock-frontier"] == "GATE1_PRIVACY_ATTESTATION_UNTRUSTED"
 
-    # 2. When valid attestation provenance is provided, attested zero-retention models qualify
+    # 2. When authentic cryptographic attestation is configured, attested models qualify
+    from services.privacy_attestation import create_test_notary_keypair, sign_model_attestation
+    from shared.config import get_settings
+
+    settings = get_settings()
+    priv_key, pub_key_hex, issuer_name = create_test_notary_keypair("test-notary-unit-v1")
+    now_dt = datetime.now(UTC)
+    expires_dt = now_dt + timedelta(days=30)
+
     models = await model_router_service.list_models()
-    attested_models = [
-        m.model_copy(
-            update={
-                "attestation_issuer": "mirage-trust-notary-v1",
-                "attestation_signature": f"sig_notary_{m.model_id}",
-                "privacy_verified_at": datetime.now(UTC),
-                "privacy_attestation_expires_at": datetime.now(UTC) + timedelta(days=30),
-            }
-        )
-        if m.is_zero_retention
-        else m
-        for m in models
-    ]
-    with patch.object(model_router_service, "list_models", return_value=attested_models):
+    attested_models = []
+    for m in models:
+        if m.is_zero_retention:
+            sig = sign_model_attestation(
+                private_key=priv_key,
+                model_id=m.model_id,
+                provider=m.provider,
+                is_zero_retention=True,
+                deployment_type=m.deployment_type,
+                privacy_policy_version=m.privacy_policy_version,
+                verified_at=now_dt,
+                expires_at=expires_dt,
+                issuer=issuer_name,
+            )
+            attested_models.append(
+                m.model_copy(
+                    update={
+                        "attestation_issuer": issuer_name,
+                        "attestation_signature": sig,
+                        "privacy_verified_at": now_dt,
+                        "privacy_attestation_expires_at": expires_dt,
+                    }
+                )
+            )
+        else:
+            attested_models.append(m)
+
+    with (
+        patch.object(model_router_service, "list_models", return_value=attested_models),
+        patch.object(settings, "trusted_privacy_notary_public_keys", {issuer_name: pub_key_hex}),
+    ):
         decision = await model_router_service.route(req)
 
         # gpt-4o, claude, gemini lack zero-retention in default registry

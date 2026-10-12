@@ -13,12 +13,13 @@ Enforces:
 
 import ipaddress
 import socket
+import ssl
 from collections.abc import Callable, Iterable
 from typing import Any
 from urllib.parse import urlsplit
 
+import httpcore
 import httpx
-from httpcore._backends.auto import AutoBackend
 
 from shared.config import get_settings
 
@@ -214,7 +215,7 @@ def validate_safe_provider_url(
     return url_clean
 
 
-class SSRFSafeNetworkBackend(AutoBackend):
+class SSRFSafeNetworkBackend(httpcore.AnyIOBackend):
     """Custom network backend enforcing destination SSRF checks at the socket connection boundary.
 
     Prevents DNS rebinding / TOCTOU attacks by resolving DNS and verifying every resolved IP address
@@ -330,7 +331,14 @@ class SSRFSafeNetworkBackend(AutoBackend):
 
 
 class SSRFProtectedTransport(httpx.AsyncHTTPTransport):
-    """Async HTTP transport enforcing connection-boundary SSRF safety, proxy denial, and zero keepalive reuse."""
+    """Async HTTP transport enforcing connection-boundary SSRF safety, proxy denial, and zero keepalive reuse.
+
+    Dependency Compatibility Boundary:
+    - httpx >= 0.27.0
+    - httpcore >= 1.0.0
+    Constructs an explicit httpcore.AsyncConnectionPool with a custom network_backend and zero keep-alive
+    reuse without relying on private httpx/httpcore attributes.
+    """
 
     def __init__(
         self,
@@ -346,9 +354,15 @@ class SSRFProtectedTransport(httpx.AsyncHTTPTransport):
 
         # Disable ambient environment proxies
         kwargs["trust_env"] = False
-        super().__init__(*args, **kwargs)
 
-        import httpcore
+        verify = kwargs.get("verify", True)
+        cert = kwargs.get("cert")
+        if isinstance(verify, ssl.SSLContext):
+            ssl_context = verify
+        else:
+            ssl_context = httpx.create_ssl_context(verify=verify, cert=cert, trust_env=False)
+
+        super().__init__(*args, **kwargs)
 
         backend = SSRFSafeNetworkBackend(
             allow_local=allow_local,
@@ -357,10 +371,10 @@ class SSRFProtectedTransport(httpx.AsyncHTTPTransport):
         # Bind through official AsyncConnectionPool network_backend constructor argument
         # Enforce zero keep-alive connections so every request performs immediate pre-connect verification
         self._pool = httpcore.AsyncConnectionPool(
-            ssl_context=self._pool._ssl_context,
+            ssl_context=ssl_context,
             network_backend=backend,
-            http1=True,
-            http2=False,
+            http1=kwargs.get("http1", True),
+            http2=kwargs.get("http2", False),
             max_connections=50,
             max_keepalive_connections=0,
             keepalive_expiry=0.0,
@@ -390,10 +404,19 @@ def create_ssrf_safe_client(
     if "proxy" in kwargs or "proxies" in kwargs:
         raise SSRFValidationError("Explicit proxy configuration is prohibited for outbound LLM provider connections")
     kwargs["trust_env"] = False
-    transport = create_ssrf_safe_transport(allow_local=allow_local, dns_resolver=dns_resolver)
+    verify = kwargs.pop("verify", True)
+    cert = kwargs.pop("cert", None)
+    transport = create_ssrf_safe_transport(
+        allow_local=allow_local,
+        dns_resolver=dns_resolver,
+        verify=verify,
+        cert=cert,
+    )
     return httpx.AsyncClient(
         transport=transport,
         timeout=timeout,
         follow_redirects=False,
+        verify=verify,
+        cert=cert,
         **kwargs,
     )

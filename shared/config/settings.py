@@ -226,6 +226,14 @@ class Settings(BaseSettings):
         return v
 
     # --------------------------------------------------------------------------
+    # Privacy Attestation & Notary Trust Anchor Configuration
+    # --------------------------------------------------------------------------
+    trusted_privacy_notary_public_keys: dict[str, str] = Field(
+        default_factory=dict,
+        description="Map of trusted notary issuer IDs to hex-encoded Ed25519 public keys",
+    )
+
+    # --------------------------------------------------------------------------
     # Model Thresholds & Parameters
     # --------------------------------------------------------------------------
     default_primary_model: str = Field(default="allam-2-7b")

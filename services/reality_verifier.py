@@ -44,6 +44,8 @@ from shared.schemas.audit import (
 from shared.schemas.auth import AuthContext, Role
 from shared.schemas.outcome import (
     ObservabilityClass,
+    OutcomeEscalationRequest,
+    OutcomeEscalationResponse,
     OutcomeReconciliationResult,
     OutcomeStatus,
     OutcomeVerificationContract,
@@ -157,38 +159,90 @@ def _extract_clauses(text: str) -> list[str]:
 
 # Canonical monotonic outcome state machine transition rules
 VALID_OUTCOME_TRANSITIONS: dict[OutcomeStatus, set[OutcomeStatus]] = {
-    OutcomeStatus.UNKNOWN: {
-        OutcomeStatus.UNKNOWN,
+    OutcomeStatus.PENDING_VERIFICATION: {
+        OutcomeStatus.PENDING_VERIFICATION,
+        OutcomeStatus.VERIFIED_SUCCESS,
         OutcomeStatus.SUCCESS_CONFIRMED,
         OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED,
-        OutcomeStatus.ACKNOWLEDGED_UNVERIFIED,
-        OutcomeStatus.FAILED,
+        OutcomeStatus.PARTIAL_ACHIEVEMENT,
         OutcomeStatus.PARTIAL,
+        OutcomeStatus.VERIFIED_FAILURE,
+        OutcomeStatus.FAILED,
+        OutcomeStatus.UNKNOWN,
+        OutcomeStatus.UNVERIFIABLE,
+        OutcomeStatus.UNOBSERVABLE,
+        OutcomeStatus.ACKNOWLEDGED_UNVERIFIED,
+    },
+    OutcomeStatus.UNKNOWN: {
+        OutcomeStatus.UNKNOWN,
+        OutcomeStatus.VERIFIED_SUCCESS,
+        OutcomeStatus.SUCCESS_CONFIRMED,
+        OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED,
+        OutcomeStatus.PARTIAL_ACHIEVEMENT,
+        OutcomeStatus.PARTIAL,
+        OutcomeStatus.VERIFIED_FAILURE,
+        OutcomeStatus.FAILED,
+        OutcomeStatus.UNVERIFIABLE,
+        OutcomeStatus.UNOBSERVABLE,
+        OutcomeStatus.ACKNOWLEDGED_UNVERIFIED,
     },
     OutcomeStatus.ACKNOWLEDGED_UNVERIFIED: {
         OutcomeStatus.ACKNOWLEDGED_UNVERIFIED,
+        OutcomeStatus.VERIFIED_SUCCESS,
         OutcomeStatus.SUCCESS_CONFIRMED,
         OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED,
-        OutcomeStatus.FAILED,
+        OutcomeStatus.PARTIAL_ACHIEVEMENT,
         OutcomeStatus.PARTIAL,
+        OutcomeStatus.VERIFIED_FAILURE,
+        OutcomeStatus.FAILED,
     },
     OutcomeStatus.PARTIAL: {
         OutcomeStatus.PARTIAL,
+        OutcomeStatus.PARTIAL_ACHIEVEMENT,
+        OutcomeStatus.VERIFIED_SUCCESS,
         OutcomeStatus.SUCCESS_CONFIRMED,
+        OutcomeStatus.VERIFIED_FAILURE,
+        OutcomeStatus.FAILED,
+    },
+    OutcomeStatus.PARTIAL_ACHIEVEMENT: {
+        OutcomeStatus.PARTIAL_ACHIEVEMENT,
+        OutcomeStatus.PARTIAL,
+        OutcomeStatus.VERIFIED_SUCCESS,
+        OutcomeStatus.SUCCESS_CONFIRMED,
+        OutcomeStatus.VERIFIED_FAILURE,
         OutcomeStatus.FAILED,
     },
     OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED: {
         OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED,
+        OutcomeStatus.VERIFIED_SUCCESS,
         OutcomeStatus.SUCCESS_CONFIRMED,
     },
     OutcomeStatus.SUCCESS_CONFIRMED: {
         OutcomeStatus.SUCCESS_CONFIRMED,  # Terminal
+        OutcomeStatus.VERIFIED_SUCCESS,
+    },
+    OutcomeStatus.VERIFIED_SUCCESS: {
+        OutcomeStatus.VERIFIED_SUCCESS,  # Terminal
+        OutcomeStatus.SUCCESS_CONFIRMED,
     },
     OutcomeStatus.FAILED: {
         OutcomeStatus.FAILED,  # Terminal
+        OutcomeStatus.VERIFIED_FAILURE,
+    },
+    OutcomeStatus.VERIFIED_FAILURE: {
+        OutcomeStatus.VERIFIED_FAILURE,  # Terminal
+        OutcomeStatus.FAILED,
     },
     OutcomeStatus.UNOBSERVABLE: {
         OutcomeStatus.UNOBSERVABLE,  # Terminal for OBS_BLIND
+        OutcomeStatus.UNVERIFIABLE,
+        OutcomeStatus.VERIFIED_FAILURE,
+        OutcomeStatus.FAILED,
+    },
+    OutcomeStatus.UNVERIFIABLE: {
+        OutcomeStatus.UNVERIFIABLE,  # Terminal for unobservable sinks
+        OutcomeStatus.UNOBSERVABLE,
+        OutcomeStatus.VERIFIED_FAILURE,
         OutcomeStatus.FAILED,
     },
 }
@@ -733,6 +787,154 @@ class SimulatedTestAdapter(BaseOutcomeAdapter):
         )
 
 
+_REDACT_PATTERNS = [
+    (re.compile(r"(?i)(bearer\s+)[a-zA-Z0-9_\-\.]+"), r"\1[REDACTED]"),
+    (re.compile(r"(?i)sk-[a-zA-Z0-9_\-]{16,}"), "[REDACTED_SECRET]"),
+    (re.compile(r"(?i)ghp_[a-zA-Z0-9]{20,}"), "[REDACTED_SECRET]"),
+    (re.compile(r"(://[^:]+:)([^@]+)(@)"), r"\1[REDACTED]\3"),
+    (
+        re.compile(r"(?i)(password|secret|token|api_key|apikey|private_key)\s*[:=]\s*['\"]?([^'\"\s,]+)['\"]?"),
+        r"\1=[REDACTED]",
+    ),
+]
+_SENSITIVE_KEY_NAMES = {
+    "password",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "access_token",
+    "private_key",
+    "auth",
+    "authorization",
+    "credentials",
+    "client_secret",
+}
+
+
+def _redact_sensitive_payload(val: Any) -> Any:
+    """Recursively scrub credentials, tokens, and secrets from observation and evidence payloads."""
+    if isinstance(val, str):
+        result = val
+        for pat, repl in _REDACT_PATTERNS:
+            result = pat.sub(repl, result)
+        return result
+    elif isinstance(val, dict):
+        redacted_dict: dict[str, Any] = {}
+        for k, v in val.items():
+            if str(k).lower() in _SENSITIVE_KEY_NAMES:
+                redacted_dict[k] = "[REDACTED]"
+            else:
+                redacted_dict[k] = _redact_sensitive_payload(v)
+        return redacted_dict
+    elif isinstance(val, list):
+        return [_redact_sensitive_payload(item) for item in val]
+    return val
+
+
+class IndependentObserverAdapter(BaseOutcomeAdapter):
+    """Adapter for verifying outcomes using authoritative independent observations."""
+
+    async def verify(
+        self,
+        action: ActionContract,
+        request: OutcomeVerificationRequest,
+        _tenant_id: str,
+    ) -> AdapterProbeResult:
+        if not request.observation:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="OutcomeVerifierType.INDEPENDENT_OBSERVER requires 'observation' in request payload.",
+            )
+        obs = request.observation
+
+        # 1. Target resource validation
+        if obs.target_resource.strip() != action.target_resource.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Target resource mismatch: observation target '{obs.target_resource}' "
+                    f"does not match ActionContract target '{action.target_resource}'."
+                ),
+            )
+
+        # 2. Anti-staleness validation
+        action_ts = action.executed_at or action.created_at
+        if action_ts:
+            obs_dt = obs.observed_at
+            if obs_dt.tzinfo is None:
+                obs_dt = obs_dt.replace(tzinfo=UTC)
+            act_dt = action_ts
+            if act_dt.tzinfo is None:
+                act_dt = act_dt.replace(tzinfo=UTC)
+            if obs_dt < act_dt:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=(
+                        f"Stale observation: observed_at ({obs_dt.isoformat()}) is earlier than "
+                        f"action execution time ({act_dt.isoformat()})."
+                    ),
+                )
+
+        # 3. Acceptable evidence sources allowlist check
+        if action.outcome_contract and isinstance(action.outcome_contract, dict):
+            acceptable_sources = action.outcome_contract.get("acceptable_evidence_sources")
+            if acceptable_sources and isinstance(acceptable_sources, list) and len(acceptable_sources) > 0:
+                if obs.source_id not in acceptable_sources:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Untrusted evidence source: observer source '{obs.source_id}' is not in "
+                            f"authorized acceptable_evidence_sources: {acceptable_sources}."
+                        ),
+                    )
+
+        # 4. Digest validation
+        if not is_valid_sha256_hex(obs.evidence_digest):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Invalid evidence digest '{obs.evidence_digest}': "
+                    "must be 64-char lowercase SHA-256 hex string."
+                ),
+            )
+
+        # 5. Evaluate discrepancies against expected postconditions
+        expected = request.expected_postconditions
+        discrepancies: list[str] = []
+        for key, exp_val in expected.items():
+            obs_val = obs.observed_state.get(key)
+            if obs_val != exp_val:
+                discrepancies.append(
+                    f"Postcondition violation on '{key}': expected '{exp_val}', observed '{obs_val}'."
+                )
+
+        # Redact any secrets in observed state
+        safe_observed_state = _redact_sensitive_payload(obs.observed_state)
+        safe_evidence = _redact_sensitive_payload({
+            "observation_id": obs.observation_id,
+            "source_id": obs.source_id,
+            "target_resource": obs.target_resource,
+            "observed_at": obs.observed_at.isoformat(),
+            "evidence_digest": obs.evidence_digest,
+            "signature": obs.signature,
+            "epistemic_confidence": obs.epistemic_confidence,
+            "observed_state": safe_observed_state,
+        })
+
+        return AdapterProbeResult(
+            observed_state=safe_observed_state,
+            evidence_payload=safe_evidence,
+            discrepancies=discrepancies,
+            is_simulated=False,
+            adapter_name=f"IndependentObserverAdapter[{obs.source_id}]",
+            success_indicated=(len(discrepancies) == 0),
+            reconciliation_notes=[
+                f"Verified via independent observer '{obs.source_id}' (digest: {obs.evidence_digest[:16]}...)"
+            ],
+        )
+
+
 class RealityVerifierService:
     """Core Gate 5 Outcome Assurance engine validating external system state."""
 
@@ -745,6 +947,7 @@ class RealityVerifierService:
             OutcomeVerifierType.HTTP_RESOURCE: HttpResourceAdapter(),
             OutcomeVerifierType.ASYNC_EVENT: AsyncEventAdapter(),
             OutcomeVerifierType.SIMULATED: SimulatedTestAdapter(),
+            OutcomeVerifierType.INDEPENDENT_OBSERVER: IndependentObserverAdapter(),
         }
         self.checkpoint_registry = checkpoint_registry or TrustedCheckpointRegistry()
 
@@ -837,6 +1040,20 @@ class RealityVerifierService:
             idempotency_key=record.idempotency_key or "",
             target_environment=record.target_environment or "DEFAULT",
             contract_binding_hash=record.contract_binding_hash,
+            evidence_source=record.evidence_source,
+            evidence_digest=record.evidence_digest,
+            observed_at=(
+                record.observed_at.isoformat()
+                if hasattr(record.observed_at, "isoformat") and record.observed_at
+                else str(record.observed_at) if record.observed_at else None
+            ),
+            verification_deadline=(
+                record.verification_deadline.isoformat()
+                if hasattr(record.verification_deadline, "isoformat") and record.verification_deadline
+                else str(record.verification_deadline) if record.verification_deadline else None
+            ),
+            escalation_status=record.escalation_status,
+            escalation_notes=record.escalation_notes,
             schema_version="mirage.outcome.v1",
             verified_at=verified_dt,
             trust_assurance_level=trust_assurance_level,
@@ -1014,8 +1231,14 @@ class RealityVerifierService:
             if payload.get("outcome_id") == record.id:
                 matching_audits.append(a)
 
+        # For PENDING_VERIFICATION, verification has not taken place yet, so no GATE5_OUTCOME_VERIFIED anchor exists
+        if record.outcome_status == OutcomeStatus.PENDING_VERIFICATION.value and not matching_audits:
+            return self._record_to_contract(record, trust_assurance_level="PENDING_OBSERVATION")
+
         # Fail closed: OutcomeVerificationRecord cannot be verified without an authoritative anchor
         if not matching_audits:
+            if record.outcome_status == OutcomeStatus.UNKNOWN.value:
+                return self._record_to_contract(record, trust_assurance_level="EXPIRED_UNANCHORED")
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=(
@@ -1325,9 +1548,15 @@ class RealityVerifierService:
                 # Idempotency check: if existing is terminal or matches idempotency key
                 if existing_record.idempotency_key == idempotency_key and existing_record.outcome_status in (
                     OutcomeStatus.SUCCESS_CONFIRMED.value,
+                    OutcomeStatus.VERIFIED_SUCCESS.value,
                     OutcomeStatus.FAILED.value,
+                    OutcomeStatus.VERIFIED_FAILURE.value,
                 ):
                     return await self.verify_record_against_audit_trail(session, existing_record)
+
+            # Auto-route to INDEPENDENT_OBSERVER when observation payload is provided
+            if request.observation is not None and request.verifier_type != OutcomeVerifierType.INDEPENDENT_OBSERVER:
+                request = request.model_copy(update={"verifier_type": OutcomeVerifierType.INDEPENDENT_OBSERVER})
 
             # 5. Environment Binding
             target_env = "DEFAULT"
@@ -1344,7 +1573,29 @@ class RealityVerifierService:
                     ),
                 )
 
-            # 6. Production Simulation Check
+            # 6. Risk-Sensitive Verification Policy & Production Simulation Check
+            risk_policy = "DEFAULT"
+            if action.outcome_contract and isinstance(action.outcome_contract, dict):
+                risk_policy = action.outcome_contract.get("risk_sensitive_verification_policy", "DEFAULT")
+
+            if risk_policy == "STRICT_DIRECT_ONLY":
+                if request.verifier_type == OutcomeVerifierType.SIMULATED:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Action outcome contract mandates STRICT_DIRECT_ONLY policy. "
+                            "Simulated probes are prohibited."
+                        ),
+                    )
+                if request.observability_class in (ObservabilityClass.OBS_INFERRED, ObservabilityClass.OBS_BLIND):
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            f"Action outcome contract mandates STRICT_DIRECT_ONLY policy. "
+                            f"Observability class '{request.observability_class.value}' is prohibited."
+                        ),
+                    )
+
             settings = get_settings()
             if (
                 request.verifier_type == OutcomeVerifierType.SIMULATED
@@ -1377,6 +1628,25 @@ class RealityVerifierService:
 
             effective_postconditions = {**authoritative_postconditions, **request.expected_postconditions}
             effective_request = request.model_copy(update={"expected_postconditions": effective_postconditions})
+
+            # Check verification deadline expiration
+            now_utc = datetime.now(UTC)
+            deadline_passed = False
+            if existing_record and existing_record.verification_deadline:
+                dl = existing_record.verification_deadline
+                if dl.tzinfo is None:
+                    dl = dl.replace(tzinfo=UTC)
+                if now_utc > dl:
+                    deadline_passed = True
+            elif action.outcome_contract and isinstance(action.outcome_contract, dict):
+                dl_sec = action.outcome_contract.get("verification_deadline_seconds")
+                act_start = action.executed_at or action.created_at
+                if dl_sec and act_start:
+                    if act_start.tzinfo is None:
+                        act_start = act_start.replace(tzinfo=UTC)
+                    from datetime import timedelta
+                    if now_utc > (act_start + timedelta(seconds=float(dl_sec))):
+                        deadline_passed = True
 
             # 8. Select Adapter and execute probe
             adapter = self.adapters.get(request.verifier_type)
@@ -1451,14 +1721,35 @@ class RealityVerifierService:
                         )
                 elif discrepancies:
                     if len(discrepancies) < len(effective_postconditions) and len(effective_postconditions) > 1:
-                        outcome_status = OutcomeStatus.PARTIAL
-                        epistemic_confidence = 0.85
+                        outcome_status = (
+                            OutcomeStatus.PARTIAL_ACHIEVEMENT
+                            if request.observation
+                            else OutcomeStatus.PARTIAL
+                        )
+                        raw_conf = (
+                            request.observation.epistemic_confidence
+                            if request.observation
+                            else 0.85
+                        )
+                        epistemic_confidence = min(raw_conf, 0.70)
                     else:
-                        outcome_status = OutcomeStatus.FAILED
+                        outcome_status = (
+                            OutcomeStatus.VERIFIED_FAILURE
+                            if request.observation
+                            else OutcomeStatus.FAILED
+                        )
                         epistemic_confidence = 0.95
                 else:
-                    outcome_status = OutcomeStatus.SUCCESS_CONFIRMED
-                    epistemic_confidence = 1.00
+                    outcome_status = (
+                        OutcomeStatus.VERIFIED_SUCCESS
+                        if request.observation
+                        else OutcomeStatus.SUCCESS_CONFIRMED
+                    )
+                    epistemic_confidence = (
+                        request.observation.epistemic_confidence
+                        if request.observation
+                        else 1.00
+                    )
 
             elif obs_class == ObservabilityClass.OBS_EVENTUAL:
                 if len(effective_postconditions) == 0:
@@ -1484,6 +1775,13 @@ class RealityVerifierService:
             else:
                 outcome_status = OutcomeStatus.UNKNOWN
                 epistemic_confidence = 0.0
+
+            if deadline_passed and request.observation is None and not probe_result.success_indicated:
+                outcome_status = OutcomeStatus.UNKNOWN
+                epistemic_confidence = 0.0
+                reconciliation_notes.append(
+                    "Verification deadline expired without independent confirmation. Downgraded to UNKNOWN."
+                )
 
             # 10. Monotonic state transition enforcement against existing record
             if existing_record:
@@ -1568,6 +1866,23 @@ class RealityVerifierService:
                     verified_at=verified_at_dt,
                 )
                 session.add(record)
+
+            if request.observation:
+                record.evidence_source = request.observation.source_id
+                record.evidence_digest = request.observation.evidence_digest
+                record.observed_at = request.observation.observed_at
+            else:
+                record.evidence_source = probe_result.adapter_name
+                record.evidence_digest = observed_state_hash
+                record.observed_at = verified_at_dt
+
+            # Update ActionContract status and lifecycle completion
+            action.outcome_status = outcome_status.value
+            if outcome_status in (OutcomeStatus.VERIFIED_SUCCESS, OutcomeStatus.SUCCESS_CONFIRMED):
+                action.state = ActionState.COMPLETED.value
+                action.completed_at = verified_at_dt
+            elif outcome_status in (OutcomeStatus.VERIFIED_FAILURE, OutcomeStatus.FAILED):
+                action.state = ActionState.FAILED.value
 
             # 13. Audit Trail Recording with PostgreSQL engine serialization and row locking
             app_settings = get_settings()
@@ -1833,10 +2148,14 @@ class RealityVerifierService:
             # The model is honest and refrains from false success claims.
             if status_val in (
                 OutcomeStatus.FAILED,
+                OutcomeStatus.VERIFIED_FAILURE,
                 OutcomeStatus.UNKNOWN,
                 OutcomeStatus.UNOBSERVABLE,
+                OutcomeStatus.UNVERIFIABLE,
                 OutcomeStatus.PARTIAL,
+                OutcomeStatus.PARTIAL_ACHIEVEMENT,
                 OutcomeStatus.ACKNOWLEDGED_UNVERIFIED,
+                OutcomeStatus.PENDING_VERIFICATION,
             ):
                 return OutcomeReconciliationResult(
                     is_consistent=True,
@@ -1846,7 +2165,11 @@ class RealityVerifierService:
                 )
 
             # If the verified outcome was confirmed success, but output explicitly asserted failure:
-            if status_val in (OutcomeStatus.SUCCESS_CONFIRMED, OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED):
+            if status_val in (
+                OutcomeStatus.SUCCESS_CONFIRMED,
+                OutcomeStatus.VERIFIED_SUCCESS,
+                OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED,
+            ):
                 if has_explicit_failure:
                     return OutcomeReconciliationResult(
                         is_consistent=False,
@@ -1880,7 +2203,11 @@ class RealityVerifierService:
             )
 
         # 5. Confirmed Success Checks
-        if status_val in (OutcomeStatus.SUCCESS_CONFIRMED, OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED):
+        if status_val in (
+            OutcomeStatus.SUCCESS_CONFIRMED,
+            OutcomeStatus.VERIFIED_SUCCESS,
+            OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED,
+        ):
             return OutcomeReconciliationResult(
                 is_consistent=True,
                 epistemic_conflict_detected=False,
@@ -1888,18 +2215,23 @@ class RealityVerifierService:
                 recommended_disposition="PERMIT",
             )
 
-        # 6. Partial, Failed, Unobservable, Inferred, Unknown Handling
+        # 6. Partial, Failed, Unobservable, Inferred, Unknown, Pending Handling
         conflict_msg = (
             f"Epistemic Invariant Violation: Output claims successful action completion, but Gate 5 "
             f"reality status is '{status_val.value}' with confidence {outcome_contract.epistemic_confidence}. "
         )
-        if status_val == OutcomeStatus.ACKNOWLEDGED_UNVERIFIED:
+        if status_val == OutcomeStatus.PENDING_VERIFICATION:
+            conflict_msg += (
+                "Action outcome verification is still PENDING_VERIFICATION; "
+                "real-world success is unconfirmed."
+            )
+        elif status_val == OutcomeStatus.ACKNOWLEDGED_UNVERIFIED:
             conflict_msg += "Transport acknowledgment alone does not prove destination state change."
-        elif status_val == OutcomeStatus.UNOBSERVABLE:
+        elif status_val in (OutcomeStatus.UNOBSERVABLE, OutcomeStatus.UNVERIFIABLE):
             conflict_msg += "Target resource is write-only/unobservable; physical state confirmation is impossible."
-        elif status_val == OutcomeStatus.FAILED:
+        elif status_val in (OutcomeStatus.FAILED, OutcomeStatus.VERIFIED_FAILURE):
             conflict_msg += "State verification observed explicit invariant failure."
-        elif status_val == OutcomeStatus.PARTIAL:
+        elif status_val in (OutcomeStatus.PARTIAL, OutcomeStatus.PARTIAL_ACHIEVEMENT):
             conflict_msg += (
                 "Outcome is PARTIAL: subset of actions failed in batch; output cannot claim complete success."
             )
@@ -1908,13 +2240,193 @@ class RealityVerifierService:
 
         conflict_reasons.append(conflict_msg)
 
-        disposition = "REJECT" if status_val == OutcomeStatus.FAILED else "REWRITE_WITH_CAVEAT"
+        disposition = (
+            "REJECT"
+            if status_val in (OutcomeStatus.FAILED, OutcomeStatus.VERIFIED_FAILURE)
+            else "REWRITE_WITH_CAVEAT"
+        )
         return OutcomeReconciliationResult(
             is_consistent=False,
             epistemic_conflict_detected=True,
             conflict_reasons=conflict_reasons,
             recommended_disposition=disposition,
         )
+
+    async def get_outcome_by_id(
+        self,
+        outcome_id: str,
+        tenant_id: str,
+    ) -> OutcomeVerificationContract | None:
+        """Fetch outcome contract by ID with deadline expiration check under tenant isolation."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            stmt = (
+                select(OutcomeVerificationRecord)
+                .where(
+                    OutcomeVerificationRecord.id == outcome_id,
+                    OutcomeVerificationRecord.tenant_id == tenant_id,
+                )
+                .with_for_update()
+            )
+            record = (await session.execute(stmt)).scalar_one_or_none()
+            if not record:
+                return None
+
+            if record.outcome_status == OutcomeStatus.PENDING_VERIFICATION.value and record.verification_deadline:
+                now_utc = datetime.now(UTC)
+                dl = record.verification_deadline
+                if dl.tzinfo is None:
+                    dl = dl.replace(tzinfo=UTC)
+                if now_utc > dl:
+                    record.outcome_status = OutcomeStatus.UNKNOWN.value
+                    record.epistemic_confidence = 0.0
+                    record.reconciliation_notes = (record.reconciliation_notes or []) + [
+                        "Verification deadline expired while pending. Monotonically transitioned to UNKNOWN."
+                    ]
+                    await session.flush()
+
+            return await self.verify_record_against_audit_trail(session, record)
+
+    async def get_outcome_by_action_id(
+        self,
+        action_id: str,
+        tenant_id: str,
+    ) -> OutcomeVerificationContract | None:
+        """Fetch outcome contract for an ActionContract with deadline expiration check."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            stmt = (
+                select(OutcomeVerificationRecord)
+                .where(
+                    OutcomeVerificationRecord.action_id == action_id,
+                    OutcomeVerificationRecord.tenant_id == tenant_id,
+                )
+                .order_by(OutcomeVerificationRecord.created_at.desc())
+                .limit(1)
+                .with_for_update()
+            )
+            record = (await session.execute(stmt)).scalar_one_or_none()
+            if not record:
+                return None
+
+            if record.outcome_status == OutcomeStatus.PENDING_VERIFICATION.value and record.verification_deadline:
+                now_utc = datetime.now(UTC)
+                dl = record.verification_deadline
+                if dl.tzinfo is None:
+                    dl = dl.replace(tzinfo=UTC)
+                if now_utc > dl:
+                    record.outcome_status = OutcomeStatus.UNKNOWN.value
+                    record.epistemic_confidence = 0.0
+                    record.reconciliation_notes = (record.reconciliation_notes or []) + [
+                        "Verification deadline expired while pending. Monotonically transitioned to UNKNOWN."
+                    ]
+                    await session.flush()
+
+            return await self.verify_record_against_audit_trail(session, record)
+
+    async def get_pending_outcomes(
+        self,
+        tenant_id: str,
+    ) -> list[OutcomeVerificationContract]:
+        """Fetch all PENDING_VERIFICATION outcomes for a tenant, evaluating deadlines."""
+        async with db_session.get_tenant_session(tenant_id) as session:
+            stmt = (
+                select(OutcomeVerificationRecord)
+                .where(
+                    OutcomeVerificationRecord.tenant_id == tenant_id,
+                    OutcomeVerificationRecord.outcome_status == OutcomeStatus.PENDING_VERIFICATION.value,
+                )
+                .order_by(OutcomeVerificationRecord.created_at.asc())
+                .with_for_update()
+            )
+            records = (await session.execute(stmt)).scalars().all()
+            contracts: list[OutcomeVerificationContract] = []
+            now_utc = datetime.now(UTC)
+
+            for rec in records:
+                if rec.verification_deadline:
+                    dl = rec.verification_deadline
+                    if dl.tzinfo is None:
+                        dl = dl.replace(tzinfo=UTC)
+                    if now_utc > dl:
+                        rec.outcome_status = OutcomeStatus.UNKNOWN.value
+                        rec.epistemic_confidence = 0.0
+                        rec.reconciliation_notes = (rec.reconciliation_notes or []) + [
+                            "Verification deadline expired while pending. Monotonically transitioned to UNKNOWN."
+                        ]
+                contract = await self.verify_record_against_audit_trail(session, rec)
+                contracts.append(contract)
+
+            await session.flush()
+            return contracts
+
+    async def escalate_outcome(
+        self,
+        request: OutcomeEscalationRequest,
+        auth: AuthContext,
+    ) -> OutcomeEscalationResponse:
+        """Escalate an outcome verification record for operator review under tenant isolation."""
+        async with db_session.get_tenant_session(auth.tenant_id) as session:
+            stmt = (
+                select(OutcomeVerificationRecord)
+                .where(
+                    OutcomeVerificationRecord.id == request.outcome_id,
+                    OutcomeVerificationRecord.tenant_id == auth.tenant_id,
+                )
+                .with_for_update()
+            )
+            record = (await session.execute(stmt)).scalar_one_or_none()
+            if not record:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Outcome record '{request.outcome_id}' not found for tenant '{auth.tenant_id}'",
+                )
+
+            now_dt = datetime.now(UTC)
+            record.escalation_status = "ESCALATED"
+            notes = f"Escalated by {auth.identity_id or 'operator'}: {request.reason}"
+            if request.escalation_notes:
+                notes += f" | {request.escalation_notes}"
+            record.escalation_notes = notes
+
+            entry_id = f"aud_esc_{uuid.uuid4().hex}"
+            audit_entry = AuditLogRecord(
+                entry_id=entry_id,
+                tenant_id=auth.tenant_id,
+                sequence_number=1,
+                session_id=record.transaction_id,
+                trace_id="gate5-escalate",
+                prompt_hash="0" * 64,
+                response_hash=record.verification_hash,
+                hrs_score=0.0,
+                risk_tier="HIGH",
+                claims_count=0,
+                claims_summary=[],
+                correction_applied=False,
+                event_type="GATE5_OUTCOME_ESCALATED",
+                actor_identity_id=auth.identity_id or "system_actor",
+                transaction_id=record.transaction_id,
+                decision="ESCALATED",
+                policy_reference=None,
+                capability_id="operator_escalation",
+                reason=request.reason,
+                event_payload={
+                    "outcome_id": record.id,
+                    "action_id": record.action_id,
+                    "reason": request.reason,
+                    "notes": request.escalation_notes,
+                },
+                prev_hash=GENESIS_ROOT_HASH,
+                chain_hash=compute_sha256(f"{record.id}:ESCALATED:{now_dt.isoformat()}"),
+                created_at=now_dt,
+            )
+            session.add(audit_entry)
+            await session.flush()
+
+            return OutcomeEscalationResponse(
+                outcome_id=record.id,
+                escalation_status="ESCALATED",
+                escalated_at=now_dt.isoformat(),
+                reason=request.reason,
+            )
 
     def propose_compensating_action(self, action: ActionContract) -> None:
         """In accordance with MIRAGE 3.0 Gate 5 Invariants:

@@ -12,7 +12,15 @@ from fastapi import HTTPException, status
 from sqlalchemy import func, select
 
 from db import session as db_session
-from db.models import ActionApproval, ActionContract, AITransaction, AuditLogRecord, Capability, ToolDefinition
+from db.models import (
+    ActionApproval,
+    ActionContract,
+    AITransaction,
+    AuditLogRecord,
+    Capability,
+    OutcomeVerificationRecord,
+    ToolDefinition,
+)
 from shared.schemas.action import (
     ActionAuthorizationDecision,
     ActionBatchProposal,
@@ -42,6 +50,7 @@ from shared.schemas.control_plane import (
     Taint,
     is_dangerous_triad_active,
 )
+from shared.schemas.outcome import ObservabilityClass, OutcomeStatus
 
 # Constants for Salami-Slicing Defense & Cumulative Blast Radius
 MAX_WINDOW_HOURS = 1
@@ -667,6 +676,104 @@ class ActionGovernorService:
                 or (autonomy_level > matching_cap.max_autonomy_level)
             )
 
+            # Phase 6: Outcome Assurance Contract Validation
+            requires_outcome_assurance = bool(
+                (req.outcome_contract and req.outcome_contract.requires_outcome_assurance)
+                or req.action_type in (ActionType.WRITE, ActionType.DELETE, ActionType.EXECUTE, ActionType.EGRESS)
+                or single_action_risk >= 40
+                or autonomy_level >= 2
+                or effective_cost > 0.0
+            )
+
+            outcome_contract_dict: dict[str, Any] | None = None
+            if requires_outcome_assurance:
+                merged_postconditions = list(req.postconditions)
+                if req.outcome_contract and req.outcome_contract.expected_postconditions:
+                    for ep in req.outcome_contract.expected_postconditions:
+                        if isinstance(ep, dict) and "target" in ep:
+                            assertion = ep.get("assertion", "EQUALS")
+                            merged_postconditions.append(
+                                PostconditionRule(
+                                    assertion=assertion,
+                                    target=ep["target"],
+                                    expected_value=ep.get("expected_value"),
+                                )
+                            )
+
+                # Criterion 1: Must define expected postconditions for autonomous authorization
+                if not requires_human_approval and len(merged_postconditions) == 0:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.BLOCK,
+                        state=ActionState.BLOCKED,
+                        reason=(
+                            "Outcome Assurance contract violation: "
+                            "action requires outcome assurance but defines zero expected postconditions."
+                        ),
+                        risk_score=single_action_risk,
+                        autonomy_level=autonomy_level,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+
+                # Criterion 2: Acceptable evidence sources
+                acceptable_sources: list[str] = []
+                if req.outcome_contract and req.outcome_contract.acceptable_evidence_sources:
+                    acceptable_sources = req.outcome_contract.acceptable_evidence_sources
+                elif tool.tool_type == ToolType.HTTP:
+                    scheme = req.target_resource.split("://")[0] if "://" in req.target_resource else "http"
+                    acceptable_sources = [f"http:{scheme}", "HTTP_RESOURCE"]
+                else:
+                    acceptable_sources = ["DATABASE", "HTTP_RESOURCE", "ASYNC_EVENT", "INDEPENDENT_OBSERVER"]
+
+                if req.outcome_contract and len(req.outcome_contract.acceptable_evidence_sources) == 0:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.BLOCK,
+                        state=ActionState.BLOCKED,
+                        reason=(
+                            "Outcome Assurance contract violation: "
+                            "acceptable_evidence_sources cannot be empty when outcome contract is specified."
+                        ),
+                        risk_score=single_action_risk,
+                        autonomy_level=autonomy_level,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+
+                # Criterion 3: Verification deadline
+                deadline_sec = 30.0
+                if req.outcome_contract:
+                    if req.outcome_contract.verification_deadline_seconds <= 0:
+                        return ActionAuthorizationDecision(
+                            action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                            decision=Decision.BLOCK,
+                            state=ActionState.BLOCKED,
+                            reason=(
+                                "Outcome Assurance contract violation: "
+                                "verification_deadline_seconds must be positive."
+                            ),
+                            risk_score=single_action_risk,
+                            autonomy_level=autonomy_level,
+                            normalized_parameters=normalized_params,
+                            parameters_hash=params_hash,
+                        )
+                    deadline_sec = req.outcome_contract.verification_deadline_seconds
+
+                outcome_contract_dict = {
+                    "requires_outcome_assurance": True,
+                    "expected_postconditions": [p.model_dump() for p in merged_postconditions],
+                    "acceptable_evidence_sources": acceptable_sources,
+                    "verification_deadline_seconds": deadline_sec,
+                    "risk_sensitive_verification_policy": (
+                        req.outcome_contract.risk_sensitive_verification_policy.value
+                        if req.outcome_contract
+                        else "STRICT_DIRECT_ONLY" if single_action_risk >= 60 else "DEFAULT"
+                    ),
+                    "on_partial": req.outcome_contract.on_partial.value if req.outcome_contract else "HOLD_FOR_REVIEW",
+                    "on_uncertain": req.outcome_contract.on_uncertain.value if req.outcome_contract else "ESCALATE",
+                }
+
             action_id = f"act_{uuid.uuid4().hex[:16]}"
             approval_id: str | None = None
 
@@ -723,6 +830,9 @@ class ActionGovernorService:
                 idempotency_key=req.idempotency_key,
                 preconditions=[p.model_dump() for p in req.preconditions],
                 postconditions=[p.model_dump() for p in req.postconditions],
+                requires_outcome_assurance=requires_outcome_assurance,
+                outcome_contract=outcome_contract_dict,
+                outcome_status=OutcomeStatus.PENDING_VERIFICATION.value if requires_outcome_assurance else None,
                 approval_id=None,
                 created_at=now,
                 authorized_at=now if final_state == ActionState.AUTHORIZED else None,
@@ -1069,7 +1179,7 @@ class ActionGovernorService:
                     detail="Action contract is in state 'BLOCKED' and cannot be executed",
                 )
 
-            if contract.state in (ActionState.COMPLETED.value, ActionState.EXECUTING.value):
+            if contract.state in (ActionState.COMPLETED.value, ActionState.EXECUTING.value, ActionState.EXECUTED.value):
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"Action contract is already executed or executing (current: {contract.state})",
@@ -1217,7 +1327,7 @@ class ActionGovernorService:
                 auth=auth,
             )
 
-            # Postcondition Evaluation
+            # Postcondition Evaluation against Tool Return Value
             postconditions_ok = True
             evidence_records: list[dict[str, Any]] = []
             postconds = [PostconditionRule(**p) for p in (contract.postconditions or [])]
@@ -1228,7 +1338,63 @@ class ActionGovernorService:
                 if not satisfied:
                     postconditions_ok = False
 
-            final_state = ActionState.COMPLETED if (not error_msg and postconditions_ok) else ActionState.FAILED
+            outcome_id: str | None = None
+            if error_msg:
+                final_state = ActionState.FAILED
+                contract.outcome_status = OutcomeStatus.VERIFIED_FAILURE.value
+            elif contract.requires_outcome_assurance:
+                # Core Invariant: A tool acknowledgment (HTTP 200, success response) is NOT proof of real-world success
+                # State transitions to EXECUTED; Outcome enters PENDING_VERIFICATION awaiting independent observation.
+                final_state = ActionState.EXECUTED
+                contract.outcome_status = OutcomeStatus.PENDING_VERIFICATION.value
+
+                deadline_sec = 30.0
+                if contract.outcome_contract and isinstance(contract.outcome_contract, dict):
+                    deadline_sec = float(contract.outcome_contract.get("verification_deadline_seconds", 30.0))
+
+                outcome_id = f"outc_{uuid.uuid4().hex[:12]}"
+                target_env = (
+                    contract.blast_radius.get("target_environment", "DEFAULT")
+                    if isinstance(contract.blast_radius, dict)
+                    else "DEFAULT"
+                )
+
+                expected_posts: dict[str, Any] = {}
+                if contract.postconditions and isinstance(contract.postconditions, list):
+                    for p in contract.postconditions:
+                        if isinstance(p, dict) and "target" in p:
+                            expected_posts[p["target"]] = p.get("expected_value")
+
+                outcome_record = OutcomeVerificationRecord(
+                    id=outcome_id,
+                    tenant_id=auth.tenant_id,
+                    transaction_id=contract.transaction_id,
+                    action_id=contract.id,
+                    observability_class=ObservabilityClass.OBS_DIRECT.value,
+                    outcome_status=OutcomeStatus.PENDING_VERIFICATION.value,
+                    epistemic_confidence=0.0,
+                    verifier_adapter="PENDING_INDEPENDENT_OBSERVATION",
+                    is_simulated=False,
+                    expected_postconditions=expected_posts,
+                    observed_state={},
+                    discrepancies=[],
+                    evidence_payload={"transport_ack": observed_output, "dispatch_status": "EXECUTED"},
+                    reconciliation_notes=[
+                        "Action dispatched via tool proxy; awaiting independent target-state observation."
+                    ],
+                    verification_hash=compute_sha256(f"{auth.tenant_id}:{contract.id}:PENDING_VERIFICATION"),
+                    idempotency_key=f"idem_outc_{contract.id}_pending",
+                    target_environment=target_env,
+                    contract_binding_hash=contract.parameters_hash,
+                    verification_deadline=now + timedelta(seconds=deadline_sec),
+                    created_at=now,
+                    verified_at=now,
+                )
+                session.add(outcome_record)
+                postconditions_ok = False  # Not yet verified by independent observer!
+            else:
+                final_state = ActionState.COMPLETED if postconditions_ok else ActionState.FAILED
+                contract.outcome_status = None
 
             contract.state = final_state.value
             contract.observed_result = observed_output
@@ -1265,7 +1431,9 @@ class ActionGovernorService:
                     "action_id": contract.id,
                     "tool": contract.tool_name,
                     "state": final_state.value,
-                    "postconditions_ok": postconditions_ok,
+                    "requires_outcome_assurance": contract.requires_outcome_assurance,
+                    "outcome_status": contract.outcome_status,
+                    "outcome_id": outcome_id,
                 },
             )
             await session.flush()
@@ -1279,6 +1447,9 @@ class ActionGovernorService:
                 postconditions_satisfied=postconditions_ok,
                 postcondition_evidence=evidence_records,
                 error_message=error_msg,
+                outcome_status=OutcomeStatus(contract.outcome_status) if contract.outcome_status else None,
+                outcome_id=outcome_id,
+                requires_outcome_assurance=contract.requires_outcome_assurance,
             )
 
     # -------------------------------------------------------------------------

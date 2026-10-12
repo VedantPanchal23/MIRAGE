@@ -20,15 +20,102 @@ class ObservabilityClass(StrEnum):
 
 
 class OutcomeStatus(StrEnum):
-    """Canonical outcome status defined in Reality_Verification.md §6.1."""
+    """Canonical outcome status defined in Reality_Verification.md §6.1 and Phase 6 specification."""
 
+    # Canonical Phase 6 states
+    PENDING_VERIFICATION = "PENDING_VERIFICATION"  # Action dispatched/executed, awaiting independent observation
+    VERIFIED_SUCCESS = "VERIFIED_SUCCESS"  # Target state independently observed matching all postconditions
+    VERIFIED_FAILURE = "VERIFIED_FAILURE"  # Target state rejected mutation or postconditions violated
+    PARTIAL_ACHIEVEMENT = "PARTIAL_ACHIEVEMENT"  # Multi-step batch where subset of actions succeeded and subset failed
+    UNKNOWN = "UNKNOWN"  # Ambiguous network timeout, probe failure, or unverifiable transient state
+    UNVERIFIABLE = "UNVERIFIABLE"  # Write-only sink or unobservable destination; confidence is strictly zero
+
+    # Authoritative backward-compatible aliases
     SUCCESS_CONFIRMED = "SUCCESS_CONFIRMED"  # Postconditions directly observed and verified in target state
     SUCCESS_EVENTUALLY_OBSERVED = "SUCCESS_EVENTUALLY_OBSERVED"  # Postconditions confirmed via eventual polling
     ACKNOWLEDGED_UNVERIFIED = "ACKNOWLEDGED_UNVERIFIED"  # Transport ACK received, sink state uninspected
     FAILED = "FAILED"  # Target state rejected mutation, error raised, or postconditions violated
     PARTIAL = "PARTIAL"  # Multi-step batch where subset of actions succeeded and subset failed
-    UNKNOWN = "UNKNOWN"  # Ambiguous network timeout, probe failure, or unverifiable transient state
     UNOBSERVABLE = "UNOBSERVABLE"  # Write-only sink; confidence is strictly zero
+
+
+class RiskSensitiveVerificationPolicy(StrEnum):
+    """Risk-sensitive verification policy governing required observation strength."""
+
+    DEFAULT = "DEFAULT"
+    STRICT_DIRECT_ONLY = "STRICT_DIRECT_ONLY"  # Requires direct, non-inferred, non-simulated readback
+    ALLOW_EVENTUAL = "ALLOW_EVENTUAL"  # Allows bounded eventual polling
+    ALLOW_INFERRED = "ALLOW_INFERRED"  # Allows transport ACK with explicit confidence downgrade
+
+
+class PartialHandlingStrategy(StrEnum):
+    """Handling strategy for partial completion."""
+
+    HOLD_FOR_REVIEW = "HOLD_FOR_REVIEW"
+    ROLLBACK = "ROLLBACK"
+    COMPENSATE = "COMPENSATE"
+    ACCEPT_WITH_CAVEAT = "ACCEPT_WITH_CAVEAT"
+
+
+class UncertainHandlingStrategy(StrEnum):
+    """Handling strategy for uncertain or ambiguous completion."""
+
+    ESCALATE = "ESCALATE"
+    RETRY_THEN_ESCALATE = "RETRY_THEN_ESCALATE"
+    CIRCUIT_BREAK = "CIRCUIT_BREAK"
+
+
+class OutcomeContractSpec(BaseModel):
+    """Governed outcome contract required before executing actions that modify state."""
+
+    requires_outcome_assurance: bool = Field(
+        default=True,
+        description="Whether this action requires independent real-world outcome assurance",
+    )
+    expected_postconditions: list[dict[str, Any]] = Field(
+        default_factory=list,
+        description="Expected postconditions that must be verified in the target state",
+    )
+    acceptable_evidence_sources: list[str] = Field(
+        default_factory=list,
+        description="Explicit allowlist of trusted observer source IDs or adapter types",
+    )
+    verification_deadline_seconds: float = Field(
+        default=30.0,
+        ge=0.1,
+        le=300.0,
+        description="Maximum time allowed for independent observation before timing out",
+    )
+    risk_sensitive_verification_policy: RiskSensitiveVerificationPolicy = Field(
+        default=RiskSensitiveVerificationPolicy.DEFAULT,
+        description="Strictness policy for verification based on risk tier",
+    )
+    on_partial: PartialHandlingStrategy = Field(
+        default=PartialHandlingStrategy.HOLD_FOR_REVIEW,
+        description="Remediation strategy if only a subset of actions/sub-conditions succeed",
+    )
+    on_uncertain: UncertainHandlingStrategy = Field(
+        default=UncertainHandlingStrategy.ESCALATE,
+        description="Handling strategy if verification deadline expires or state is ambiguous",
+    )
+
+
+class IndependentObservation(BaseModel):
+    """Authoritative target-state observation payload from an independent observer."""
+
+    observation_id: str = Field(..., description="Unique identifier for this observation")
+    source_id: str = Field(..., description="Authoritative identity of the observer or probe adapter")
+    target_resource: str = Field(..., description="Target system or entity URI observed")
+    observed_at: datetime = Field(..., description="UTC timestamp when the target state was measured")
+    observed_state: dict[str, Any] = Field(default_factory=dict, description="Measured target state")
+    evidence_digest: str = Field(..., description="Cryptographic SHA-256 digest of observed evidence")
+    signature: str | None = Field(default=None, description="Optional cryptographic signature of observer")
+    epistemic_confidence: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Epistemic confidence of the observer",
+    )
 
 
 class OutcomeVerifierType(StrEnum):
@@ -38,6 +125,7 @@ class OutcomeVerifierType(StrEnum):
     HTTP_RESOURCE = "HTTP_RESOURCE"
     ASYNC_EVENT = "ASYNC_EVENT"
     SIMULATED = "SIMULATED"
+    INDEPENDENT_OBSERVER = "INDEPENDENT_OBSERVER"
 
 
 class OutcomeVerificationRequest(BaseModel):
@@ -63,6 +151,10 @@ class OutcomeVerificationRequest(BaseModel):
     adapter_config: dict[str, Any] = Field(
         default_factory=dict,
         description="Adapter-specific connection/query configuration",
+    )
+    observation: IndependentObservation | None = Field(
+        default=None,
+        description="Optional independent observation provided by an authoritative observer",
     )
     timeout_seconds: float = Field(
         default=10.0,
@@ -142,6 +234,30 @@ class OutcomeVerificationContract(BaseModel):
         default=None,
         description="SHA-256 binding fingerprint of parent ActionContract",
     )
+    evidence_source: str | None = Field(
+        default=None,
+        description="Identity of the authoritative observer or probe source",
+    )
+    evidence_digest: str | None = Field(
+        default=None,
+        description="Cryptographic digest of the independent evidence",
+    )
+    observed_at: str | None = Field(
+        default=None,
+        description="UTC timestamp when the target state was measured",
+    )
+    verification_deadline: str | None = Field(
+        default=None,
+        description="UTC deadline for verification before timing out",
+    )
+    escalation_status: str | None = Field(
+        default=None,
+        description="Operator escalation status (e.g. PENDING_REVIEW, RESOLVED)",
+    )
+    escalation_notes: str | None = Field(
+        default=None,
+        description="Notes from operator escalation or manual review",
+    )
     schema_version: str = Field(
         default="mirage.outcome.v1",
         description="Canonical schema version identifier for verification payload",
@@ -186,3 +302,22 @@ class OutcomeReconciliationResult(BaseModel):
         ...,
         description="Recommended action: PERMIT, REWRITE_WITH_CAVEAT, or REJECT",
     )
+
+
+class OutcomeEscalationRequest(BaseModel):
+    """Request payload to escalate an outcome for operator review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    outcome_id: str = Field(..., description="Target outcome verification ID")
+    reason: str = Field(..., description="Reason for operator escalation")
+    escalation_notes: str | None = Field(default=None, description="Additional context or notes")
+
+
+class OutcomeEscalationResponse(BaseModel):
+    """Response confirming outcome escalation."""
+
+    outcome_id: str
+    escalation_status: str
+    escalated_at: str
+    reason: str

@@ -9,6 +9,8 @@ from gateway.middleware.auth import get_current_auth
 from services.reality_verifier import reality_verifier_service
 from shared.schemas.auth import AuthContext, Role
 from shared.schemas.outcome import (
+    OutcomeEscalationRequest,
+    OutcomeEscalationResponse,
     OutcomeReconciliationRequest,
     OutcomeReconciliationResult,
     OutcomeVerificationContract,
@@ -37,28 +39,34 @@ async def verify_action_outcome(
 
 
 @router.get(
-    "/{outcome_id}",
-    response_model=OutcomeVerificationContract,
-    summary="Get Gate 5 Outcome Verification record by ID",
+    "/pending",
+    response_model=list[OutcomeVerificationContract],
+    summary="List all pending Gate 5 outcome records awaiting verification",
 )
-async def get_outcome_by_id(
-    outcome_id: str,
+async def list_pending_outcomes(
+    auth: AuthContext = Depends(get_current_auth),
+) -> list[OutcomeVerificationContract]:
+    """Fetch all PENDING_VERIFICATION outcomes for tenant, evaluating verification deadlines."""
+    return await reality_verifier_service.get_pending_outcomes(auth.tenant_id)
+
+
+@router.get(
+    "/action/{action_id}",
+    response_model=OutcomeVerificationContract,
+    summary="Get Gate 5 Outcome Verification record by Action ID",
+)
+async def get_outcome_by_action_id(
+    action_id: str,
     auth: AuthContext = Depends(get_current_auth),
 ) -> OutcomeVerificationContract:
-    """Fetch authoritative outcome verification record under strict tenant isolation."""
-    async with db_session.get_tenant_session(auth.tenant_id) as session:
-        stmt = select(OutcomeVerificationRecord).where(
-            OutcomeVerificationRecord.id == outcome_id,
-            OutcomeVerificationRecord.tenant_id == auth.tenant_id,
+    """Fetch authoritative outcome verification record for an action under tenant boundary."""
+    contract = await reality_verifier_service.get_outcome_by_action_id(action_id, auth.tenant_id)
+    if not contract:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No outcome verification record found for action '{action_id}' in tenant '{auth.tenant_id}'",
         )
-        record = (await session.execute(stmt)).scalar_one_or_none()
-        if not record:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail=f"Outcome record '{outcome_id}' not found for tenant '{auth.tenant_id}'",
-            )
-
-        return await reality_verifier_service.verify_record_against_audit_trail(session, record)
+    return contract
 
 
 @router.get(
@@ -119,3 +127,38 @@ async def reconcile_output_and_outcome(
             action_id=request.action_id,
             auth_tenant_id=auth.tenant_id,
         )
+
+
+@router.post(
+    "/{outcome_id}/escalate",
+    response_model=OutcomeEscalationResponse,
+    summary="Escalate an outcome verification record for operator review",
+)
+async def escalate_outcome(
+    outcome_id: str,
+    request: OutcomeEscalationRequest,
+    auth: AuthContext = Depends(get_current_auth),
+) -> OutcomeEscalationResponse:
+    """Escalate outcome record for manual operator intervention."""
+    if outcome_id != request.outcome_id:
+        request = request.model_copy(update={"outcome_id": outcome_id})
+    return await reality_verifier_service.escalate_outcome(request, auth)
+
+
+@router.get(
+    "/{outcome_id}",
+    response_model=OutcomeVerificationContract,
+    summary="Get Gate 5 Outcome Verification record by ID",
+)
+async def get_outcome_by_id(
+    outcome_id: str,
+    auth: AuthContext = Depends(get_current_auth),
+) -> OutcomeVerificationContract:
+    """Fetch authoritative outcome verification record under strict tenant isolation."""
+    contract = await reality_verifier_service.get_outcome_by_id(outcome_id, auth.tenant_id)
+    if not contract:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Outcome record '{outcome_id}' not found for tenant '{auth.tenant_id}'",
+        )
+    return contract

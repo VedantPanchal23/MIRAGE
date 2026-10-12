@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from pydantic import BaseModel, Field
 
 from shared.schemas.control_plane import Decision, Taint
+from shared.schemas.outcome import OutcomeContractSpec, OutcomeStatus
 
 
 class ActionType(StrEnum):
@@ -54,6 +55,7 @@ class ActionState(StrEnum):
     AUTHORIZED = "AUTHORIZED"
     AWAITING_APPROVAL = "AWAITING_APPROVAL"
     EXECUTING = "EXECUTING"
+    EXECUTED = "EXECUTED"
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     BLOCKED = "BLOCKED"
@@ -321,6 +323,10 @@ class ActionProposal(BaseModel):
     preconditions: list[PreconditionRule] = Field(default_factory=list)
     postconditions: list[PostconditionRule] = Field(default_factory=list)
     blast_radius: BlastRadiusAssessment = Field(default_factory=BlastRadiusAssessment)
+    outcome_contract: OutcomeContractSpec | None = Field(
+        default=None,
+        description="Explicit outcome assurance contract defining postconditions, evidence sources, and deadline",
+    )
 
 
 class ActionBatchProposal(BaseModel):
@@ -374,6 +380,18 @@ class ActionExecutionResult(BaseModel):
     postconditions_satisfied: bool
     postcondition_evidence: list[dict[str, Any]] = Field(default_factory=list)
     error_message: str | None = None
+    outcome_status: OutcomeStatus | None = Field(
+        default=None,
+        description="Persisted Gate 5 outcome qualification status",
+    )
+    outcome_id: str | None = Field(
+        default=None,
+        description="Unique ID of created Gate 5 outcome verification record",
+    )
+    requires_outcome_assurance: bool = Field(
+        default=False,
+        description="Whether this action requires independent real-world observation",
+    )
 
 
 class BatchExecutionResult(BaseModel):

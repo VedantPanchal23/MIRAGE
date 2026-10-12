@@ -134,3 +134,23 @@ To prevent post-authorization parameter tampering, confused-deputy redirection, 
 4. **Runtime Capability and Tool Revocation:**
    - Actor capabilities and tool registry active statuses are re-checked at physical execution time to defeat TOCTOU (Time-Of-Check to Time-Of-Use) vulnerabilities where permissions are revoked after authorization.
 
+## 12. Integration with Outcome Assurance Contracts (Phase 6)
+
+In Phase 6, Action Contracts integrate natively with the Gate 5 Outcome Assurance lifecycle:
+1. **Mandatory Outcome Contracts for Consequential Actions:**
+   - Every mutating action (`WRITE`, `DELETE`, `EXECUTE`, `EGRESS`), action with risk score $\ge 40$, autonomy level $\ge 2$, or non-zero estimated cost requires an explicit outcome contract (`requires_outcome_assurance=True`).
+   - Actions requiring outcome assurance must define:
+     - Expected postconditions (`expected_postconditions` or `postconditions`).
+     - Acceptable evidence sources allowlist (`acceptable_evidence_sources`).
+     - Positive verification deadline (`verification_deadline_seconds > 0`).
+     - Risk-sensitive verification policy (`risk_sensitive_verification_policy`).
+     - Partial and uncertain handling strategies (`on_partial`, `on_uncertain`).
+   - Attempting to authorize a mutating action autonomously without postconditions fails closed with `Decision.BLOCK` (`ActionState.BLOCKED`).
+2. **Action Execution State Decoupling:**
+   - Transport acknowledgment is explicitly not proof of destination state change.
+   - When a tool returns success (e.g., HTTP 200), an action requiring outcome assurance transitions to `ActionState.EXECUTED` (not `COMPLETED`), and its outcome transitions to `PENDING_VERIFICATION` with `epistemic_confidence=0.0`.
+   - The action's outcome contract is only marked `VERIFIED_SUCCESS` once an authoritative independent observer confirms the postconditions.
+
+---
+*End of Document*
+

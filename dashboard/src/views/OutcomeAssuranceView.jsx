@@ -120,11 +120,25 @@ export function OutcomeAssuranceView({ isRefreshing, onDataLoaded }) {
 
   const getStatusBadge = (status) => {
     switch (status) {
+      case "PENDING_VERIFICATION":
+        return {
+          bg: "bg-indigo-500/10 text-indigo-400 border-indigo-500/30",
+          icon: <Clock className="w-4 h-4 mr-1.5" />,
+          label: "PENDING_VERIFICATION (Awaiting Independent Observation)",
+        };
+      case "VERIFIED_SUCCESS":
       case "SUCCESS_CONFIRMED":
       case "SUCCESS_EVENTUALLY_OBSERVED":
         return {
           bg: "bg-emerald-500/10 text-emerald-400 border-emerald-500/30",
           icon: <CheckCircle className="w-4 h-4 mr-1.5" />,
+          label: status,
+        };
+      case "PARTIAL_ACHIEVEMENT":
+      case "PARTIAL":
+        return {
+          bg: "bg-orange-500/10 text-orange-400 border-orange-500/30",
+          icon: <AlertTriangle className="w-4 h-4 mr-1.5" />,
           label: status,
         };
       case "ACKNOWLEDGED_UNVERIFIED":
@@ -133,12 +147,20 @@ export function OutcomeAssuranceView({ isRefreshing, onDataLoaded }) {
           icon: <Clock className="w-4 h-4 mr-1.5" />,
           label: "ACKNOWLEDGED_UNVERIFIED (Transport ACK Only)",
         };
+      case "UNKNOWN":
+        return {
+          bg: "bg-amber-500/10 text-amber-400 border-amber-500/30",
+          icon: <AlertTriangle className="w-4 h-4 mr-1.5" />,
+          label: "UNKNOWN (Indeterminate or Timed Out)",
+        };
+      case "UNVERIFIABLE":
       case "UNOBSERVABLE":
         return {
           bg: "bg-zinc-500/10 text-zinc-400 border-zinc-500/30",
           icon: <Eye className="w-4 h-4 mr-1.5" />,
-          label: "UNOBSERVABLE (Write-Only Sink)",
+          label: `${status} (Write-Only Sink)`,
         };
+      case "VERIFIED_FAILURE":
       case "FAILED":
         return {
           bg: "bg-rose-500/10 text-rose-400 border-rose-500/30",

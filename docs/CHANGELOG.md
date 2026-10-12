@@ -116,7 +116,18 @@ MIRAGE has evolved from a hallucination detection platform (2.x) to a comprehens
 - **Bounded Eventual Consistency & Timeout Guarantees:** In `AsyncEventAdapter`, bounded poll attempts and timeouts; ensured that timeouts strictly yield `UNKNOWN` with confidence `0.0`.
 - **Gate 4 ↔ Gate 5 Reconciliation Hardening:** Strengthened `reconcile_output_with_outcome` with tenant isolation, transaction correlation, action correlation, and plural/postfix verb assertion pattern matching.
 - **Compensating Action Governance:** Enforced that Gate 5 reality verifier routes compensating actions strictly through Gate 3 (`ActionGovernorService`).
-- **Dedicated Adversarial Hardening Suite:** Implemented 30 dedicated adversarial test vectors (`tests/security/test_phase5_5_hardening.py`) with 30/30 passing; 511/511 passing across full regression suite.
+#### Phase 6 — Outcome Assurance Lifecycle & Evidence State Machine
+- **Evidence-Based Outcome State Machine:** Canonical states (`PENDING_VERIFICATION`, `VERIFIED_SUCCESS`, `VERIFIED_FAILURE`, `PARTIAL_ACHIEVEMENT`, `UNKNOWN`, `UNVERIFIABLE`) with strict monotonic transition rules and terminal immutability.
+- **Core Invariant Enforcement:** Tool acknowledgment / HTTP 200 explicitly decoupled from real-world success. Mutating actions transition to `ActionState.EXECUTED` and create an `OutcomeVerificationRecord` in `PENDING_VERIFICATION` state with `epistemic_confidence=0.0`.
+- **Outcome Contract Specification:** Added `OutcomeContractSpec` enforcing expected postconditions, acceptable evidence sources allowlists, positive deadlines, risk-sensitive verification policies, and partial/uncertain completion strategies prior to autonomous authorization.
+- **Independent Observation Verification:** Implemented `IndependentObserverAdapter` (`OutcomeVerifierType.INDEPENDENT_OBSERVER`) with target resource binding, anti-staleness validation (`observed_at >= executed_at`), evidence source allowlist checks, SHA-256 digest verification, and discrepancy analysis.
+- **Sensitive Payload Redaction:** Recursive scrubbing of bearer tokens, API keys, passwords, and database credentials from observation and evidence payloads before persistence.
+- **Risk-Sensitive Verification Policy:** Strict enforcement of `STRICT_DIRECT_ONLY`, prohibiting simulated probes and inferred/blind observability classes for high-risk actions.
+- **Deadline Expiration Downgrades:** Monotonic downgrade of pending outcomes to `UNKNOWN` with confidence `0.0` upon verification deadline expiration.
+- **Operator Escalation Workflow:** Human-in-the-loop escalation endpoints (`POST /v1/outcomes/{outcome_id}/escalate`) recording review status and audit chaining.
+- **Extended REST API & Dashboard:** Endpoints `GET /v1/outcomes/pending`, `GET /v1/outcomes/action/{action_id}`, and `POST /v1/outcomes/{outcome_id}/escalate`; dashboard API client and status badges updated (React 18 / JSX).
+- **Alembic Migration 016:** Additive schema migration `016_phase6_outcome_assurance_lifecycle.py` with PostgreSQL Row-Level Security.
+- **Test Suite:** Comprehensive unit and security test suites (`test_outcome_state_machine.py`, `test_outcome_contracts.py`, `test_phase6_outcome_assurance.py`) with 100% pass rate.
 
 ### Deprecated
 - Streamlit dashboard deprecated in favor of React 18/JSX frontend.

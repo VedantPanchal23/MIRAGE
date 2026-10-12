@@ -189,6 +189,52 @@ Gate 5 is strictly a verification and reconciliation boundary. Calling `propose_
 ### 11.7 Dedicated Adversarial Hardening Suite
 A dedicated 30-vector adversarial test suite (`tests/security/test_phase5_5_hardening.py`) verifies all 30 attack vectors with 100% pass rate. Full repository regression suite achieves 511/511 passing tests.
 
+## 12. Phase 6 — Outcome Assurance Lifecycle & Evidence State Machine
+
+Phase 6 implements the complete, end-to-end Outcome Assurance lifecycle, establishing deterministic evidence-based verification, strict epistemic state transitions, independent observation verification, and human escalation workflows:
+
+### 12.1 Canonical Outcome Assurance State Machine
+The Phase 6 evidence state machine formalizes the lifecycle of an outcome from action dispatch to physical state verification:
+- **`PENDING_VERIFICATION`**: Non-terminal state initialized upon action dispatch. Epistemic confidence is strictly `0.0`. Tool response acknowledgment or HTTP 200 is explicitly rejected as proof of real-world success.
+- **`VERIFIED_SUCCESS`** (alias: `SUCCESS_CONFIRMED`): Terminal state reached only when independent target-state observations demonstrate that all required postconditions are satisfied. Epistemic confidence: High ($0.90 - 1.00$).
+- **`VERIFIED_FAILURE`** (alias: `FAILED`): Terminal state reached when independent observation detects invariant violations or explicit system failure. Epistemic confidence: High ($0.90 - 1.00$).
+- **`PARTIAL_ACHIEVEMENT`** (alias: `PARTIAL`): Terminal state reached when a subset of postconditions succeeded in a multi-operation batch. Epistemic confidence: Moderate ($0.40 - 0.70$).
+- **`UNKNOWN`**: Monotonically reached when verification deadline expires or verification probe times out without definitive evidence. Epistemic confidence: Zero ($0.0$).
+- **`UNVERIFIABLE`** (alias: `UNOBSERVABLE`): Target resource lacks read channel or feedback mechanism (`OBS_BLIND`). Epistemic confidence: Zero ($0.0$).
+
+### 12.2 Monotonic Transition Invariants
+Outcome verification records follow strict monotonic transitions governed by `VALID_OUTCOME_TRANSITIONS`:
+- Non-terminal state `PENDING_VERIFICATION` can transition to `VERIFIED_SUCCESS`, `VERIFIED_FAILURE`, `PARTIAL_ACHIEVEMENT`, `UNKNOWN`, or `UNVERIFIABLE`.
+- Terminal states are strictly immutable: once verified, an outcome cannot be overwritten or downgraded by conflicting probes.
+- Expired verification deadlines monotonically downgrade pending outcomes to `UNKNOWN` with confidence `0.0`.
+
+### 12.3 Independent Observation Verification (`IndependentObserverAdapter`)
+The verification boundary is decoupled from the tool execution boundary. State changes are verified via `IndependentObserverAdapter` (`OutcomeVerifierType.INDEPENDENT_OBSERVER`):
+1. **Target Resource Binding:** Observation `target_resource` must match authorized `ActionContract.target_resource`.
+2. **Anti-Staleness Enforcement:** Observation timestamp `observed_at` must be greater than or equal to action execution timestamp `executed_at`. Stale observations are rejected.
+3. **Evidence Source Allowlist:** Observation source `evidence_source` must belong to the authorized `acceptable_evidence_sources` allowlist in the action's `OutcomeContractSpec`.
+4. **Cryptographic Evidence Digest:** Observation digest `evidence_digest` must be a valid 64-character lowercase SHA-256 hex string.
+5. **Discrepancy Evaluation:** Observed target state is compared against expected postconditions, flagging discrepancies and quantifying epistemic confidence.
+
+### 12.4 Sensitive Payload Redaction
+All observation and evidence payloads undergo recursive sanitization via `_redact_sensitive_payload`:
+- Bearer tokens, OpenAI/Anthropic API keys (`sk-...`), GitHub personal tokens (`ghp_...`), basic auth credentials (`user:pass@`), and password/secret fields are scrubbed to `[REDACTED]` prior to persistence in PostgreSQL and audit records.
+
+### 12.5 Risk-Sensitive Verification Policy Enforcement
+- `STRICT_DIRECT_ONLY`: For high-risk or production-bound actions (risk $\ge 60$ or `PROD`), simulated adapters (`SimulatedTestAdapter`) and inferred/blind observability classes (`OBS_INFERRED`, `OBS_BLIND`) are strictly prohibited with HTTP 400.
+- `DEFAULT`: Standard policy with balanced multi-adapter validation.
+- `LENIENT_PERMISSIVE`: Used for non-consequential dev actions.
+
+### 12.6 Operator Escalation Workflow
+When an outcome is uncertain, failed, or partially achieved, human operators can review and record escalation decisions via:
+- `POST /v1/outcomes/{outcome_id}/escalate` with `OutcomeEscalationRequest` (`escalation_status`, `escalation_notes`, `compensation_action_id`).
+- Escalations are recorded directly on the `OutcomeVerificationRecord` and appended to the cryptographic audit chain.
+
+### 12.7 Extended REST Endpoints
+- `GET /v1/outcomes/pending`: List all outcomes currently in `PENDING_VERIFICATION` for the tenant.
+- `GET /v1/outcomes/action/{action_id}`: Retrieve outcome verification record by action ID.
+- `POST /v1/outcomes/{outcome_id}/escalate`: Human operator escalation and review workflow.
+
 ---
 *End of Document*
 

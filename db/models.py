@@ -562,6 +562,9 @@ class ActionContract(Base):
     observed_result: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
     approval_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    requires_outcome_assurance: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    outcome_contract: Mapped[dict[str, Any] | None] = mapped_column(JSONB, nullable=True)
+    outcome_status: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
@@ -670,6 +673,12 @@ class OutcomeVerificationRecord(Base):
     idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     target_environment: Mapped[str] = mapped_column(String(32), default="DEFAULT", nullable=False)
     contract_binding_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    evidence_source: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    evidence_digest: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    observed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    verification_deadline: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    escalation_status: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    escalation_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )

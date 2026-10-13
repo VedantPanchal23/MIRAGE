@@ -102,6 +102,10 @@ class GovernedContextRequest(BaseModel):
         default=True,
         description="If True, encapsulates detected injection payloads strictly as data; if False, drops item.",
     )
+    intended_purpose: str | None = Field(
+        default=None,
+        description="Intended transaction purpose (e.g. TASK_GROUNDING, USER_PROFILE) to filter memory applicability.",
+    )
 
 
 class GovernedContextResponse(BaseModel):

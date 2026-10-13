@@ -171,6 +171,13 @@ class GovernedMemoryHoldRequest(BaseModel):
     hold_active: bool = Field(description="True to place on LEGAL_HOLD, False to return to STANDARD")
     justification: str = Field(min_length=1, max_length=1000)
 
+    @field_validator("justification")
+    @classmethod
+    def validate_justification_not_whitespace(cls, v: str) -> str:
+        if not v.strip():
+            raise ValueError("Legal hold justification cannot be empty or pure whitespace")
+        return v.strip()
+
 
 class GovernedMemorySearchRequest(BaseModel):
     """Purpose-bound, authenticated search request across governed memory."""

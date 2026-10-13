@@ -17,7 +17,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError, ProgrammingError
 
 
 @pytest.mark.security
@@ -233,3 +233,227 @@ class TestPostgresMemoryMigration:
             )
             row = conn.execute(query).mappings().one_or_none()
             assert row is not None, "memory_category should be present after re-upgrade to head"
+
+    def test_clean_schema_migration_rls_and_unprivileged_app_role_isolation(self, sync_engine: Any) -> None:
+        """Starts from clean schema, runs real migrations, verifies RLS, and proves isolation under mirage_app."""
+        _ = sync_engine
+        sync_url = os.environ.get("DATABASE_SYNC_URL")
+        assert sync_url is not None
+        clean_db_name = f"test_clean_mem_rls_{uuid.uuid4().hex[:8]}"
+
+        # Step 1: Create a brand new clean database as admin
+        admin_engine = create_engine(sync_url, isolation_level="AUTOCOMMIT")
+        with admin_engine.connect() as conn:
+            conn.execute(text(f"CREATE DATABASE {clean_db_name};"))
+
+        try:
+            # Step 2: Configure alembic to upgrade the clean database to head
+            clean_sync_url = sync_url.rsplit("/", 1)[0] + f"/{clean_db_name}"
+            orig_sync_env = os.environ.get("DATABASE_SYNC_URL")
+            try:
+                os.environ["DATABASE_SYNC_URL"] = clean_sync_url
+                cfg = Config("alembic.ini")
+                cfg.set_main_option("sqlalchemy.url", clean_sync_url)
+                command.upgrade(cfg, "head")
+            finally:
+                if orig_sync_env is not None:
+                    os.environ["DATABASE_SYNC_URL"] = orig_sync_env
+
+            # Step 3: Inspect pg_class & pg_policies on clean database as admin
+            clean_engine = create_engine(clean_sync_url)
+            with clean_engine.connect() as conn:
+                class_info = (
+                    conn.execute(
+                        text(
+                            """
+                            SELECT relrowsecurity, relforcerowsecurity
+                            FROM pg_class
+                            WHERE relname = 'governed_memories';
+                            """
+                        )
+                    )
+                    .mappings()
+                    .one()
+                )
+                assert class_info["relrowsecurity"] is True, "RLS not enabled on governed_memories in clean database"
+                assert (
+                    class_info["relforcerowsecurity"] is True
+                ), "RLS not FORCED on governed_memories in clean database"
+
+                policy_info = (
+                    conn.execute(
+                        text(
+                            """
+                            SELECT policyname, tablename, cmd, qual, with_check
+                            FROM pg_policies
+                            WHERE tablename = 'governed_memories' AND policyname = 'tenant_isolation_governed_memories';
+                            """
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+                assert policy_info is not None, "Policy tenant_isolation_governed_memories missing in clean database"
+                assert policy_info["cmd"] == "ALL", "Policy on governed_memories must be for ALL commands"
+
+                # Verify mirage_app role properties
+                role_info = (
+                    conn.execute(
+                        text(
+                            """
+                            SELECT rolname, rolsuper, rolbypassrls
+                            FROM pg_roles
+                            WHERE rolname = 'mirage_app';
+                            """
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+                assert role_info is not None, "mirage_app role must exist after migration"
+                assert role_info["rolsuper"] is False, "mirage_app must be NOSUPERUSER"
+                assert role_info["rolbypassrls"] is False, "mirage_app must be NOBYPASSRLS"
+
+                # Grant connect on clean database to mirage_app
+                conn.execute(text(f"GRANT CONNECT ON DATABASE {clean_db_name} TO mirage_app;"))
+                conn.commit()
+            clean_engine.dispose()
+
+            # Step 4: Connect strictly as unprivileged mirage_app
+            if "@" in clean_sync_url:
+                prefix = clean_sync_url.split("://")[0]
+                host_part = clean_sync_url.split("@")[1]
+                app_sync_url = f"{prefix}://mirage_app:mirage_app_pw@{host_part}"
+            else:
+                app_sync_url = clean_sync_url
+
+            app_engine = create_engine(app_sync_url)
+            tenant_a = f"t_clean_mem_a_{uuid.uuid4().hex[:6]}"
+            tenant_b = f"t_clean_mem_b_{uuid.uuid4().hex[:6]}"
+            mem_a = f"mem_clean_a_{uuid.uuid4().hex[:6]}"
+            mem_b = f"mem_clean_b_{uuid.uuid4().hex[:6]}"
+
+            # Test A: Unauthenticated (no tenant context set) -> Fail closed
+            with app_engine.connect() as conn:
+                unauth_mems = conn.execute(text("SELECT id FROM governed_memories")).fetchall()
+                assert len(unauth_mems) == 0
+
+            # Test B: Seed Tenant A and insert memory under Tenant A context
+            with app_engine.connect() as conn:
+                conn.execute(
+                    text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                    {"t": tenant_a},
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO tenants (id, name, api_key_hash, created_at) "
+                        "VALUES (:t, 'TenantA', 'h_a', NOW())"
+                    ),
+                    {"t": tenant_a},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO governed_memories (
+                            id, tenant_id, owner_id, memory_type, scope, content, content_hash,
+                            attestation_status, taint, confidence, created_at, updated_at,
+                            memory_category, purpose, lifecycle_state, trust_level,
+                            version, retention_policy, propagation_status
+                        ) VALUES (
+                            :id, :t, 'owner_a', 'ADVISORY', 'ORGANIZATIONAL', 'Secret of A', 'hash_a',
+                            'NONE', 'TAINT_INTERNAL', 0.8, NOW(), NOW(),
+                            'USER_FACT', 'GENERAL', 'ACTIVE', 'PROVISIONAL',
+                            1, 'STANDARD', 'PROPAGATED'
+                        )
+                        """
+                    ),
+                    {"id": mem_a, "t": tenant_a},
+                )
+                conn.commit()
+
+            # Test C: Seed Tenant B and insert memory under Tenant B context
+            with app_engine.connect() as conn:
+                conn.execute(
+                    text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                    {"t": tenant_b},
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO tenants (id, name, api_key_hash, created_at) "
+                        "VALUES (:t, 'TenantB', 'h_b', NOW())"
+                    ),
+                    {"t": tenant_b},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO governed_memories (
+                            id, tenant_id, owner_id, memory_type, scope, content, content_hash,
+                            attestation_status, taint, confidence, created_at, updated_at,
+                            memory_category, purpose, lifecycle_state, trust_level,
+                            version, retention_policy, propagation_status
+                        ) VALUES (
+                            :id, :t, 'owner_b', 'ADVISORY', 'ORGANIZATIONAL', 'Secret of B', 'hash_b',
+                            'NONE', 'TAINT_INTERNAL', 0.8, NOW(), NOW(),
+                            'USER_FACT', 'GENERAL', 'ACTIVE', 'PROVISIONAL',
+                            1, 'STANDARD', 'PROPAGATED'
+                        )
+                        """
+                    ),
+                    {"id": mem_b, "t": tenant_b},
+                )
+                conn.commit()
+
+            # Test D: Strict isolation checks under Tenant A context
+            with app_engine.connect() as conn:
+                conn.execute(
+                    text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                    {"t": tenant_a},
+                )
+                # 1. SELECT isolation: Tenant A cannot see Tenant B's memory
+                mems = conn.execute(text("SELECT id FROM governed_memories")).scalars().all()
+                assert mems == [mem_a], f"Tenant A saw unexpected memories: {mems}"
+
+                # 2. Cross-tenant UPDATE attack -> 0 rows affected
+                upd = conn.execute(
+                    text("UPDATE governed_memories SET content = 'Tampered' WHERE id = :id"),
+                    {"id": mem_b},
+                )
+                assert upd.rowcount == 0
+
+                # 3. Cross-tenant DELETE attack -> 0 rows affected
+                dele = conn.execute(
+                    text("DELETE FROM governed_memories WHERE id = :id"),
+                    {"id": mem_b},
+                )
+                assert dele.rowcount == 0
+
+                # 4. Caller-controlled tenant ID spoofing on INSERT -> rejected by RLS WITH CHECK
+                with pytest.raises((ProgrammingError, DBAPIError, IntegrityError)) as exc_info:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO governed_memories (
+                                id, tenant_id, owner_id, memory_type, scope, content, content_hash,
+                                attestation_status, taint, confidence, created_at, updated_at,
+                                memory_category, purpose, lifecycle_state, trust_level,
+                                version, retention_policy, propagation_status
+                            ) VALUES (
+                                'mem_spoofed', :forged_t, 'owner', 'ADVISORY', 'ORGANIZATIONAL', 'Spoofed', 'h',
+                                'NONE', 'TAINT_INTERNAL', 0.8, NOW(), NOW(),
+                                'USER_FACT', 'GENERAL', 'ACTIVE', 'PROVISIONAL',
+                                1, 'STANDARD', 'PROPAGATED'
+                            )
+                            """
+                        ),
+                        {"forged_t": tenant_b},
+                    )
+                err_msg = str(exc_info.value).lower()
+                assert "row-level security" in err_msg or "check violation" in err_msg
+                conn.rollback()
+
+            app_engine.dispose()
+        finally:
+            with admin_engine.connect() as conn:
+                conn.execute(text(f"DROP DATABASE IF EXISTS {clean_db_name} WITH (FORCE);"))
+            admin_engine.dispose()

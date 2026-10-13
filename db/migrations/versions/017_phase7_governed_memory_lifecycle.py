@@ -147,6 +147,22 @@ def upgrade() -> None:
         )
         op.execute("ALTER TABLE governed_memories ENABLE ROW LEVEL SECURITY;")
         op.execute("ALTER TABLE governed_memories FORCE ROW LEVEL SECURITY;")
+        op.execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_policies
+                    WHERE tablename = 'governed_memories' AND policyname = 'tenant_isolation_governed_memories'
+                ) THEN
+                    CREATE POLICY tenant_isolation_governed_memories ON governed_memories FOR ALL
+                    USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), ''))
+                    WITH CHECK (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), ''));
+                END IF;
+            END
+            $$;
+            """
+        )
 
 
 def downgrade() -> None:

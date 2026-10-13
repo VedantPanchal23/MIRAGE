@@ -67,7 +67,7 @@ def memory_lifecycle_setup() -> dict[str, str]:
                     tenant_id=tenant_id,
                     subject=f"sub_p7_{suffix}",
                     principal_type="OPERATOR",
-                    role=Role.OPERATOR.value,
+                    role=Role.TENANT_ADMIN.value,
                     active=True,
                 )
             )
@@ -107,7 +107,7 @@ def test_full_governed_memory_api_lifecycle(memory_lifecycle_setup: dict[str, st
 
     auth_headers = AuthTestFactory.auth_headers(
         tenant_id=tenant_id,
-        role=Role.OPERATOR,
+        role=Role.TENANT_ADMIN,
         user_id=f"sub_p7_{suffix}",
     )
     client = TestClient(create_app())
@@ -449,6 +449,6 @@ def test_gate2_context_assembly_integration(memory_lifecycle_setup: dict[str, st
     assert mem1_item["disposition"] == ContextDisposition.ACCEPTED.value
     assert mem1_item["trust_score"] >= 0.80
 
-    # Disputed memory should be REJECTED with disputed_memory indicator
-    assert mem2_item["disposition"] == ContextDisposition.REJECTED.value
+    # Disputed memory should be quarantined as untrusted data with disputed_memory indicator
+    assert mem2_item["disposition"] == ContextDisposition.QUARANTINED_AS_DATA.value
     assert "disputed_memory" in mem2_item["indicators"]

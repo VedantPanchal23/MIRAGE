@@ -137,45 +137,55 @@ class MultiStorePropagator:
         mongo_purged: bool | None = None
 
         # 1. Qdrant Deletion
-        try:
-            from qdrant_client import QdrantClient
-
-            q_client = QdrantClient(
-                host=self.settings.qdrant_host,
-                port=self.settings.qdrant_port,
-                api_key=self.settings.qdrant_api_key,
-                https=self.settings.qdrant_https,
-                timeout=2.0,
-            )
-            collection_name = f"memories_{memory.tenant_id}"
+        if self.settings.qdrant_host:
             try:
-                point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, memory.id))
-                q_client.delete(collection_name=collection_name, points_selector=[point_id])
-                qdrant_purged = True
+                from qdrant_client import QdrantClient
+
+                q_client = QdrantClient(
+                    host=self.settings.qdrant_host,
+                    port=self.settings.qdrant_port,
+                    api_key=self.settings.qdrant_api_key,
+                    https=self.settings.qdrant_https,
+                    timeout=2.0,
+                )
+                collection_name = f"memories_{memory.tenant_id}"
+                try:
+                    point_id = str(uuid.uuid5(uuid.NAMESPACE_DNS, memory.id))
+                    q_client.delete(collection_name=collection_name, points_selector=[point_id])
+                    qdrant_purged = True
+                except Exception as exc:
+                    errors["qdrant"] = str(exc)[:200]
+                    qdrant_purged = False
             except Exception as exc:
-                errors["qdrant"] = str(exc)[:200]
+                errors["qdrant"] = f"qdrant_client_init_error: {str(exc)[:150]}"
                 qdrant_purged = False
-        except Exception:
-            qdrant_purged = True  # client not active or not in use
+        else:
+            qdrant_purged = None
 
         # 2. Redis Cache Eviction
-        try:
-            import redis.asyncio as aioredis
+        if self.settings.redis_url:
+            try:
+                import redis.asyncio as aioredis
 
-            r = aioredis.from_url(self.settings.redis_url, socket_timeout=1.0)
-            cache_key = f"mirage:memory:{memory.tenant_id}:{memory.id}"
-            await r.delete(cache_key)
-            await r.aclose()
-            redis_invalidated = True
-        except Exception as exc:
-            errors["redis"] = str(exc)[:200]
-            redis_invalidated = False
+                r = aioredis.from_url(self.settings.redis_url, socket_timeout=1.0)
+                cache_key = f"mirage:memory:{memory.tenant_id}:{memory.id}"
+                await r.delete(cache_key)
+                await r.aclose()
+                redis_invalidated = True
+            except Exception as exc:
+                errors["redis"] = str(exc)[:200]
+                redis_invalidated = False
+        else:
+            redis_invalidated = None
 
-        overall_status = (
-            PropagationStatus.PARTIAL_FAILURE
-            if errors
-            else PropagationStatus.PROPAGATED
-        )
+        if errors:
+            overall_status = PropagationStatus.PARTIAL_FAILURE
+            message = (
+                f"Memory {memory.id} successfully shredded and tombstoned with partial secondary store propagation"
+            )
+        else:
+            overall_status = PropagationStatus.PROPAGATED
+            message = f"Memory {memory.id} successfully shredded"
 
         return DeletionPropagationResult(
             memory_id=memory.id,
@@ -186,7 +196,7 @@ class MultiStorePropagator:
             mongo_purged=mongo_purged,
             overall_status=overall_status,
             error_details=errors,
-            message=f"Memory {memory.id} successfully shredded",
+            message=message,
         )
 
 
@@ -323,6 +333,32 @@ async def create_governed_memory_record(
     is_human_authority = auth.role in {Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR}
     is_signed_pipeline = request.attestation_status == AttestationStatus.PIPELINE_SIGNED
 
+    # Principal scope check: unprivileged callers cannot specify a different owner_id for USER/AGENT scopes
+    valid_callers = {c for c in (auth.user_id, auth.identity_id) if c}
+    if auth.role not in {Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR}:
+        if request.scope in {MemoryScope.USER, MemoryScope.AGENT} and request.owner_id not in valid_callers:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Cannot create {request.scope.value}-scoped memory for another principal: "
+                    "owner_id must match authenticated caller"
+                ),
+            )
+
+    # 2. Epistemic Invariant: Model-generated extractions or untrusted retrieved text can NEVER be ATTESTED
+    if request.memory_category in {
+        MemoryCategory.GENERATED_SUMMARY,
+        MemoryCategory.INFERRED_PREFERENCE,
+        MemoryCategory.UNTRUSTED_RETRIEVED,
+    } and request.memory_type == "ATTESTED":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                f"Model-generated or untrusted category '{request.memory_category.value}' "
+                "cannot be created as ATTESTED memory."
+            ),
+        )
+
     if request.memory_type == "ATTESTED":
         if not (is_human_authority or is_signed_pipeline):
             raise HTTPException(
@@ -344,12 +380,11 @@ async def create_governed_memory_record(
         initial_trust = TrustLevel.PROVISIONAL
         initial_confidence = 0.50
 
-    # 2. Epistemic Invariant: Model-generated extractions or untrusted retrieved text can NEVER be VERIFIED
     if request.memory_category in {
         MemoryCategory.GENERATED_SUMMARY,
         MemoryCategory.INFERRED_PREFERENCE,
         MemoryCategory.UNTRUSTED_RETRIEVED,
-    } and not is_human_authority:
+    }:
         initial_trust = TrustLevel.PROVISIONAL
         initial_confidence = min(initial_confidence, 0.50)
 
@@ -508,6 +543,13 @@ async def update_governed_memory_record(
                 status_code=status.HTTP_409_CONFLICT,
                 detail=f"Cannot update superseded record (superseded by {record.superseded_by_id})",
             )
+        if record.lifecycle_state == MemoryLifecycleState.EXPIRED.value:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Cannot update an expired memory record")
+        if record.trust_level == TrustLevel.REVOKED.value:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot update a memory record with REVOKED trust",
+            )
         if record.retention_policy == RetentionPolicy.LEGAL_HOLD.value:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
@@ -531,11 +573,37 @@ async def update_governed_memory_record(
                 ),
             )
 
+        # 4. Indirect Prompt Injection & Trust Escalation Prevention
+        has_injection = any(p.search(request.content) for p in _INJECTION_PATTERNS)
+        is_human_authority = auth.role in {Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR}
+
+        if has_injection:
+            target_trust = TrustLevel.UNTRUSTED.value
+            target_memory_type = "ADVISORY"
+            target_attestation = AttestationStatus.NONE.value
+            target_attested_by = None
+            target_confidence = 0.05
+            target_taint = Taint.UNTRUSTED.value
+        elif not is_human_authority:
+            # Autonomous agent modifying memory cannot inherit or retain VERIFIED trust or ATTESTED memory_type
+            target_trust = TrustLevel.PROVISIONAL.value
+            target_memory_type = "ADVISORY"
+            target_attestation = AttestationStatus.NONE.value
+            target_attested_by = None
+            target_confidence = min(record.confidence, 0.50)
+            target_taint = request.declared_taint.value if request.declared_taint else record.taint
+        else:
+            target_trust = record.trust_level
+            target_memory_type = record.memory_type
+            target_attestation = record.attestation_status
+            target_attested_by = record.attested_by
+            target_confidence = record.confidence
+            target_taint = request.declared_taint.value if request.declared_taint else record.taint
+
         now = datetime.now(UTC)
         new_version = record.version + 1
         new_record_id = f"mem_{uuid.uuid4().hex}"
         target_purpose = request.purpose.value if request.purpose else record.purpose
-        target_taint = request.declared_taint.value if request.declared_taint else record.taint
         target_retention = request.retention_policy.value if request.retention_policy else record.retention_policy
         ttl = request.ttl_seconds if request.ttl_seconds is not None else record.ttl_seconds
         expires_at = now + timedelta(seconds=ttl) if ttl else None
@@ -566,20 +634,20 @@ async def update_governed_memory_record(
             id=new_record_id,
             tenant_id=auth.tenant_id,
             owner_id=record.owner_id,
-            memory_type=record.memory_type,
+            memory_type=target_memory_type,
             memory_category=record.memory_category,
             purpose=target_purpose,
             lifecycle_state=MemoryLifecycleState.ACTIVE.value,
-            trust_level=record.trust_level,
+            trust_level=target_trust,
             scope=record.scope,
             content=request.content,
             content_hash=new_content_hash,
             version=new_version,
             superseded_by_id=None,
-            attestation_status=record.attestation_status,
-            attested_by=record.attested_by,
+            attestation_status=target_attestation,
+            attested_by=target_attested_by,
             taint=target_taint,
-            confidence=record.confidence,
+            confidence=target_confidence,
             retention_policy=target_retention,
             retention_exception_reason=None,
             ttl_seconds=ttl,
@@ -685,10 +753,29 @@ async def set_governed_memory_legal_hold(
     request: GovernedMemoryHoldRequest,
 ) -> GovernedMemoryRecordResponse:
     """Apply or release a legal/regulatory hold on a memory record."""
-    if auth.role not in {Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR}:
+    if not auth.identity_id:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A resolved identity is required")
+
+    # Authorize role: Placing a hold requires TENANT_ADMIN or SUPER_ADMIN (or OPERATOR for placing).
+    # Releasing a legal hold strictly requires TENANT_ADMIN or SUPER_ADMIN (OPERATOR lacks legal authority).
+    if request.hold_active:
+        if auth.role not in {Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only administrators or operators can place legal holds on memory records",
+            )
+    else:
+        if auth.role not in {Role.SUPER_ADMIN, Role.TENANT_ADMIN}:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only tenant administrators or super administrators have legal authority to release legal holds",
+            )
+
+    justification = (request.justification or "").strip()
+    if not justification:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Only administrators or operators can modify legal holds on memory records",
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="A non-empty justification is required for legal hold operations",
         )
 
     async with db_session.get_tenant_session(auth.tenant_id) as session:
@@ -696,15 +783,24 @@ async def set_governed_memory_legal_hold(
         if not record or record.tenant_id != auth.tenant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Memory record not found")
 
+        if record.lifecycle_state == MemoryLifecycleState.DELETED.value:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot place or modify legal hold on a deleted memory record",
+            )
+
         now = datetime.now(UTC)
         if request.hold_active:
             record.retention_policy = RetentionPolicy.LEGAL_HOLD.value
-            record.retention_exception_reason = request.justification
+            record.retention_exception_reason = justification
             decision = "MEMORY_LEGAL_HOLD_APPLIED"
         else:
             record.retention_policy = RetentionPolicy.STANDARD.value
             record.retention_exception_reason = None
             decision = "MEMORY_LEGAL_HOLD_RELEASED"
+            # If TTL expired while under legal hold, transition to EXPIRED on release
+            if record.expires_at and record.expires_at <= now:
+                record.lifecycle_state = MemoryLifecycleState.EXPIRED.value
 
         record.updated_at = now
         await _append_audit(
@@ -745,7 +841,9 @@ async def delete_governed_memory_record(
 
         now = datetime.now(UTC)
         prev_hash = record.content_hash
-        # Tombstone and shred raw payload
+        is_already_deleted = record.lifecycle_state == MemoryLifecycleState.DELETED.value
+
+        # Tombstone raw payload
         record.lifecycle_state = MemoryLifecycleState.DELETED.value
         record.content = "[CRYPTOGRAPHICALLY SHREDDED]"
         record.content_hash = compute_sha256(f"{auth.tenant_id}:SHREDDED:{record.id}:{now.isoformat()}")
@@ -757,9 +855,13 @@ async def delete_governed_memory_record(
             tenant_id=auth.tenant_id,
             actor_id=auth.identity_id,
             target_id=record.id,
-            event_type="governed_memory_shredded",
+            event_type="governed_memory_shredded" if not is_already_deleted else "governed_memory_retry_shredded",
             decision="MEMORY_DELETED",
-            reason="Cryptographically shredded by authorized caller",
+            reason=(
+                "Tombstoned and shredded by authorized caller"
+                if not is_already_deleted
+                else "Re-propagated deletion retry"
+            ),
             payload={"deleted_id": record.id, "previous_hash": prev_hash, "scope": record.scope},
         )
         await session.flush()
@@ -767,10 +869,18 @@ async def delete_governed_memory_record(
         # Multi-store deletion propagation
         prop_res = await _propagator.propagate_delete(record)
         record.propagation_status = prop_res.overall_status.value
+        qdrant_stat = (
+            "purged" if prop_res.qdrant_purged
+            else ("failed" if prop_res.qdrant_purged is False else "unconfigured")
+        )
+        redis_stat = (
+            "invalidated" if prop_res.redis_invalidated
+            else ("failed" if prop_res.redis_invalidated is False else "unconfigured")
+        )
         record.propagation_details = {
-            "postgres": "shredded",
-            "qdrant": "purged" if prop_res.qdrant_purged else "failed",
-            "redis": "invalidated" if prop_res.redis_invalidated else "failed",
+            "postgres": "tombstoned",
+            "qdrant": qdrant_stat,
+            "redis": redis_stat,
             "errors": prop_res.error_details,
         }
         await session.flush()

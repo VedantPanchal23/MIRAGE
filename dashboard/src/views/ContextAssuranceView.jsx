@@ -143,10 +143,14 @@ export function ContextAssuranceView({ isRefreshing, onDataLoaded }) {
       alert("Cannot delete memory under active LEGAL_HOLD. Release the hold first.");
       return;
     }
-    if (!window.confirm(`Are you sure you want to cryptographically shred memory ${id}?`)) return;
+    if (!window.confirm(`Are you sure you want to logically tombstone and evict memory ${id}?`)) return;
     try {
-      await deleteMemory(id);
-      setSuccessMsg(`Memory ${id} successfully shredded`);
+      const res = await deleteMemory(id);
+      if (res && res.overall_status === "PARTIAL_FAILURE") {
+        setSuccessMsg(`Memory ${id} logically tombstoned (PostgreSQL sanitized; secondary store eviction partial failure: ${res.error_details?.join("; ") || "see logs"})`);
+      } else {
+        setSuccessMsg(`Memory ${id} logically tombstoned and evicted from caches/indexes`);
+      }
       setTimeout(() => setSuccessMsg(null), 4000);
       await loadMemories();
     } catch (err) {
@@ -158,7 +162,7 @@ export function ContextAssuranceView({ isRefreshing, onDataLoaded }) {
     const holdActive = currentPolicy !== "LEGAL_HOLD";
     const promptMsg = holdActive
       ? "Enter justification for placing memory on LEGAL_HOLD:"
-      : "Enter justification for releasing LEGAL_HOLD:";
+      : "Enter justification for releasing LEGAL_HOLD (Requires Tenant Admin authority):";
     const justification = window.prompt(promptMsg, "Regulatory compliance audit hold");
     if (!justification) return;
 

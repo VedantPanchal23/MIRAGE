@@ -137,7 +137,14 @@ async def create_governed_memory(auth: AuthContext, request: MemoryCreateRequest
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A resolved identity is required")
 
     # Epistemic Invariant (docs/Memory.md §4.4):
-    # Models and autonomous agents can NEVER self-attest. Only authorized human roles or signed pipelines.
+    category = getattr(request, "memory_category", "USER_FACT") or "USER_FACT"
+    untrusted_cats = {"GENERATED_SUMMARY", "INFERRED_PREFERENCE", "UNTRUSTED_RETRIEVED"}
+    if category in untrusted_cats and request.memory_type == "ATTESTED":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=f"Model-generated or untrusted category '{category}' cannot be created as ATTESTED memory.",
+        )
+
     if request.memory_type == "ATTESTED":
         is_human_authority = auth.role in {Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR}
         is_signed_pipeline = request.attestation_status == AttestationStatus.PIPELINE_SIGNED
@@ -324,6 +331,7 @@ async def evaluate_context_candidate(
     session: Any,
     min_trust_threshold: float,
     quarantine_injections: bool,
+    intended_purpose: str | None = None,
 ) -> ContextItem:
     """Evaluate an individual context candidate against provenance, memory integrity, and poisoning."""
     now = datetime.now(UTC)
@@ -431,6 +439,36 @@ async def evaluate_context_candidate(
                     disposition_reason="Memory record not found in tenant authority",
                     indicators=["tenant_mismatch"],
                 )
+            if mem.trust_level == "REVOKED":
+                return ContextItem(
+                    id=item_id,
+                    source_type=source_type,
+                    content=content,
+                    tenant_id=auth.tenant_id,
+                    is_instruction=False,
+                    taint=Taint.INTERNAL,
+                    provenance=candidate.provenance,
+                    integrity_hash=integrity_hash,
+                    trust_score=0.0,
+                    disposition=ContextDisposition.REJECTED,
+                    disposition_reason="Memory trust has been revoked",
+                    indicators=["revoked_memory"],
+                )
+            if mem.lifecycle_state in {"EXPIRED", "ARCHIVED"}:
+                return ContextItem(
+                    id=item_id,
+                    source_type=source_type,
+                    content=content,
+                    tenant_id=auth.tenant_id,
+                    is_instruction=False,
+                    taint=Taint.INTERNAL,
+                    provenance=candidate.provenance,
+                    integrity_hash=integrity_hash,
+                    trust_score=0.0,
+                    disposition=ContextDisposition.REJECTED,
+                    disposition_reason=f"Governed memory is {mem.lifecycle_state}",
+                    indicators=["expired_memory"],
+                )
             if mem.lifecycle_state == "DELETED":
                 return ContextItem(
                     id=item_id,
@@ -460,6 +498,23 @@ async def evaluate_context_candidate(
                     disposition=ContextDisposition.REJECTED,
                     disposition_reason=f"Governed memory has been superseded by {mem.superseded_by_id}",
                     indicators=["superseded_memory"],
+                )
+            if intended_purpose and mem.purpose not in {intended_purpose, "GENERAL"}:
+                return ContextItem(
+                    id=item_id,
+                    source_type=source_type,
+                    content=content,
+                    tenant_id=auth.tenant_id,
+                    is_instruction=False,
+                    taint=Taint.INTERNAL,
+                    provenance=candidate.provenance,
+                    integrity_hash=integrity_hash,
+                    trust_score=0.0,
+                    disposition=ContextDisposition.REJECTED,
+                    disposition_reason=(
+                        f"Memory purpose '{mem.purpose}' does not match context intended purpose '{intended_purpose}'"
+                    ),
+                    indicators=["purpose_mismatch"],
                 )
             if mem.retention_policy != "LEGAL_HOLD" and mem.expires_at and mem.expires_at <= now:
                 return ContextItem(
@@ -502,9 +557,28 @@ async def evaluate_context_candidate(
             if mem.lifecycle_state == "DISPUTED":
                 indicators.append("disputed_memory")
                 trust_score = min(0.30, mem.confidence)
+                disposition = ContextDisposition.QUARANTINED_AS_DATA
+                disposition_reason = "Disputed memory quarantined as untrusted data"
             else:
                 trust_score = 0.95 if mem.memory_type == "ATTESTED" else 0.45
         else:
+            if source_type == ContextSourceType.MEMORY_ATTESTED:
+                return ContextItem(
+                    id=item_id,
+                    source_type=source_type,
+                    content=content,
+                    tenant_id=auth.tenant_id,
+                    is_instruction=False,
+                    taint=Taint.INTERNAL,
+                    provenance=candidate.provenance,
+                    integrity_hash=integrity_hash,
+                    trust_score=0.0,
+                    disposition=ContextDisposition.REJECTED,
+                    disposition_reason=(
+                        "Unbacked attestation claim: MEMORY_ATTESTED requires valid origin_id in tenant authority"
+                    ),
+                    indicators=["forged_attestation"],
+                )
             trust_score = 0.45
 
     elif source_type in {ContextSourceType.USER_INPUT, ContextSourceType.TOOL_OBSERVATION}:
@@ -596,6 +670,7 @@ async def assemble_governed_context(auth: AuthContext, request: GovernedContextR
                 session=session,
                 min_trust_threshold=request.min_trust_threshold,
                 quarantine_injections=request.quarantine_injections,
+                intended_purpose=request.intended_purpose,
             )
             evaluated.append(item)
 

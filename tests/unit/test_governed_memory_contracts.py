@@ -61,7 +61,7 @@ def test_autonomous_agent_cannot_self_attest_memory(agent_auth: AuthContext) -> 
     req = GovernedMemoryCreateRequest(
         content="Autonomous model generated fact",
         memory_type="ATTESTED",
-        memory_category=MemoryCategory.GENERATED_SUMMARY,
+        memory_category=MemoryCategory.USER_FACT,
         purpose=MemoryPurpose.TASK_GROUNDING,
         scope=MemoryScope.ORGANIZATIONAL,
     )
@@ -171,3 +171,57 @@ def test_category_and_purpose_enum_values() -> None:
     assert RetentionPolicy.LEGAL_HOLD.value == "LEGAL_HOLD"
     assert RetentionPolicy.STANDARD.value == "STANDARD"
     assert RetentionPolicy.EPHEMERAL.value == "EPHEMERAL"
+
+
+@pytest.mark.unit
+def test_legal_hold_justification_cannot_be_empty_or_whitespace() -> None:
+    """Legal hold justification must not be empty or whitespace."""
+    from shared.schemas.memory import GovernedMemoryHoldRequest
+
+    with pytest.raises(ValueError, match="empty or pure whitespace"):
+        GovernedMemoryHoldRequest(hold_active=True, justification="   \t  ")
+
+
+@pytest.mark.unit
+def test_model_generated_categories_cannot_be_attested_even_by_operator(operator_auth: AuthContext) -> None:
+    """Model-generated categories cannot be created as ATTESTED even by operator without human review workflow."""
+    import asyncio
+
+    from services.governed_memory import create_governed_memory_record
+
+    untrusted_cats = (
+        MemoryCategory.GENERATED_SUMMARY,
+        MemoryCategory.INFERRED_PREFERENCE,
+        MemoryCategory.UNTRUSTED_RETRIEVED,
+    )
+    for cat in untrusted_cats:
+        req = GovernedMemoryCreateRequest(
+            content="Summary content",
+            memory_type="ATTESTED",
+            memory_category=cat,
+            purpose=MemoryPurpose.GENERAL,
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            asyncio.run(create_governed_memory_record(operator_auth, req))
+        assert exc_info.value.status_code == 403
+        assert "cannot be created as ATTESTED" in exc_info.value.detail
+
+
+@pytest.mark.unit
+def test_unprivileged_caller_cannot_spoof_owner_id_for_user_or_agent_scope(agent_auth: AuthContext) -> None:
+    """Unprivileged caller cannot create USER or AGENT scoped memory with a spoofed owner_id."""
+    import asyncio
+
+    from services.governed_memory import create_governed_memory_record
+
+    req = GovernedMemoryCreateRequest(
+        content="User fact for victim",
+        owner_id="victim_user_123",
+        scope=MemoryScope.USER,
+        memory_category=MemoryCategory.USER_FACT,
+        purpose=MemoryPurpose.USER_PROFILE,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        asyncio.run(create_governed_memory_record(agent_auth, req))
+    assert exc_info.value.status_code == 403
+    assert "owner_id must match authenticated caller" in exc_info.value.detail

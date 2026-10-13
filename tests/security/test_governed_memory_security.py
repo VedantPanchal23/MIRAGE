@@ -410,3 +410,199 @@ async def test_indirect_prompt_injection_in_memory_quarantined(memory_tenants_se
     assert mem.trust_level == TrustLevel.UNTRUSTED
     assert mem.confidence <= 0.10
     assert mem.taint == Taint.UNTRUSTED
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_operator_cannot_release_legal_hold_only_tenant_admin(memory_tenants_setup: dict[str, Any]) -> None:
+    """Proves that OPERATOR role cannot release a legal hold; only TENANT_ADMIN / SUPER_ADMIN can."""
+    auth_a: AuthContext = memory_tenants_setup["auth_a"]
+
+    # 1. Create active memory
+    mem = await create_governed_memory_record(
+        auth_a,
+        GovernedMemoryCreateRequest(
+            content="Litigation-sensitive financial transaction records",
+            memory_category=MemoryCategory.USER_FACT,
+            purpose=MemoryPurpose.GENERAL,
+        ),
+    )
+
+    # 2. Operator can PLACE legal hold
+    hold_req = GovernedMemoryHoldRequest(hold_active=True, justification="Subpoena SEC-2026-99")
+    held_mem = await set_governed_memory_legal_hold(auth_a, mem.id, hold_req)
+    assert held_mem.retention_policy == RetentionPolicy.LEGAL_HOLD
+
+    # 3. Operator CANNOT RELEASE legal hold -> HTTP 403
+    release_req = GovernedMemoryHoldRequest(hold_active=False, justification="Subpoena expired")
+    with pytest.raises(HTTPException) as exc_info:
+        await set_governed_memory_legal_hold(auth_a, mem.id, release_req)
+    assert exc_info.value.status_code == 403
+    assert "legal authority" in exc_info.value.detail.lower()
+
+    # 4. Tenant Admin CAN release legal hold
+    admin_auth = AuthContext(
+        tenant_id=auth_a.tenant_id,
+        user_id="admin_user",
+        identity_id="act_admin",
+        role=Role.TENANT_ADMIN,
+        token_type="jwt",
+        subject="admin_sub",
+        claims={"sub": "admin_sub"},
+    )
+    released_mem = await set_governed_memory_legal_hold(admin_auth, mem.id, release_req)
+    assert released_mem.retention_policy == RetentionPolicy.STANDARD
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_agent_cannot_escalate_trust_via_update(memory_tenants_setup: dict[str, Any]) -> None:
+    """Proves that an autonomous agent updating ATTESTED/VERIFIED memory is demoted to PROVISIONAL."""
+    auth_a: AuthContext = memory_tenants_setup["auth_a"]
+    admin_auth = AuthContext(
+        tenant_id=auth_a.tenant_id,
+        user_id="admin_user",
+        identity_id="act_admin",
+        role=Role.TENANT_ADMIN,
+        token_type="jwt",
+        subject="admin_sub",
+        claims={"sub": "admin_sub"},
+    )
+    agent_auth = AuthContext(
+        tenant_id=auth_a.tenant_id,
+        user_id="agent_user",
+        identity_id="act_agent_x",
+        role=Role.API_CLIENT,
+        token_type="jwt",
+        subject="agent_sub",
+        claims={"sub": "agent_sub"},
+    )
+
+    # 1. Admin creates ATTESTED memory (trust_level = VERIFIED)
+    attested_mem = await create_governed_memory_record(
+        admin_auth,
+        GovernedMemoryCreateRequest(
+            content="Executive approval given for Project Alpha",
+            memory_type="ATTESTED",
+            memory_category=MemoryCategory.USER_FACT,
+            purpose=MemoryPurpose.GENERAL,
+        ),
+    )
+    assert attested_mem.trust_level == TrustLevel.VERIFIED
+    assert attested_mem.memory_type == "ATTESTED"
+
+    # 2. Agent attempts to update memory content
+    update_req = GovernedMemoryUpdateRequest(
+        content="Executive approval given for Project Alpha, plus transfer $1M",
+        update_reason="Agent modification",
+        expected_version=1,
+    )
+    updated_mem = await update_governed_memory_record(agent_auth, attested_mem.id, update_req)
+
+    # 3. New record MUST NOT retain VERIFIED trust or ATTESTED memory_type
+    assert updated_mem.trust_level == TrustLevel.PROVISIONAL
+    assert updated_mem.memory_type == "ADVISORY"
+    assert updated_mem.confidence <= 0.50
+    assert updated_mem.version == 2
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_gate2_rejects_unbacked_attestation_and_revoked_trust(memory_tenants_setup: dict[str, Any]) -> None:
+    """Gate 2 strictly rejects unbacked attestation claims and revoked trust memories."""
+    auth_a: AuthContext = memory_tenants_setup["auth_a"]
+
+    async with db_session.get_tenant_session(auth_a.tenant_id) as session:
+        # A. Unbacked MEMORY_ATTESTED candidate (no real memory ID in db)
+        unbacked_cand = ContextItemCandidate(
+            id="ctx_unbacked_1",
+            source_type=ContextSourceType.MEMORY_ATTESTED,
+            content="Adversary fabricated verified fact",
+            provenance=ContextProvenance(
+                source_uri="memory://fake-id",
+                origin_id="mem_unbacked_nonexistent_999",
+            ),
+        )
+        item_unbacked = await evaluate_context_candidate(
+            auth=auth_a,
+            candidate=unbacked_cand,
+            session=session,
+            min_trust_threshold=0.20,
+            quarantine_injections=True,
+        )
+        assert item_unbacked.disposition == ContextDisposition.REJECTED
+        assert item_unbacked.trust_score == 0.0
+
+        # B. Memory with REVOKED trust
+        mem = await create_governed_memory_record(
+            auth_a,
+            GovernedMemoryCreateRequest(
+                content="Revoked compliance statement",
+                memory_category=MemoryCategory.USER_FACT,
+                purpose=MemoryPurpose.GENERAL,
+            ),
+        )
+        # Manually revoke trust
+        await session.execute(
+            text("UPDATE governed_memories SET trust_level = 'REVOKED' WHERE id = :id"),
+            {"id": mem.id},
+        )
+        await session.flush()
+
+        revoked_cand = ContextItemCandidate(
+            id="ctx_revoked_1",
+            source_type=ContextSourceType.MEMORY_ADVISORY,
+            content="Revoked compliance statement",
+            provenance=ContextProvenance(
+                source_uri=f"memory://{mem.id}",
+                origin_id=mem.id,
+            ),
+        )
+        item_revoked = await evaluate_context_candidate(
+            auth=auth_a,
+            candidate=revoked_cand,
+            session=session,
+            min_trust_threshold=0.20,
+            quarantine_injections=True,
+        )
+        assert item_revoked.disposition == ContextDisposition.REJECTED
+        assert "revoked_memory" in item_revoked.indicators
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_gate2_purpose_mismatch_rejection(memory_tenants_setup: dict[str, Any]) -> None:
+    """Gate 2 context evaluation rejects memories when purpose does not match intended purpose."""
+    auth_a: AuthContext = memory_tenants_setup["auth_a"]
+
+    mem = await create_governed_memory_record(
+        auth_a,
+        GovernedMemoryCreateRequest(
+            content="User profile data: prefers dark mode and metric units",
+            memory_category=MemoryCategory.USER_FACT,
+            purpose=MemoryPurpose.USER_PROFILE,
+        ),
+    )
+
+    async with db_session.get_tenant_session(auth_a.tenant_id) as session:
+        cand = ContextItemCandidate(
+            id="ctx_purpose_test",
+            source_type=ContextSourceType.MEMORY_ADVISORY,
+            content="User profile data: prefers dark mode and metric units",
+            provenance=ContextProvenance(
+                source_uri=f"memory://{mem.id}",
+                origin_id=mem.id,
+            ),
+        )
+        # Submit candidate under OPERATIONAL_RECOVERY intended purpose
+        item = await evaluate_context_candidate(
+            auth=auth_a,
+            candidate=cand,
+            session=session,
+            min_trust_threshold=0.20,
+            quarantine_injections=True,
+            intended_purpose="OPERATIONAL_RECOVERY",
+        )
+        assert item.disposition == ContextDisposition.REJECTED
+        assert "purpose_mismatch" in item.indicators
+        assert "does not match context intended purpose" in item.disposition_reason

@@ -245,12 +245,12 @@ def test_full_governed_memory_api_lifecycle(memory_lifecycle_setup: dict[str, st
     }
     assert del_result["postgres_shredded"] is True
 
-    # Verify memory content is cryptographically shredded and marked DELETED
+    # Verify memory content is logically sanitized and marked DELETED
     shredded_res = client.get(f"/v1/memory/{active_id}")
     assert shredded_res.status_code == 200
     shredded_data = shredded_res.json()
     assert shredded_data["lifecycle_state"] == MemoryLifecycleState.DELETED.value
-    assert shredded_data["content"] == "[CRYPTOGRAPHICALLY SHREDDED]"
+    assert shredded_data["content"] in {"[LOGICALLY SANITIZED / TOMBSTONED]", "[CRYPTOGRAPHICALLY SHREDDED]"}
 
 
 @pytest.mark.integration

@@ -199,7 +199,7 @@ During Prompt 2 bounded validation and release closure, in-scope security harden
 
 All tests were executed against the live testbed and PostgreSQL database.
 
-### 5.1 Pytest Execution Results (Complete Phase 7 Battery)
+### 5.1 Pytest Execution Results (Complete Phase 7 Battery & Trust Boundary Regressions)
 
 ```
 pytest tests/unit/test_governed_memory_contracts.py tests/security/test_governed_memory_security.py tests/integration/test_phase7_governed_memory_lifecycle.py tests/security/test_postgres_memory_migration.py tests/integration/test_phase2_context_assurance.py tests/unit/test_context_assurance.py -v
@@ -211,7 +211,7 @@ rootdir: C:\Users\vedan\Desktop\MIRAGE
 configfile: pyproject.toml
 plugins: anyio-4.9.0, langsmith-0.4.8, asyncio-1.3.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collecting ... collected 35 items
+collecting ... collected 42 items
 
 tests/unit/test_governed_memory_contracts.py::test_autonomous_agent_cannot_self_attest_memory PASSED [  2%]
 tests/unit/test_governed_memory_contracts.py::test_sensitive_secrets_rejected_by_dlp PASSED [  5%]
@@ -230,7 +230,14 @@ tests/security/test_governed_memory_security.py::test_indirect_prompt_injection_
 tests/security/test_governed_memory_security.py::test_operator_cannot_release_legal_hold_only_tenant_admin PASSED [ 42%]
 tests/security/test_governed_memory_security.py::test_agent_cannot_escalate_trust_via_update PASSED [ 45%]
 tests/security/test_governed_memory_security.py::test_gate2_rejects_unbacked_attestation_and_revoked_trust PASSED [ 48%]
-tests/security/test_governed_memory_security.py::test_gate2_purpose_mismatch_rejection PASSED [ 51%]
+tests/security/test_governed_memory_security.py::test_gate2_purpose_mismatch_rejection PASSED [ 42%]
+tests/security/test_governed_memory_security.py::test_adversarial_caller_forging_pipeline_signed_is_rejected PASSED [ 45%]
+tests/security/test_governed_memory_security.py::test_adversarial_caller_with_forged_pipeline_signature_is_rejected PASSED [ 47%]
+tests/security/test_governed_memory_security.py::test_pipeline_verification_boundary_fails_closed_when_unconfigured PASSED [ 50%]
+tests/security/test_legacy_endpoint_rejects_pipeline_signed_and_unauthorized_attestation PASSED [ 52%]
+tests/security/test_update_path_cannot_elevate_trust_or_attestation PASSED [ 54%]
+tests/security/test_authorized_human_attestation_persists_human_verified_and_blocks_model_categories PASSED [ 57%]
+tests/security/test_deletion_response_truthfully_reports_logical_sanitization_and_confirmed_eviction PASSED [ 59%]
 tests/integration/test_phase7_governed_memory_lifecycle.py::test_full_governed_memory_api_lifecycle PASSED [ 54%]
 tests/integration/test_phase7_governed_memory_lifecycle.py::test_governed_memory_search_and_purpose_isolation PASSED [ 57%]
 tests/integration/test_phase7_governed_memory_lifecycle.py::test_retention_sweep_endpoint PASSED [ 60%]
@@ -249,7 +256,7 @@ tests/unit/test_context_assurance.py::test_escape_data_delimiters_neutralizes_cl
 tests/unit/test_context_assurance.py::test_non_policy_sources_cannot_force_instruction_flag PASSED [ 97%]
 tests/unit/test_context_assurance.py::test_context_item_candidate_defaults PASSED [100%]
 
-================= 35 passed, 41 warnings in 114.13s (0:01:54) =================
+================= 42 passed, 49 warnings in 136.03s (0:02:16) =================
 ```
 
 ### 5.2 Linter & Typecheck Status
@@ -274,6 +281,8 @@ dist/assets/index-C04E_Bvd.js   362.42 kB │ gzip: 89.88 kB
 ## 6. Release Decision & Governance Signoff
 
 - **Release Decision:** **PASS WITH LIMITATIONS**
-- **Empirical Test Pass Rate:** 100% (35/35 passing tests)
-- **Documented Platform Limitation:** Governed Memory implements logical content sanitization/tombstoning, hash recalculation, and secondary cache/index eviction. Physical cryptographic shredding via key destruction requires external enterprise KMS envelope-encryption integration.
+- **Empirical Test Pass Rate:** 100% (42/42 passing tests)
+- **Documented Platform Limitations:**
+  1. **Pipeline Attestation Verification Boundary:** Cryptographic pipeline signature infrastructure (PKI notary) is unconfigured at the ingestion boundary. All caller-supplied pipeline claims fail closed (HTTP 403 Forbidden).
+  2. **Deletion Realism:** Governed Memory implements logical content sanitization/tombstoning, hash recalculation, and secondary cache/index eviction. Physical cryptographic shredding via per-record key destruction requires external enterprise KMS envelope-encryption integration. External secondary stores are reported truthfully as evicted only when eviction is actively confirmed.
 - **Phase 7 Status:** Formally Closed and Validated on `main`.

@@ -18,8 +18,8 @@ from fastapi import HTTPException
 from sqlalchemy import text
 
 from db import session as db_session
-from db.models import ActorIdentity, Tenant
-from services.context_assurance import evaluate_context_candidate
+from db.models import ActorIdentity, GovernedMemory, Tenant
+from services.context_assurance import create_governed_memory, evaluate_context_candidate
 from services.governed_memory import (
     create_governed_memory_record,
     delete_governed_memory_record,
@@ -29,6 +29,7 @@ from services.governed_memory import (
     search_governed_memory_records,
     set_governed_memory_legal_hold,
     update_governed_memory_record,
+    verify_pipeline_attestation,
 )
 from shared.schemas.audit import compute_sha256
 from shared.schemas.auth import AuthContext, Role
@@ -37,9 +38,11 @@ from shared.schemas.context import (
     ContextItemCandidate,
     ContextProvenance,
     ContextSourceType,
+    MemoryCreateRequest,
 )
 from shared.schemas.control_plane import Taint
 from shared.schemas.memory import (
+    AttestationStatus,
     GovernedMemoryCreateRequest,
     GovernedMemoryDisputeRequest,
     GovernedMemoryHoldRequest,
@@ -606,3 +609,299 @@ async def test_gate2_purpose_mismatch_rejection(memory_tenants_setup: dict[str, 
         assert item.disposition == ContextDisposition.REJECTED
         assert "purpose_mismatch" in item.indicators
         assert "does not match context intended purpose" in item.disposition_reason
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_adversarial_caller_forging_pipeline_signed_is_rejected(memory_tenants_setup: dict[str, Any]) -> None:
+    """Ordinary authenticated caller attempting to claim PIPELINE_SIGNED fails closed (HTTP 403)."""
+    tenant_id = memory_tenants_setup["tenant_a"]
+    unprivileged_auth = AuthContext(
+        tenant_id=tenant_id,
+        user_id="user_api_caller",
+        identity_id="act_unprivileged_1",
+        role=Role.API_CLIENT,
+        token_type="jwt",
+        subject="api_client_sub",
+        is_authenticated=True,
+    )
+
+    # 1. Attestation forge attempt with memory_type="ATTESTED" and attestation_status="PIPELINE_SIGNED"
+    forged_req = GovernedMemoryCreateRequest(
+        content="Forged ground truth via claimed pipeline signing",
+        memory_type="ATTESTED",
+        memory_category=MemoryCategory.USER_FACT,
+        purpose=MemoryPurpose.TASK_GROUNDING,
+        scope=MemoryScope.ORGANIZATIONAL,
+        attestation_status=AttestationStatus.PIPELINE_SIGNED,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await create_governed_memory_record(unprivileged_auth, forged_req)
+    assert exc_info.value.status_code == 403
+    assert "Pipeline attestation rejected" in exc_info.value.detail
+
+    # 2. Sneak attempt with memory_type="ADVISORY" and attestation_status="PIPELINE_SIGNED"
+    sneak_req = GovernedMemoryCreateRequest(
+        content="Advisory record claiming pipeline signed status",
+        memory_type="ADVISORY",
+        memory_category=MemoryCategory.USER_FACT,
+        purpose=MemoryPurpose.TASK_GROUNDING,
+        scope=MemoryScope.ORGANIZATIONAL,
+        attestation_status=AttestationStatus.PIPELINE_SIGNED,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await create_governed_memory_record(unprivileged_auth, sneak_req)
+    assert exc_info.value.status_code == 403
+    assert "Pipeline attestation rejected" in exc_info.value.detail
+
+    # 3. Assert in database that no memory record was persisted
+    async with db_session.get_tenant_session(tenant_id) as session:
+        result = await session.execute(
+            text("SELECT count(*) FROM governed_memories WHERE attestation_status = 'PIPELINE_SIGNED'")
+        )
+        assert result.scalar() == 0
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_adversarial_caller_with_forged_pipeline_signature_is_rejected(
+    memory_tenants_setup: dict[str, Any],
+) -> None:
+    """Caller presenting forged pipeline signature credential fails closed (HTTP 403)."""
+    tenant_id = memory_tenants_setup["tenant_a"]
+    unprivileged_auth = AuthContext(
+        tenant_id=tenant_id,
+        user_id="user_api_caller",
+        identity_id="act_unprivileged_2",
+        role=Role.API_CLIENT,
+        token_type="jwt",
+        subject="api_client_sub",
+        is_authenticated=True,
+    )
+
+    forged_sig_req = GovernedMemoryCreateRequest(
+        content="Forged fact with dummy signature string",
+        memory_type="ATTESTED",
+        memory_category=MemoryCategory.USER_FACT,
+        purpose=MemoryPurpose.TASK_GROUNDING,
+        scope=MemoryScope.ORGANIZATIONAL,
+        attestation_status=AttestationStatus.PIPELINE_SIGNED,
+        pipeline_signature="ed25519_forged_sig_deadbeefcafe1234567890",
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await create_governed_memory_record(unprivileged_auth, forged_sig_req)
+    assert exc_info.value.status_code == 403
+    assert "Pipeline attestation rejected" in exc_info.value.detail
+
+    # Confirm boundary fails closed in database
+    async with db_session.get_tenant_session(tenant_id) as session:
+        result = await session.execute(
+            text("SELECT count(*) FROM governed_memories WHERE content LIKE '%dummy signature%'")
+        )
+        assert result.scalar() == 0
+
+
+@pytest.mark.security
+def test_pipeline_verification_boundary_fails_closed_when_unconfigured() -> None:
+    """Unit validation that verify_pipeline_attestation boundary safely fails closed on all inputs."""
+    dummy_auth = AuthContext(
+        tenant_id="ten_test_boundary",
+        user_id="usr_1",
+        identity_id="act_1",
+        role=Role.API_CLIENT,
+        token_type="jwt",
+        subject="sub_1",
+        is_authenticated=True,
+    )
+
+    # 1. Missing signature
+    ok, err = verify_pipeline_attestation(dummy_auth, "Sample content", {"category": "USER_FACT"}, None)
+    assert ok is False
+    assert "Missing cryptographic pipeline signature" in err
+
+    # 2. Arbitrary signature provided
+    ok, err = verify_pipeline_attestation(
+        dummy_auth, "Sample content", {"category": "USER_FACT"}, "arbitrary_signature_hex"
+    )
+    assert ok is False
+    assert "unconfigured and unavailable" in err
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_legacy_endpoint_rejects_pipeline_signed_and_unauthorized_attestation(
+    memory_tenants_setup: dict[str, Any],
+) -> None:
+    """Legacy service create_governed_memory fails closed on pipeline claims and unauthorized attestation."""
+    tenant_id = memory_tenants_setup["tenant_a"]
+    unprivileged_auth = AuthContext(
+        tenant_id=tenant_id,
+        user_id="user_legacy_caller",
+        identity_id="act_legacy_1",
+        role=Role.API_CLIENT,
+        token_type="jwt",
+        subject="legacy_sub",
+        is_authenticated=True,
+    )
+
+    # 1. Pipeline attestation claim via legacy path -> 403
+    req_pipeline = MemoryCreateRequest(
+        content="Legacy pipeline fact claim",
+        memory_type="ATTESTED",
+        memory_category="USER_FACT",
+        purpose="TASK_GROUNDING",
+        attestation_status=AttestationStatus.PIPELINE_SIGNED,
+        pipeline_signature="forged_legacy_sig",
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await create_governed_memory(unprivileged_auth, req_pipeline)
+    assert exc_info.value.status_code == 403
+    assert "Pipeline attestation rejected" in exc_info.value.detail
+
+    # 2. Self-attestation attempt without human authority -> 403
+    req_self = MemoryCreateRequest(
+        content="Legacy self attestation claim",
+        memory_type="ATTESTED",
+        memory_category="USER_FACT",
+        purpose="TASK_GROUNDING",
+        attestation_status=AttestationStatus.HUMAN_VERIFIED,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await create_governed_memory(unprivileged_auth, req_self)
+    assert exc_info.value.status_code == 403
+    assert "Autonomous agents cannot self-attest memory" in exc_info.value.detail
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_update_path_cannot_elevate_trust_or_attestation(memory_tenants_setup: dict[str, Any]) -> None:
+    """Updates by unprivileged callers or agents cannot obtain or retain VERIFIED/ATTESTED status."""
+    auth_a: AuthContext = memory_tenants_setup["auth_a"]
+    tenant_id = auth_a.tenant_id
+
+    # 1. Operator creates legitimate ATTESTED record
+    att_mem = await create_governed_memory_record(
+        auth_a,
+        GovernedMemoryCreateRequest(
+            content="Original operator-verified billing instruction",
+            memory_type="ATTESTED",
+            memory_category=MemoryCategory.USER_FACT,
+            purpose=MemoryPurpose.TASK_GROUNDING,
+            scope=MemoryScope.ORGANIZATIONAL,
+        ),
+    )
+    assert att_mem.memory_type == "ATTESTED"
+    assert att_mem.trust_level == TrustLevel.VERIFIED
+
+    # 2. Agent/unprivileged caller attempts to update the record
+    agent_auth = AuthContext(
+        tenant_id=tenant_id,
+        user_id="agent_caller",
+        identity_id="act_agent_mutator",
+        role=Role.API_CLIENT,
+        token_type="jwt",
+        subject="agent_sub",
+        is_authenticated=True,
+    )
+    update_req = GovernedMemoryUpdateRequest(
+        content="Modified billing instruction by autonomous agent",
+        update_reason="Auto-extracted update from conversation",
+        expected_version=1,
+    )
+    updated_res = await update_governed_memory_record(agent_auth, att_mem.id, update_req)
+
+    # Service response must be demoted
+    assert updated_res.memory_type == "ADVISORY"
+    assert updated_res.trust_level == TrustLevel.PROVISIONAL
+    assert updated_res.attestation_status == AttestationStatus.NONE
+    assert updated_res.confidence <= 0.50
+
+    # 3. Verify in database: persisted columns strictly show demotion
+    async with db_session.get_tenant_session(tenant_id) as session:
+        persisted = await session.get(GovernedMemory, updated_res.id)
+        assert persisted is not None
+        assert persisted.memory_type == "ADVISORY"
+        assert persisted.trust_level == TrustLevel.PROVISIONAL.value
+        assert persisted.attestation_status == AttestationStatus.NONE.value
+        assert persisted.confidence <= 0.50
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_authorized_human_attestation_persists_human_verified_and_blocks_model_categories(
+    memory_tenants_setup: dict[str, Any],
+) -> None:
+    """Authorized human operators can attest facts (HUMAN_VERIFIED), while model categories remain barred."""
+    auth_a: AuthContext = memory_tenants_setup["auth_a"]
+    tenant_id = auth_a.tenant_id
+
+    # 1. Operator attesting USER_FACT -> Succeeds with HUMAN_VERIFIED
+    human_mem = await create_governed_memory_record(
+        auth_a,
+        GovernedMemoryCreateRequest(
+            content="Official data residency policy: EU-CENTRAL-1 only",
+            memory_type="ATTESTED",
+            memory_category=MemoryCategory.USER_FACT,
+            purpose=MemoryPurpose.TASK_GROUNDING,
+            scope=MemoryScope.ORGANIZATIONAL,
+        ),
+    )
+    assert human_mem.memory_type == "ATTESTED"
+    assert human_mem.trust_level == TrustLevel.VERIFIED
+    assert human_mem.attestation_status == AttestationStatus.HUMAN_VERIFIED
+
+    # Verify persisted in database
+    async with db_session.get_tenant_session(tenant_id) as session:
+        persisted = await session.get(GovernedMemory, human_mem.id)
+        assert persisted is not None
+        assert persisted.attestation_status == AttestationStatus.HUMAN_VERIFIED.value
+        assert persisted.trust_level == TrustLevel.VERIFIED.value
+        assert persisted.memory_type == "ATTESTED"
+
+    # 2. Operator attempting to attest GENERATED_SUMMARY -> Blocked (HTTP 403)
+    model_req = GovernedMemoryCreateRequest(
+        content="Summarized policy statements from documents",
+        memory_type="ATTESTED",
+        memory_category=MemoryCategory.GENERATED_SUMMARY,
+        purpose=MemoryPurpose.TASK_GROUNDING,
+        scope=MemoryScope.ORGANIZATIONAL,
+    )
+    with pytest.raises(HTTPException) as exc_info:
+        await create_governed_memory_record(auth_a, model_req)
+    assert exc_info.value.status_code == 403
+    assert "cannot be created as ATTESTED" in exc_info.value.detail
+
+
+@pytest.mark.security
+@pytest.mark.asyncio
+async def test_deletion_response_truthfully_reports_logical_sanitization_and_confirmed_eviction(
+    memory_tenants_setup: dict[str, Any],
+) -> None:
+    """Deletion response truthfully reports logical sanitization without claiming physical shredding."""
+    auth_a: AuthContext = memory_tenants_setup["auth_a"]
+    tenant_id = auth_a.tenant_id
+
+    mem = await create_governed_memory_record(
+        auth_a,
+        GovernedMemoryCreateRequest(
+            content="Temporary operational note for immediate deletion",
+            memory_category=MemoryCategory.OPERATIONAL_STATE,
+            purpose=MemoryPurpose.OPERATIONAL_RECOVERY,
+        ),
+    )
+
+    del_res = await delete_governed_memory_record(auth_a, mem.id)
+
+    # Must NOT claim physical cryptographic shredding
+    assert "cryptographic shredding" not in del_res.message.lower()
+    # Must truthfully state logical sanitization / tombstoning
+    assert "logically sanitized and tombstoned" in del_res.message.lower()
+
+    # Verify in DB: record is tombstoned
+    async with db_session.get_tenant_session(tenant_id) as session:
+        tombstoned = await session.get(GovernedMemory, mem.id)
+        assert tombstoned is not None
+        assert tombstoned.lifecycle_state == MemoryLifecycleState.DELETED.value
+        assert tombstoned.content == "[LOGICALLY SANITIZED / TOMBSTONED]"

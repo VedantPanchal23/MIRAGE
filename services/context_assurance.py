@@ -138,17 +138,37 @@ async def create_governed_memory(auth: AuthContext, request: MemoryCreateRequest
 
     # Epistemic Invariant (docs/Memory.md §4.4):
     category = getattr(request, "memory_category", "USER_FACT") or "USER_FACT"
+    req_trust = getattr(request, "trust_level", None)
+    is_verified_trust = req_trust in {"VERIFIED", "verified"}
     untrusted_cats = {"GENERATED_SUMMARY", "INFERRED_PREFERENCE", "UNTRUSTED_RETRIEVED"}
-    if category in untrusted_cats and request.memory_type == "ATTESTED":
+    if (str(category).upper() in untrusted_cats) and (request.memory_type == "ATTESTED" or is_verified_trust):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=f"Model-generated or untrusted category '{category}' cannot be created as ATTESTED memory.",
         )
 
+    claims_pipeline = (
+        request.attestation_status == AttestationStatus.PIPELINE_SIGNED
+        or getattr(request, "pipeline_signature", None) is not None
+    )
+    if claims_pipeline:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail=(
+                "Pipeline attestation rejected: Cryptographic pipeline signature verification "
+                "is unconfigured and unavailable at this boundary. Autonomous agents and unprivileged "
+                "callers cannot self-attest memory or forge pipeline credentials."
+            ),
+        )
+
+    is_human_authority = auth.role in {Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR}
+    if is_verified_trust and not is_human_authority:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Autonomous agents and unprivileged callers cannot assign VERIFIED trust level.",
+        )
     if request.memory_type == "ATTESTED":
-        is_human_authority = auth.role in {Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR}
-        is_signed_pipeline = request.attestation_status == AttestationStatus.PIPELINE_SIGNED
-        if not (is_human_authority or is_signed_pipeline):
+        if not is_human_authority:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
@@ -156,9 +176,7 @@ async def create_governed_memory(auth: AuthContext, request: MemoryCreateRequest
                     "or signed ingestion pipelines may create ATTESTED memory."
                 ),
             )
-        attestation = request.attestation_status
-        if attestation == AttestationStatus.NONE:
-            attestation = AttestationStatus.HUMAN_VERIFIED
+        attestation = AttestationStatus.HUMAN_VERIFIED
         attested_by = auth.user_id or auth.identity_id
     else:
         attestation = AttestationStatus.NONE

@@ -383,10 +383,10 @@ async def test_governed_memory_attestation_tamper_detection_and_shredding(phase2
         assert "expired_memory" in items[1]["indicators"]
         assert items[1]["disposition"] == ContextDisposition.REJECTED.value
 
-        # E) Test Memory Shredding (DELETE /v1/memory/{id})
+        # E) Test Memory Tombstoning (DELETE /v1/memory/{id})
         res_del = client.delete(f"/v1/memory/{adv_mem_id}", headers=agent_headers)
         assert res_del.status_code == 200
-        assert "successfully shredded" in res_del.json()["message"]
+        assert "logically sanitized" in res_del.json()["message"]
 
         # Verify shredded from DB (or marked DELETED with shredded content)
         async with db_session.get_tenant_session(tenant_id) as session:

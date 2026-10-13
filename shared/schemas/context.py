@@ -135,6 +135,14 @@ class MemoryCreateRequest(BaseModel):
     owner_id: str = Field(default="system")
     attestation_status: AttestationStatus = AttestationStatus.NONE
     attested_by: str | None = None
+    pipeline_signature: str | None = Field(
+        default=None,
+        description="Optional cryptographic pipeline signature if claimed signed by a trusted ingestion pipeline",
+    )
+    trust_level: str | None = Field(
+        default=None,
+        description="Requested initial trust level; unprivileged callers cannot assign VERIFIED",
+    )
     declared_taint: Taint = Taint.INTERNAL
     ttl_seconds: int | None = Field(default=None, ge=1)
     retention_policy: str = Field(default="STANDARD")

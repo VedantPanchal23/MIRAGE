@@ -148,7 +148,7 @@ async def delete_memory_endpoint(
     memory_id: str,
     auth: Annotated[AuthContext, Depends(get_current_auth)],
 ) -> DeletionPropagationResult:
-    """Cryptographically shred memory content and propagate deletion across configured stores."""
+    """Logically sanitize and tombstone memory content in PostgreSQL and propagate eviction across secondary stores."""
     return await delete_governed_memory_record(auth, memory_id)
 
 

@@ -67,6 +67,35 @@ _INJECTION_PATTERNS = (
 )
 
 
+def verify_pipeline_attestation(
+    auth: AuthContext,
+    content: str,
+    governance_metadata: dict[str, Any],
+    pipeline_signature: str | None = None,
+) -> tuple[bool, str]:
+    """Verify cryptographic authenticity of a trusted pipeline attestation.
+
+    Enforces the pipeline verification boundary (docs/Memory.md §4.4).
+    A caller-supplied `attestation_status == PIPELINE_SIGNED`, identity claim,
+    or arbitrary signature string is NEVER trusted on its own.
+
+    In the current MIRAGE release, external pipeline PKI / cryptographic
+    signing notary infrastructure is unconfigured at this ingestion boundary.
+    The boundary fails closed: unverified or forged pipeline claims are rejected.
+    """
+    _ = (auth, content, governance_metadata)
+    if not pipeline_signature:
+        return False, "Missing cryptographic pipeline signature for claimed pipeline attestation"
+
+    # Verifiable pipeline-signature PKI infrastructure is unconfigured at this boundary.
+    # Fail closed: reject caller-supplied credentials rather than accepting unverified signatures.
+    return (
+        False,
+        "Cryptographic pipeline signature verification is unconfigured and unavailable at this boundary. "
+        "Pipeline-attested creation fails closed.",
+    )
+
+
 class MultiStorePropagator:
     """Manages synchronization of memory records to secondary vector, cache, and document backends."""
 
@@ -178,14 +207,32 @@ class MultiStorePropagator:
         else:
             redis_invalidated = None
 
+        confirmed_evictions: list[str] = []
+        if qdrant_purged is True:
+            confirmed_evictions.append("Qdrant vector index purged")
+        if redis_invalidated is True:
+            confirmed_evictions.append("Redis cache invalidated")
+
         if errors:
             overall_status = PropagationStatus.PARTIAL_FAILURE
+            error_keys = ", ".join(errors.keys())
             message = (
-                f"Memory {memory.id} successfully shredded and tombstoned with partial secondary store propagation"
+                f"Memory {memory.id} logically sanitized and tombstoned in primary store with "
+                f"partial secondary-store eviction failures: {error_keys}"
+            )
+        elif confirmed_evictions:
+            overall_status = PropagationStatus.PROPAGATED
+            evicted_str = ", ".join(confirmed_evictions)
+            message = (
+                f"Memory {memory.id} logically sanitized and tombstoned; "
+                f"external copies confirmed evicted ({evicted_str})"
             )
         else:
             overall_status = PropagationStatus.PROPAGATED
-            message = f"Memory {memory.id} successfully shredded"
+            message = (
+                f"Memory {memory.id} logically sanitized and tombstoned in primary store "
+                "(no external secondary stores configured)"
+            )
 
         return DeletionPropagationResult(
             memory_id=memory.id,
@@ -331,7 +378,35 @@ async def create_governed_memory_record(
     # 1. Epistemic Separation & Attestation Authority Check
     # (docs/Memory.md §4.4: Models and autonomous agents can NEVER self-attest).
     is_human_authority = auth.role in {Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR}
-    is_signed_pipeline = request.attestation_status == AttestationStatus.PIPELINE_SIGNED
+
+    # Pipeline Attestation Boundary:
+    # A caller-supplied attestation_status == PIPELINE_SIGNED or signature field is NEVER
+    # trusted as self-proof. It must be cryptographically authenticated at the boundary.
+    claims_pipeline = (
+        request.attestation_status == AttestationStatus.PIPELINE_SIGNED
+        or getattr(request, "pipeline_signature", None) is not None
+    )
+    if claims_pipeline:
+        is_valid_pipeline, pipeline_err = verify_pipeline_attestation(
+            auth=auth,
+            content=request.content,
+            governance_metadata={
+                "tenant_id": auth.tenant_id,
+                "category": request.memory_category.value,
+                "purpose": request.purpose.value,
+                "scope": request.scope.value,
+            },
+            pipeline_signature=getattr(request, "pipeline_signature", None),
+        )
+        if not is_valid_pipeline:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Pipeline attestation rejected: {pipeline_err}. "
+                    "Autonomous agents and unprivileged callers cannot self-attest memory "
+                    "or forge pipeline credentials."
+                ),
+            )
 
     # Principal scope check: unprivileged callers cannot specify a different owner_id for USER/AGENT scopes
     valid_callers = {c for c in (auth.user_id, auth.identity_id) if c}
@@ -345,12 +420,14 @@ async def create_governed_memory_record(
                 ),
             )
 
-    # 2. Epistemic Invariant: Model-generated extractions or untrusted retrieved text can NEVER be ATTESTED
+    # 2. Epistemic Invariant: Model-generated extractions or untrusted retrieved text can NEVER be ATTESTED or VERIFIED
+    req_trust = getattr(request, "trust_level", None)
+    is_verified_trust = req_trust in {TrustLevel.VERIFIED, "VERIFIED"}
     if request.memory_category in {
         MemoryCategory.GENERATED_SUMMARY,
         MemoryCategory.INFERRED_PREFERENCE,
         MemoryCategory.UNTRUSTED_RETRIEVED,
-    } and request.memory_type == "ATTESTED":
+    } and (request.memory_type == "ATTESTED" or is_verified_trust):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail=(
@@ -360,7 +437,7 @@ async def create_governed_memory_record(
         )
 
     if request.memory_type == "ATTESTED":
-        if not (is_human_authority or is_signed_pipeline):
+        if not is_human_authority:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
@@ -368,13 +445,16 @@ async def create_governed_memory_record(
                     "or signed ingestion pipelines may create ATTESTED memory."
                 ),
             )
-        attestation = request.attestation_status
-        if attestation == AttestationStatus.NONE:
-            attestation = AttestationStatus.HUMAN_VERIFIED
+        attestation = AttestationStatus.HUMAN_VERIFIED
         attested_by = auth.user_id or auth.identity_id
         initial_trust = TrustLevel.VERIFIED
         initial_confidence = 0.95
     else:
+        if is_verified_trust and not is_human_authority:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Autonomous agents and unprivileged callers cannot assign VERIFIED trust level.",
+            )
         attestation = AttestationStatus.NONE
         attested_by = None
         initial_trust = TrustLevel.PROVISIONAL
@@ -821,7 +901,7 @@ async def delete_governed_memory_record(
     auth: AuthContext,
     memory_id: str,
 ) -> DeletionPropagationResult:
-    """Cryptographically shred memory content and propagate deletion to secondary stores."""
+    """Logically sanitize and tombstone memory content in PostgreSQL and propagate eviction across secondary stores."""
     if not auth.identity_id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A resolved identity is required")
 
@@ -843,10 +923,10 @@ async def delete_governed_memory_record(
         prev_hash = record.content_hash
         is_already_deleted = record.lifecycle_state == MemoryLifecycleState.DELETED.value
 
-        # Tombstone raw payload
+        # Logically sanitize and tombstone raw payload
         record.lifecycle_state = MemoryLifecycleState.DELETED.value
-        record.content = "[CRYPTOGRAPHICALLY SHREDDED]"
-        record.content_hash = compute_sha256(f"{auth.tenant_id}:SHREDDED:{record.id}:{now.isoformat()}")
+        record.content = "[LOGICALLY SANITIZED / TOMBSTONED]"
+        record.content_hash = compute_sha256(f"{auth.tenant_id}:TOMBSTONED:{record.id}:{now.isoformat()}")
         record.updated_at = now
 
         # Append to audit chain
@@ -855,12 +935,12 @@ async def delete_governed_memory_record(
             tenant_id=auth.tenant_id,
             actor_id=auth.identity_id,
             target_id=record.id,
-            event_type="governed_memory_shredded" if not is_already_deleted else "governed_memory_retry_shredded",
+            event_type="governed_memory_tombstoned" if not is_already_deleted else "governed_memory_retry_tombstoned",
             decision="MEMORY_DELETED",
             reason=(
-                "Tombstoned and shredded by authorized caller"
+                "Logically sanitized and tombstoned by authorized caller"
                 if not is_already_deleted
-                else "Re-propagated deletion retry"
+                else "Re-propagated eviction retry"
             ),
             payload={"deleted_id": record.id, "previous_hash": prev_hash, "scope": record.scope},
         )

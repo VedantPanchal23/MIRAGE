@@ -125,6 +125,14 @@ class GovernedMemoryCreateRequest(BaseModel):
     memory_type: str = Field(default="ADVISORY", description="'ATTESTED' or 'ADVISORY'")
     attestation_status: AttestationStatus = Field(default=AttestationStatus.NONE)
     attested_by: str | None = None
+    pipeline_signature: str | None = Field(
+        default=None,
+        description="Optional cryptographic pipeline signature if claimed signed by a trusted ingestion pipeline",
+    )
+    trust_level: TrustLevel | None = Field(
+        default=None,
+        description="Requested initial trust level; unprivileged callers cannot assign VERIFIED",
+    )
     declared_taint: Taint = Field(default=Taint.INTERNAL)
     ttl_seconds: int | None = Field(default=None, ge=1)
     retention_policy: RetentionPolicy = Field(default=RetentionPolicy.STANDARD)
@@ -271,14 +279,26 @@ class MemoryMaintenanceSweepResponse(BaseModel):
 
 
 class DeletionPropagationResult(BaseModel):
-    """Multi-store deletion propagation status report."""
+    """Multi-store logical sanitization and eviction propagation status report."""
 
     memory_id: str
     tenant_id: str
-    postgres_shredded: bool
-    qdrant_purged: bool | None = None
-    redis_invalidated: bool | None = None
-    mongo_purged: bool | None = None
+    postgres_shredded: bool = Field(
+        default=True,
+        description="True if primary PostgreSQL payload was logically sanitized and tombstoned",
+    )
+    qdrant_purged: bool | None = Field(
+        default=None,
+        description="True if purged, False if failed, None if unconfigured",
+    )
+    redis_invalidated: bool | None = Field(
+        default=None,
+        description="True if cache invalidated, False if failed, None if unconfigured",
+    )
+    mongo_purged: bool | None = Field(default=None)
     overall_status: PropagationStatus
     error_details: dict[str, str] = Field(default_factory=dict)
-    message: str = Field(default="Memory successfully shredded", description="Human-readable deletion status")
+    message: str = Field(
+        default="Memory logically sanitized and tombstoned",
+        description="Truthful summary of primary sanitization and secondary eviction status",
+    )

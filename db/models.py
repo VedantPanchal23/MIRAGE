@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     String,
     Text,
@@ -478,21 +479,52 @@ class GovernedMemory(Base):
     )
     owner_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     memory_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    memory_category: Mapped[str] = mapped_column(String(32), default="USER_FACT", nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(64), default="GENERAL", nullable=False, index=True)
+    lifecycle_state: Mapped[str] = mapped_column(String(32), default="ACTIVE", nullable=False, index=True)
+    trust_level: Mapped[str] = mapped_column(String(32), default="PROVISIONAL", nullable=False)
     scope: Mapped[str] = mapped_column(String(32), default="ORGANIZATIONAL", nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     content_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    superseded_by_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     attestation_status: Mapped[str] = mapped_column(String(32), default="NONE", nullable=False)
     attested_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     taint: Mapped[str] = mapped_column(String(64), default="TAINT_INTERNAL", nullable=False)
     confidence: Mapped[float] = mapped_column(Float, default=1.0, nullable=False)
+    retention_policy: Mapped[str] = mapped_column(String(32), default="STANDARD", nullable=False)
+    retention_exception_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     ttl_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    source_type: Mapped[str] = mapped_column(String(64), default="USER_INPUT", nullable=False)
+    source_uri: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    source_transaction_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_action_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    derivation_chain: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    propagation_status: Mapped[str] = mapped_column(String(32), default="PROPAGATED", nullable=False)
+    propagation_details: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    dispute_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String(255), nullable=True)
     metadata_payload: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        Index("ix_governed_memories_tenant_purpose", "tenant_id", "purpose"),
+        Index("ix_governed_memories_tenant_lifecycle", "tenant_id", "lifecycle_state"),
+        Index("ix_governed_memories_tenant_expires", "tenant_id", "expires_at"),
+        Index("ix_governed_memories_tenant_category", "tenant_id", "memory_category"),
+        Index(
+            "uq_governed_memories_tenant_idempotency",
+            "tenant_id",
+            "idempotency_key",
+            unique=True,
+            postgresql_where=text("idempotency_key IS NOT NULL"),
+        ),
     )
 
 

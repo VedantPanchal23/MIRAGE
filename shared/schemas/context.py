@@ -125,12 +125,22 @@ class MemoryCreateRequest(BaseModel):
 
     content: str = Field(min_length=1, max_length=50_000)
     memory_type: str = Field(default="ADVISORY", description="'ATTESTED' or 'ADVISORY'")
+    memory_category: str = Field(default="USER_FACT")
+    purpose: str = Field(default="GENERAL")
     scope: MemoryScope = MemoryScope.ORGANIZATIONAL
     owner_id: str = Field(default="system")
     attestation_status: AttestationStatus = AttestationStatus.NONE
     attested_by: str | None = None
     declared_taint: Taint = Taint.INTERNAL
     ttl_seconds: int | None = Field(default=None, ge=1)
+    retention_policy: str = Field(default="STANDARD")
+    retention_exception_reason: str | None = None
+    source_type: str = Field(default="USER_INPUT")
+    source_uri: str | None = None
+    source_transaction_id: str | None = None
+    source_action_id: str | None = None
+    derivation_chain: list[dict[str, Any]] = Field(default_factory=list)
+    idempotency_key: str | None = None
     metadata_payload: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -141,14 +151,33 @@ class MemoryResponse(BaseModel):
     tenant_id: str
     owner_id: str
     memory_type: str
+    memory_category: str = "USER_FACT"
+    purpose: str = "GENERAL"
+    lifecycle_state: str = "ACTIVE"
+    trust_level: str = "PROVISIONAL"
     scope: MemoryScope
     content: str
     content_hash: str
+    version: int = 1
+    superseded_by_id: str | None = None
     attestation_status: AttestationStatus
     attested_by: str | None
     taint: Taint
     confidence: float
+    retention_policy: str = "STANDARD"
+    retention_exception_reason: str | None = None
     ttl_seconds: int | None
     expires_at: datetime | None
+    source_type: str = "USER_INPUT"
+    source_uri: str | None = None
+    source_transaction_id: str | None = None
+    source_action_id: str | None = None
+    derivation_chain: list[dict[str, Any]] = Field(default_factory=list)
+    propagation_status: str = "PROPAGATED"
+    propagation_details: dict[str, Any] = Field(default_factory=dict)
+    dispute_reason: str | None = None
+    idempotency_key: str | None = None
+    metadata_payload: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
+

@@ -47,6 +47,12 @@ export {
   getMemories,
   createMemory,
   deleteMemory,
+  searchMemories,
+  updateMemory,
+  disputeMemory,
+  setLegalHold,
+  sweepMemories,
+  getMemoryProvenance,
 } from "./context";
 
 export {

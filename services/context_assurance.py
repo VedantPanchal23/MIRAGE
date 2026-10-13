@@ -29,6 +29,7 @@ from shared.schemas.control_plane import (
     compute_lattice_high_water_mark,
     normalize_taints,
 )
+from shared.schemas.memory import compute_memory_integrity_hash
 
 _INJECTION_PATTERNS = (
     re.compile(r"\b(ignore|disregard)\b.{0,40}\b(previous|prior|system|above|instructions)\b", re.IGNORECASE),
@@ -161,21 +162,49 @@ async def create_governed_memory(auth: AuthContext, request: MemoryCreateRequest
     content_hash = compute_sha256(f"{auth.tenant_id}:{request.content}:{attestation.value}")
     record_id = f"mem_{uuid.uuid4().hex}"
 
+    category = getattr(request, "memory_category", "USER_FACT") or "USER_FACT"
+    purpose = getattr(request, "purpose", "GENERAL") or "GENERAL"
+    retention = getattr(request, "retention_policy", "STANDARD") or "STANDARD"
+    retention_reason = getattr(request, "retention_exception_reason", None)
+    source_type = getattr(request, "source_type", "USER_INPUT") or "USER_INPUT"
+    source_uri = getattr(request, "source_uri", None)
+    source_txn = getattr(request, "source_transaction_id", None)
+    source_act = getattr(request, "source_action_id", None)
+    derivation = getattr(request, "derivation_chain", []) or []
+    idempotency_key = getattr(request, "idempotency_key", None)
+
     async with db_session.get_tenant_session(auth.tenant_id) as session:
         record = GovernedMemory(
             id=record_id,
             tenant_id=auth.tenant_id,
             owner_id=request.owner_id,
             memory_type=request.memory_type,
+            memory_category=category,
+            purpose=purpose,
+            lifecycle_state="ACTIVE",
+            trust_level="VERIFIED" if request.memory_type == "ATTESTED" else "PROVISIONAL",
             scope=request.scope.value,
             content=request.content,
             content_hash=content_hash,
+            version=1,
+            superseded_by_id=None,
             attestation_status=attestation.value,
             attested_by=attested_by,
             taint=request.declared_taint.value,
             confidence=0.95 if request.memory_type == "ATTESTED" else 0.50,
+            retention_policy=retention,
+            retention_exception_reason=retention_reason,
             ttl_seconds=request.ttl_seconds,
             expires_at=expires_at,
+            source_type=source_type,
+            source_uri=source_uri,
+            source_transaction_id=source_txn,
+            source_action_id=source_act,
+            derivation_chain=derivation,
+            propagation_status="PROPAGATED",
+            propagation_details={"postgres": "synced"},
+            dispute_reason=None,
+            idempotency_key=idempotency_key,
             metadata_payload=request.metadata_payload,
             created_at=now,
             updated_at=now,
@@ -196,15 +225,33 @@ async def create_governed_memory(auth: AuthContext, request: MemoryCreateRequest
             tenant_id=record.tenant_id,
             owner_id=record.owner_id,
             memory_type=record.memory_type,
+            memory_category=record.memory_category,
+            purpose=record.purpose,
+            lifecycle_state=record.lifecycle_state,
+            trust_level=record.trust_level,
             scope=MemoryScope(record.scope),
             content=record.content,
             content_hash=record.content_hash,
+            version=record.version,
+            superseded_by_id=record.superseded_by_id,
             attestation_status=AttestationStatus(record.attestation_status),
             attested_by=record.attested_by,
             taint=Taint(record.taint),
             confidence=record.confidence,
+            retention_policy=record.retention_policy,
+            retention_exception_reason=record.retention_exception_reason,
             ttl_seconds=record.ttl_seconds,
             expires_at=record.expires_at,
+            source_type=record.source_type,
+            source_uri=record.source_uri,
+            source_transaction_id=record.source_transaction_id,
+            source_action_id=record.source_action_id,
+            derivation_chain=record.derivation_chain or [],
+            propagation_status=record.propagation_status,
+            propagation_details=record.propagation_details or {},
+            dispute_reason=record.dispute_reason,
+            idempotency_key=record.idempotency_key,
+            metadata_payload=record.metadata_payload,
             created_at=record.created_at,
             updated_at=record.updated_at,
         )
@@ -215,29 +262,50 @@ async def list_governed_memories(
 ) -> list[MemoryResponse]:
     """List valid active memories for current tenant."""
     async with db_session.get_tenant_session(auth.tenant_id) as session:
-        stmt = select(GovernedMemory).where(GovernedMemory.tenant_id == auth.tenant_id)
+        stmt = select(GovernedMemory).where(
+            GovernedMemory.tenant_id == auth.tenant_id,
+            GovernedMemory.lifecycle_state != "DELETED",
+        )
         if scope:
             stmt = stmt.where(GovernedMemory.scope == scope.value)
         if memory_type:
             stmt = stmt.where(GovernedMemory.memory_type == memory_type)
         results = (await session.execute(stmt)).scalars().all()
         now = datetime.now(UTC)
-        valid = [r for r in results if r.expires_at is None or r.expires_at > now]
+        valid = [r for r in results if r.expires_at is None or r.expires_at > now or r.retention_policy == "LEGAL_HOLD"]
         return [
             MemoryResponse(
                 id=r.id,
                 tenant_id=r.tenant_id,
                 owner_id=r.owner_id,
                 memory_type=r.memory_type,
+                memory_category=r.memory_category,
+                purpose=r.purpose,
+                lifecycle_state=r.lifecycle_state,
+                trust_level=r.trust_level,
                 scope=MemoryScope(r.scope),
                 content=r.content,
                 content_hash=r.content_hash,
+                version=r.version,
+                superseded_by_id=r.superseded_by_id,
                 attestation_status=AttestationStatus(r.attestation_status),
                 attested_by=r.attested_by,
                 taint=Taint(r.taint),
                 confidence=r.confidence,
+                retention_policy=r.retention_policy,
+                retention_exception_reason=r.retention_exception_reason,
                 ttl_seconds=r.ttl_seconds,
                 expires_at=r.expires_at,
+                source_type=r.source_type,
+                source_uri=r.source_uri,
+                source_transaction_id=r.source_transaction_id,
+                source_action_id=r.source_action_id,
+                derivation_chain=r.derivation_chain or [],
+                propagation_status=r.propagation_status,
+                propagation_details=r.propagation_details or {},
+                dispute_reason=r.dispute_reason,
+                idempotency_key=r.idempotency_key,
+                metadata_payload=r.metadata_payload,
                 created_at=r.created_at,
                 updated_at=r.updated_at,
             )
@@ -363,7 +431,37 @@ async def evaluate_context_candidate(
                     disposition_reason="Memory record not found in tenant authority",
                     indicators=["tenant_mismatch"],
                 )
-            if mem.expires_at and mem.expires_at <= now:
+            if mem.lifecycle_state == "DELETED":
+                return ContextItem(
+                    id=item_id,
+                    source_type=source_type,
+                    content=content,
+                    tenant_id=auth.tenant_id,
+                    is_instruction=False,
+                    taint=Taint.INTERNAL,
+                    provenance=candidate.provenance,
+                    integrity_hash=integrity_hash,
+                    trust_score=0.0,
+                    disposition=ContextDisposition.REJECTED,
+                    disposition_reason="Governed memory has been deleted or shredded",
+                    indicators=["deleted_memory"],
+                )
+            if mem.lifecycle_state == "SUPERSEDED":
+                return ContextItem(
+                    id=item_id,
+                    source_type=source_type,
+                    content=content,
+                    tenant_id=auth.tenant_id,
+                    is_instruction=False,
+                    taint=Taint.INTERNAL,
+                    provenance=candidate.provenance,
+                    integrity_hash=integrity_hash,
+                    trust_score=0.0,
+                    disposition=ContextDisposition.REJECTED,
+                    disposition_reason=f"Governed memory has been superseded by {mem.superseded_by_id}",
+                    indicators=["superseded_memory"],
+                )
+            if mem.retention_policy != "LEGAL_HOLD" and mem.expires_at and mem.expires_at <= now:
                 return ContextItem(
                     id=item_id,
                     source_type=source_type,
@@ -378,8 +476,15 @@ async def evaluate_context_candidate(
                     disposition_reason="Governed memory expired",
                     indicators=["expired_memory"],
                 )
-            expected_hash = compute_sha256(f"{mem.tenant_id}:{mem.content}:{mem.attestation_status}")
-            if mem.content_hash != expected_hash:
+            expected_legacy = compute_sha256(f"{mem.tenant_id}:{mem.content}:{mem.attestation_status}")
+            expected_phase7 = compute_memory_integrity_hash(
+                tenant_id=mem.tenant_id,
+                content=mem.content,
+                version=mem.version,
+                category=mem.memory_category,
+                purpose=mem.purpose,
+            )
+            if mem.content_hash not in {expected_legacy, expected_phase7}:
                 return ContextItem(
                     id=item_id,
                     source_type=source_type,
@@ -394,7 +499,11 @@ async def evaluate_context_candidate(
                     disposition_reason="Cryptographic memory integrity failure: record tampering detected",
                     indicators=["memory_tamper_detected"],
                 )
-            trust_score = 0.95 if mem.memory_type == "ATTESTED" else 0.45
+            if mem.lifecycle_state == "DISPUTED":
+                indicators.append("disputed_memory")
+                trust_score = min(0.30, mem.confidence)
+            else:
+                trust_score = 0.95 if mem.memory_type == "ATTESTED" else 0.45
         else:
             trust_score = 0.45
 

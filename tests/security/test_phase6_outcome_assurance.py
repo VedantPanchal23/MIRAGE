@@ -28,6 +28,7 @@ from shared.schemas.outcome import (
     OutcomeVerificationContract,
     OutcomeVerificationRequest,
     OutcomeVerifierType,
+    compute_evidence_digest,
 )
 
 
@@ -112,13 +113,14 @@ async def test_discrepancy_detection_flags_postcondition_failure(
     now = datetime.now(UTC)
 
     # Observation shows transaction was REJECTED, not SETTLED
+    state_rej = {"status": "REJECTED", "recipient_credited": False}
     obs = IndependentObservation(
         observation_id="obs_discrepancy_001",
         source_id="observer_ledger_auditor",
         target_resource=action.target_resource,
         observed_at=now,
-        observed_state={"status": "REJECTED", "recipient_credited": False},
-        evidence_digest="e" * 64,
+        observed_state=state_rej,
+        evidence_digest=compute_evidence_digest(state_rej),
         epistemic_confidence=0.99,
     )
     req = OutcomeVerificationRequest(
@@ -156,13 +158,14 @@ async def test_partial_achievement_detected_on_multi_condition_batch(
     now = datetime.now(UTC)
 
     # Status settled, but recipient credit not yet reflected
+    state_part = {"status": "SETTLED", "recipient_credited": False}
     obs = IndependentObservation(
         observation_id="obs_partial_001",
         source_id="observer_ledger_auditor",
         target_resource=action.target_resource,
         observed_at=now,
-        observed_state={"status": "SETTLED", "recipient_credited": False},
-        evidence_digest="f" * 64,
+        observed_state=state_part,
+        evidence_digest=compute_evidence_digest(state_part),
         epistemic_confidence=0.95,
     )
     req = OutcomeVerificationRequest(
@@ -436,3 +439,263 @@ async def test_cross_tenant_outcome_access_prevented(
         contract = await reality_service.get_outcome_by_id("outc_sec_001_tenant_a", tenant_b_auth.tenant_id)
 
         assert contract is None
+
+
+# ---------------------------------------------------------------------------
+# 6. Replay Defense, Immutability, Tampering & Late Observation Defense
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_observation_id_replay_attack_rejected(
+    reality_service: RealityVerifierService,
+    tenant_a_auth: AuthContext,
+) -> None:
+    """An observation ID previously consumed for Action A cannot be recycled for Action B."""
+    action_b = _mock_action_contract(action_id="act_sec_002")
+    now = datetime.now(UTC)
+    state = {"status": "SETTLED", "recipient_credited": True}
+
+    obs = IndependentObservation(
+        observation_id="obs_recycled_999",
+        source_id="observer_ledger_auditor",
+        target_resource=action_b.target_resource,
+        observed_at=now,
+        observed_state=state,
+        evidence_digest=compute_evidence_digest(state),
+        epistemic_confidence=0.99,
+    )
+    req = OutcomeVerificationRequest(
+        transaction_id=action_b.transaction_id,
+        action_id=action_b.id,
+        observability_class=ObservabilityClass.OBS_DIRECT,
+        verifier_type=OutcomeVerifierType.INDEPENDENT_OBSERVER,
+        expected_postconditions=state,
+        observation=obs,
+    )
+
+    # Prior record on Action A consumed obs_recycled_999
+    consumed_record = OutcomeVerificationRecord(
+        id="outc_prior_001",
+        tenant_id=tenant_a_auth.tenant_id,
+        transaction_id="txn_prior_001",
+        action_id="act_sec_001",  # Different action!
+        observability_class=ObservabilityClass.OBS_DIRECT.value,
+        outcome_status=OutcomeStatus.VERIFIED_SUCCESS.value,
+        epistemic_confidence=1.0,
+        verifier_adapter="IndependentObserverAdapter",
+        is_simulated=False,
+        expected_postconditions={},
+        observed_state=state,
+        discrepancies=[],
+        evidence_payload={"observation_id": "obs_recycled_999"},
+        reconciliation_notes=[],
+        verification_hash="hash_prior",
+        target_environment="PROD",
+        created_at=now - timedelta(minutes=5),
+        verified_at=now - timedelta(minutes=5),
+    )
+
+    with patch("services.reality_verifier.db_session.get_tenant_session") as mock_db:
+        mock_session = AsyncMock()
+
+        def mock_execute(stmt):
+            m = MagicMock()
+            stmt_str = str(stmt).lower()
+            if "from action_contracts" in stmt_str:
+                m.scalar_one_or_none.return_value = action_b
+            elif "action_id !=" in stmt_str or "action_id <>" in stmt_str:
+                # Replay check query: returns consumed_record
+                m.scalars.return_value.all.return_value = [consumed_record]
+            else:
+                m.scalar_one_or_none.return_value = None
+                m.scalars.return_value.all.return_value = []
+            return m
+
+        mock_session.execute = AsyncMock(side_effect=mock_execute)
+        mock_db.return_value.__aenter__.return_value = mock_session
+
+        with pytest.raises(HTTPException) as exc_info:
+            await reality_service.verify_action_outcome(req, tenant_a_auth)
+        assert exc_info.value.status_code == 409
+        assert "Observation replay attack detected" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_terminal_state_immutability_blocks_conflicting_reverification(
+    reality_service: RealityVerifierService,
+    tenant_a_auth: AuthContext,
+) -> None:
+    """An action whose outcome is already in terminal VERIFIED_SUCCESS cannot be re-verified with non-matching key."""
+    action = _mock_action_contract(action_id="act_sec_terminal_001")
+    now = datetime.now(UTC)
+
+    terminal_record = OutcomeVerificationRecord(
+        id="outc_terminal_001",
+        tenant_id=tenant_a_auth.tenant_id,
+        transaction_id=action.transaction_id,
+        action_id=action.id,
+        observability_class=ObservabilityClass.OBS_DIRECT.value,
+        outcome_status=OutcomeStatus.VERIFIED_SUCCESS.value,
+        epistemic_confidence=1.0,
+        verifier_adapter="IndependentObserverAdapter",
+        is_simulated=False,
+        expected_postconditions={"status": "SETTLED"},
+        observed_state={"status": "SETTLED"},
+        discrepancies=[],
+        evidence_payload={"_canonical_payload": {
+            "schema_version": "mirage.outcome.v1",
+            "tenant_id": tenant_a_auth.tenant_id,
+            "transaction_id": action.transaction_id,
+            "action_id": action.id,
+            "contract_binding_hash": action.parameters_hash,
+            "tool_name": action.tool_name,
+            "target_resource": action.target_resource,
+            "required_capability": action.required_capability,
+            "target_environment": "PROD",
+            "observability_class": "OBS_DIRECT",
+            "outcome_status": "VERIFIED_SUCCESS",
+            "epistemic_confidence": 1.0,
+            "verifier_adapter": "IndependentObserverAdapter",
+            "is_simulated": False,
+            "expected_postconditions": {"status": "SETTLED"},
+            "observed_state_hash": "dummy_hash",
+            "verified_at": now.isoformat(),
+            "idempotency_key": "key_initial",
+        }},
+        reconciliation_notes=[],
+        verification_hash="hash_term",
+        idempotency_key="key_initial",
+        target_environment="PROD",
+        created_at=now - timedelta(minutes=2),
+        verified_at=now - timedelta(minutes=2),
+    )
+
+    req = OutcomeVerificationRequest(
+        transaction_id=action.transaction_id,
+        action_id=action.id,
+        idempotency_key="key_different_conflict",
+        observability_class=ObservabilityClass.OBS_DIRECT,
+        verifier_type=OutcomeVerifierType.SIMULATED,
+        expected_postconditions={"status": "SETTLED"},
+    )
+
+    with patch("services.reality_verifier.db_session.get_tenant_session") as mock_db:
+        mock_session = AsyncMock()
+
+        def mock_execute(stmt):
+            m = MagicMock()
+            stmt_str = str(stmt).lower()
+            if "from action_contracts" in stmt_str:
+                m.scalar_one_or_none.return_value = action
+            elif "from outcome_verification_records" in stmt_str:
+                m.scalar_one_or_none.return_value = terminal_record
+            else:
+                m.scalar_one_or_none.return_value = None
+            return m
+
+        mock_session.execute = AsyncMock(side_effect=mock_execute)
+        mock_db.return_value.__aenter__.return_value = mock_session
+
+        with pytest.raises(HTTPException) as exc_info:
+            await reality_service.verify_action_outcome(req, tenant_a_auth)
+        assert exc_info.value.status_code == 409
+        assert "Terminal outcomes are immutable" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_tampered_evidence_digest_rejected_in_verification_lifecycle(
+    reality_service: RealityVerifierService,
+    tenant_a_auth: AuthContext,
+) -> None:
+    """Submitting observation with tampered payload where digest does not match must fail with HTTP 400."""
+    action = _mock_action_contract(action_id="act_sec_tamper_001")
+    now = datetime.now(UTC)
+
+    # Claim digest "0"*64 over state {"status": "SETTLED"}, which doesn't match
+    obs = IndependentObservation(
+        observation_id="obs_tamper_001",
+        source_id="observer_ledger_auditor",
+        target_resource=action.target_resource,
+        observed_at=now,
+        observed_state={"status": "SETTLED", "injected_bonus": 1000000},
+        evidence_digest="0" * 64,
+        epistemic_confidence=0.99,
+    )
+    req = OutcomeVerificationRequest(
+        transaction_id=action.transaction_id,
+        action_id=action.id,
+        observability_class=ObservabilityClass.OBS_DIRECT,
+        verifier_type=OutcomeVerifierType.INDEPENDENT_OBSERVER,
+        expected_postconditions={"status": "SETTLED"},
+        observation=obs,
+    )
+
+    with patch("services.reality_verifier.db_session.get_tenant_session") as mock_db:
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = action
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = mock_result
+        mock_db.return_value.__aenter__.return_value = mock_session
+
+        with pytest.raises(HTTPException) as exc_info:
+            await reality_service.verify_action_outcome(req, tenant_a_auth)
+        assert exc_info.value.status_code == 400
+        assert "Evidence digest mismatch" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_late_observation_cannot_turn_expired_action_into_verified_success(
+    reality_service: RealityVerifierService,
+    tenant_a_auth: AuthContext,
+) -> None:
+    """When action verification deadline expired, late verification cannot yield VERIFIED_SUCCESS."""
+    # Action executed 120s ago with 30s deadline -> deadline_passed is True!
+    now = datetime.now(UTC)
+    action = _mock_action_contract(action_id="act_sec_expired_001")
+    action.executed_at = now - timedelta(seconds=120)
+    action.outcome_contract = {
+        "requires_outcome_assurance": True,
+        "verification_deadline_seconds": 30.0,
+        "acceptable_evidence_sources": ["DatabaseStateAdapter", "observer_ledger_auditor"],
+        "risk_sensitive_verification_policy": "DEFAULT",
+    }
+
+    req = OutcomeVerificationRequest(
+        transaction_id=action.transaction_id,
+        action_id=action.id,
+        observability_class=ObservabilityClass.OBS_DIRECT,
+        verifier_type=OutcomeVerifierType.DATABASE,
+        expected_postconditions={"status": "SETTLED"},
+        adapter_config={"mock_db_state": {"status": "SETTLED"}},
+    )
+
+    with patch("services.reality_verifier.db_session.get_tenant_session") as mock_db:
+        mock_session = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalar_one_or_none.return_value = action
+        mock_result.scalars.return_value.all.return_value = []
+        mock_session.execute.return_value = mock_result
+        mock_db.return_value.__aenter__.return_value = mock_session
+
+        with patch.object(
+            reality_service.adapters[OutcomeVerifierType.DATABASE],
+            "verify",
+            new_callable=AsyncMock,
+        ) as mock_probe:
+            from services.reality_verifier import AdapterProbeResult
+            mock_probe.return_value = AdapterProbeResult(
+                observed_state={"status": "SETTLED"},
+                evidence_payload={},
+                discrepancies=[],
+                is_simulated=False,
+                adapter_name="DatabaseStateAdapter",
+                success_indicated=True,
+                reconciliation_notes=[],
+            )
+
+            contract = await reality_service.verify_action_outcome(req, tenant_a_auth)
+            # Must strictly downgrade to UNKNOWN with confidence 0.0 because deadline expired!
+            assert contract.outcome_status == OutcomeStatus.UNKNOWN
+            assert contract.epistemic_confidence == 0.0
+            assert any("deadline expired" in n.lower() for n in contract.reconciliation_notes)

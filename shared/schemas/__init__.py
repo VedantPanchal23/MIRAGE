@@ -72,6 +72,8 @@ from shared.schemas.outcome import (
     PartialHandlingStrategy,
     RiskSensitiveVerificationPolicy,
     UncertainHandlingStrategy,
+    compute_bound_evidence_digest,
+    compute_evidence_digest,
 )
 from shared.schemas.output import (
     BudgetConsumption,
@@ -165,6 +167,8 @@ __all__ = [
     "RiskSensitiveVerificationPolicy",
     "PartialHandlingStrategy",
     "UncertainHandlingStrategy",
+    "compute_evidence_digest",
+    "compute_bound_evidence_digest",
     "ModelTier",
     "ModelFamily",
     "ModelCapabilityProfile",

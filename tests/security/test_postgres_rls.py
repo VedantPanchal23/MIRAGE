@@ -70,6 +70,11 @@ class TestPostgresRowLevelSecurity:
             conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON tenants TO mirage_app;"))
             conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON verification_sessions TO mirage_app;"))
             conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON claims TO mirage_app;"))
+            conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON actor_identities TO mirage_app;"))
+            conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON tool_registry TO mirage_app;"))
+            conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON ai_transactions TO mirage_app;"))
+            conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON action_contracts TO mirage_app;"))
+            conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON outcome_verification_records TO mirage_app;"))
             # Explicitly grant only SELECT and INSERT on audit_logs (NO UPDATE, NO DELETE)
             conn.execute(text("GRANT SELECT, INSERT ON audit_logs TO mirage_app;"))
             conn.commit()
@@ -499,3 +504,309 @@ class TestPostgresRowLevelSecurity:
                         )
                     ).scalar()
                     assert check_table == 1
+
+    @pytest.mark.asyncio
+    async def test_9_phase6_outcome_assurance_rls_isolation(
+        self, app_sessionmaker: async_sessionmaker[AsyncSession]
+    ) -> None:
+        """Verify strict PostgreSQL RLS cross-tenant isolation on action_contracts and outcome_verification_records."""
+        tenant_a = f"tenant_p6_a_{uuid.uuid4().hex[:6]}"
+        tenant_b = f"tenant_p6_b_{uuid.uuid4().hex[:6]}"
+        actor_a = f"usr_a_{uuid.uuid4().hex[:6]}"
+        actor_b = f"usr_b_{uuid.uuid4().hex[:6]}"
+        tool_a = f"tool_a_{uuid.uuid4().hex[:6]}"
+        tool_b = f"tool_b_{uuid.uuid4().hex[:6]}"
+        txn_a = f"txn_a_{uuid.uuid4().hex[:6]}"
+        txn_b = f"txn_b_{uuid.uuid4().hex[:6]}"
+        act_a = f"act_a_{uuid.uuid4().hex[:6]}"
+        act_b = f"act_b_{uuid.uuid4().hex[:6]}"
+        outc_a = f"outc_a_{uuid.uuid4().hex[:6]}"
+        outc_b = f"outc_b_{uuid.uuid4().hex[:6]}"
+
+        # Seed data for Tenant A
+        async with app_sessionmaker() as session:
+            async with session.begin():
+                await session.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tenant, true)"),
+                    {"tenant": tenant_a},
+                )
+                await session.execute(
+                    text("INSERT INTO tenants (id, name, api_key_hash, created_at) VALUES (:t, 'P6_A', :h, NOW())"),
+                    {"t": tenant_a, "h": uuid.uuid4().hex},
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO actor_identities (id, tenant_id, subject, principal_type, role, active, created_at)
+                        VALUES (:actor, :tenant, 'test_user_a', 'USER', 'ADMIN', true, NOW())
+                        """
+                    ),
+                    {"actor": actor_a, "tenant": tenant_a},
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO tool_registry (
+                            id, tenant_id, name, description, tool_type, egress_type, trust_level,
+                            required_capability, parameters_schema, config, active, created_at, updated_at
+                        )
+                        VALUES (
+                            :tool, :tenant, 'exec_tool_a', 'Test Tool A', 'NATIVE', 'INTERNAL_ISOLATED', 'VERIFIED',
+                            'EXECUTE', '{}', '{}', true, NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {"tool": tool_a, "tenant": tenant_a},
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO ai_transactions (
+                            id, tenant_id, actor_identity_id, idempotency_key, correlation_id,
+                            state, max_turns, turn_count, taint_flags, context_sources, created_at, updated_at
+                        )
+                        VALUES (
+                            :txn, :tenant, :actor, :idemp, :corr,
+                            'IN_FLIGHT', 10, 0, '[]', '[]', NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {
+                        "txn": txn_a,
+                        "tenant": tenant_a,
+                        "actor": actor_a,
+                        "idemp": f"idemp_txn_{uuid.uuid4().hex}",
+                        "corr": f"corr_{uuid.uuid4().hex}",
+                    },
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO action_contracts (
+                            id, tenant_id, transaction_id, actor_identity_id, tool_id, tool_name,
+                            action_type, target_resource, parameters, normalized_parameters, parameters_hash,
+                            required_capability, taint_flags, risk_score, blast_radius, state, idempotency_key,
+                            preconditions, postconditions, requires_outcome_assurance, outcome_status, created_at
+                        )
+                        VALUES (
+                            :act, :tenant, :txn, :actor, :tool, 'exec_action',
+                            'EXECUTE', 'db://target', '{}', '{}', 'hash_a',
+                            'EXECUTE', '[]', 50, '{}', 'EXECUTED', :idemp,
+                            '[]', '[]', true, 'PENDING_VERIFICATION', NOW()
+                        )
+                        """
+                    ),
+                    {
+                        "act": act_a,
+                        "tenant": tenant_a,
+                        "txn": txn_a,
+                        "actor": actor_a,
+                        "tool": tool_a,
+                        "idemp": f"idemp_act_{uuid.uuid4().hex}",
+                    },
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO outcome_verification_records (
+                            id, tenant_id, transaction_id, action_id, observability_class,
+                            outcome_status, epistemic_confidence, verifier_adapter, is_simulated,
+                            expected_postconditions, observed_state, discrepancies, evidence_payload,
+                            reconciliation_notes, verification_hash, target_environment, created_at, verified_at
+                        )
+                        VALUES (
+                            :outc, :tenant, :txn, :act, 'OBS_DIRECT',
+                            'VERIFIED_SUCCESS', 1.0, 'IndependentObserverAdapter', false,
+                            '{}', '{}', '[]', '{}',
+                            '[]', 'hash_outc_a', 'DEFAULT', NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {"outc": outc_a, "tenant": tenant_a, "txn": txn_a, "act": act_a},
+                )
+
+        # Seed data for Tenant B
+        async with app_sessionmaker() as session:
+            async with session.begin():
+                await session.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tenant, true)"),
+                    {"tenant": tenant_b},
+                )
+                await session.execute(
+                    text("INSERT INTO tenants (id, name, api_key_hash, created_at) VALUES (:t, 'P6_B', :h, NOW())"),
+                    {"t": tenant_b, "h": uuid.uuid4().hex},
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO actor_identities (id, tenant_id, subject, principal_type, role, active, created_at)
+                        VALUES (:actor, :tenant, 'test_user_b', 'USER', 'ADMIN', true, NOW())
+                        """
+                    ),
+                    {"actor": actor_b, "tenant": tenant_b},
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO tool_registry (
+                            id, tenant_id, name, description, tool_type, egress_type, trust_level,
+                            required_capability, parameters_schema, config, active, created_at, updated_at
+                        )
+                        VALUES (
+                            :tool, :tenant, 'exec_tool_b', 'Test Tool B', 'NATIVE', 'INTERNAL_ISOLATED', 'VERIFIED',
+                            'EXECUTE', '{}', '{}', true, NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {"tool": tool_b, "tenant": tenant_b},
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO ai_transactions (
+                            id, tenant_id, actor_identity_id, idempotency_key, correlation_id,
+                            state, max_turns, turn_count, taint_flags, context_sources, created_at, updated_at
+                        )
+                        VALUES (
+                            :txn, :tenant, :actor, :idemp, :corr,
+                            'IN_FLIGHT', 10, 0, '[]', '[]', NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {
+                        "txn": txn_b,
+                        "tenant": tenant_b,
+                        "actor": actor_b,
+                        "idemp": f"idemp_txn_{uuid.uuid4().hex}",
+                        "corr": f"corr_{uuid.uuid4().hex}",
+                    },
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO action_contracts (
+                            id, tenant_id, transaction_id, actor_identity_id, tool_id, tool_name,
+                            action_type, target_resource, parameters, normalized_parameters, parameters_hash,
+                            required_capability, taint_flags, risk_score, blast_radius, state, idempotency_key,
+                            preconditions, postconditions, requires_outcome_assurance, outcome_status, created_at
+                        )
+                        VALUES (
+                            :act, :tenant, :txn, :actor, :tool, 'exec_action',
+                            'EXECUTE', 'db://target_b', '{}', '{}', 'hash_b',
+                            'EXECUTE', '[]', 60, '{}', 'EXECUTED', :idemp,
+                            '[]', '[]', true, 'PENDING_VERIFICATION', NOW()
+                        )
+                        """
+                    ),
+                    {
+                        "act": act_b,
+                        "tenant": tenant_b,
+                        "txn": txn_b,
+                        "actor": actor_b,
+                        "tool": tool_b,
+                        "idemp": f"idemp_act_{uuid.uuid4().hex}",
+                    },
+                )
+                await session.execute(
+                    text(
+                        """
+                        INSERT INTO outcome_verification_records (
+                            id, tenant_id, transaction_id, action_id, observability_class,
+                            outcome_status, epistemic_confidence, verifier_adapter, is_simulated,
+                            expected_postconditions, observed_state, discrepancies, evidence_payload,
+                            reconciliation_notes, verification_hash, target_environment, created_at, verified_at
+                        )
+                        VALUES (
+                            :outc, :tenant, :txn, :act, 'OBS_DIRECT',
+                            'VERIFIED_FAILURE', 0.95, 'IndependentObserverAdapter', false,
+                            '{}', '{}', '[]', '{}',
+                            '[]', 'hash_outc_b', 'DEFAULT', NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {"outc": outc_b, "tenant": tenant_b, "txn": txn_b, "act": act_b},
+                )
+
+        # Step 1: Tenant A queries outcome_verification_records -> Tenant B's rows MUST be invisible
+        async with app_sessionmaker() as session:
+            async with session.begin():
+                await session.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tenant, true)"),
+                    {"tenant": tenant_a},
+                )
+                res_outc = await session.execute(
+                    text("SELECT id, tenant_id, outcome_status FROM outcome_verification_records")
+                )
+                outc_rows = res_outc.fetchall()
+                assert len(outc_rows) == 1
+                assert outc_rows[0][0] == outc_a
+                assert outc_rows[0][1] == tenant_a
+
+                # Query Tenant B's action_contract directly -> returns empty
+                res_act_b = await session.execute(
+                    text("SELECT id FROM action_contracts WHERE id = :act"),
+                    {"act": act_b},
+                )
+                assert res_act_b.fetchone() is None
+
+        # Step 2: Tenant B queries outcome_verification_records -> Tenant A's rows MUST be invisible
+        async with app_sessionmaker() as session:
+            async with session.begin():
+                await session.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tenant, true)"),
+                    {"tenant": tenant_b},
+                )
+                res_outc = await session.execute(
+                    text("SELECT id, tenant_id, outcome_status FROM outcome_verification_records")
+                )
+                outc_rows = res_outc.fetchall()
+                assert len(outc_rows) == 1
+                assert outc_rows[0][0] == outc_b
+                assert outc_rows[0][1] == tenant_b
+
+        # Step 3: Cross-tenant UPDATE attack: Tenant A attempts to update Tenant B's outcome record -> 0 rows affected
+        async with app_sessionmaker() as session:
+            async with session.begin():
+                await session.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tenant, true)"),
+                    {"tenant": tenant_a},
+                )
+                update_res = await session.execute(
+                    text(
+                        "UPDATE outcome_verification_records SET outcome_status = 'VERIFIED_SUCCESS' WHERE id = :outc"
+                    ),
+                    {"outc": outc_b},
+                )
+                assert update_res.rowcount == 0
+
+        # Step 4: Cross-tenant INSERT attack: Tenant A attempts to insert under Tenant B -> fails closed
+        async with app_sessionmaker() as session:
+            async with session.begin():
+                await session.execute(
+                    text("SELECT set_config('app.current_tenant_id', :tenant, true)"),
+                    {"tenant": tenant_a},
+                )
+                with pytest.raises((ProgrammingError, DBAPIError)) as exc_info:
+                    await session.execute(
+                        text(
+                            """
+                            INSERT INTO outcome_verification_records (
+                                id, tenant_id, transaction_id, action_id, observability_class,
+                                outcome_status, epistemic_confidence, verifier_adapter, is_simulated,
+                                expected_postconditions, observed_state, discrepancies, evidence_payload,
+                                reconciliation_notes, verification_hash, target_environment, created_at, verified_at
+                            )
+                            VALUES (
+                                'outc_spoofed_001', :forged_tenant, :txn, :act, 'OBS_DIRECT',
+                                'VERIFIED_SUCCESS', 1.0, 'IndependentObserverAdapter', false,
+                                '{}', '{}', '[]', '{}',
+                                '[]', 'hash_spoof', 'DEFAULT', NOW(), NOW()
+                            )
+                            """
+                        ),
+                        {"forged_tenant": tenant_b, "txn": txn_a, "act": act_a},
+                    )
+                assert (
+                    "violates row-level security policy" in str(exc_info.value).lower()
+                    or "check violation" in str(exc_info.value).lower()
+                )

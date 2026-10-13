@@ -9,6 +9,7 @@ from db import session as db_session
 from db.models import ActionContract
 from gateway.middleware.auth import get_current_auth
 from services.action_governor import ActionGovernorService
+from services.reality_verifier import reality_verifier_service
 from shared.schemas.action import (
     ActionAuthorizationDecision,
     ActionBatchProposal,
@@ -22,6 +23,10 @@ from shared.schemas.action import (
     ToolResponse,
 )
 from shared.schemas.auth import AuthContext
+from shared.schemas.outcome import (
+    OutcomeVerificationContract,
+    OutcomeVerificationRequest,
+)
 
 router = APIRouter(prefix="/v1", tags=["Action Assurance & Tool Governance"])
 governor_service = ActionGovernorService()
@@ -155,3 +160,33 @@ async def deny_approval_endpoint(
 ) -> ApprovalResponse:
     """Deny a pending human approval ticket."""
     return await governor_service.deny_approval(auth, approval_id, req.reason)
+
+
+# -----------------------------------------------------------------------------
+# Gate 5 Outcome Assurance Endpoint Aliases
+# -----------------------------------------------------------------------------
+
+@router.get("/actions/{action_id}/outcome", response_model=OutcomeVerificationContract)
+async def get_action_outcome_endpoint(
+    action_id: str, auth: Annotated[AuthContext, Depends(get_current_auth)]
+) -> OutcomeVerificationContract:
+    """Fetch authoritative Gate 5 outcome verification record for an action."""
+    contract = await reality_verifier_service.get_outcome_by_action_id(action_id, auth.tenant_id)
+    if not contract:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No outcome verification record found for action '{action_id}' in tenant '{auth.tenant_id}'",
+        )
+    return contract
+
+
+@router.post("/actions/{action_id}/outcome", response_model=OutcomeVerificationContract)
+async def verify_action_outcome_endpoint(
+    action_id: str,
+    req: OutcomeVerificationRequest,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> OutcomeVerificationContract:
+    """Execute Gate 5 reality verification for an action."""
+    if req.action_id != action_id:
+        req = req.model_copy(update={"action_id": action_id})
+    return await reality_verifier_service.verify_action_outcome(req, auth)

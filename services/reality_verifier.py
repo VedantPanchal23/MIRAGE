@@ -17,7 +17,7 @@ import urllib.parse
 import uuid
 from abc import ABC, abstractmethod
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import httpcore
@@ -51,6 +51,8 @@ from shared.schemas.outcome import (
     OutcomeVerificationContract,
     OutcomeVerificationRequest,
     OutcomeVerifierType,
+    compute_bound_evidence_digest,
+    compute_evidence_digest,
 )
 
 logger = get_logger("reality_verifier")
@@ -858,12 +860,24 @@ class IndependentObserverAdapter(BaseOutcomeAdapter):
                 ),
             )
 
-        # 2. Anti-staleness validation
+        # 2. Anti-staleness & Timestamp Validation
+        now_utc = datetime.now(UTC)
+        obs_dt = obs.observed_at
+        if obs_dt.tzinfo is None:
+            obs_dt = obs_dt.replace(tzinfo=UTC)
+
+        # Reject future timestamps (allowing 60s max clock skew)
+        if obs_dt > now_utc + timedelta(seconds=60):
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Future observation timestamp: observed_at ({obs_dt.isoformat()}) "
+                    f"is in the future (current time: {now_utc.isoformat()})."
+                ),
+            )
+
         action_ts = action.executed_at or action.created_at
         if action_ts:
-            obs_dt = obs.observed_at
-            if obs_dt.tzinfo is None:
-                obs_dt = obs_dt.replace(tzinfo=UTC)
             act_dt = action_ts
             if act_dt.tzinfo is None:
                 act_dt = act_dt.replace(tzinfo=UTC)
@@ -875,6 +889,20 @@ class IndependentObserverAdapter(BaseOutcomeAdapter):
                         f"action execution time ({act_dt.isoformat()})."
                     ),
                 )
+
+            # Check if observation was captured after action verification deadline
+            if action.outcome_contract and isinstance(action.outcome_contract, dict):
+                dl_sec = action.outcome_contract.get("verification_deadline_seconds")
+                if dl_sec is not None:
+                    deadline_dt = act_dt + timedelta(seconds=float(dl_sec))
+                    if obs_dt > deadline_dt:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail=(
+                                f"Expired observation: observed_at ({obs_dt.isoformat()}) exceeds "
+                                f"verification deadline ({deadline_dt.isoformat()}, {dl_sec}s from action)."
+                            ),
+                        )
 
         # 3. Acceptable evidence sources allowlist check
         if action.outcome_contract and isinstance(action.outcome_contract, dict):
@@ -889,13 +917,25 @@ class IndependentObserverAdapter(BaseOutcomeAdapter):
                         ),
                     )
 
-        # 4. Digest validation
+        # 4. Canonical Digest Validation & Cryptographic Recomputation
         if not is_valid_sha256_hex(obs.evidence_digest):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
                     f"Invalid evidence digest '{obs.evidence_digest}': "
                     "must be 64-char lowercase SHA-256 hex string."
+                ),
+            )
+
+        computed_state_digest = compute_evidence_digest(obs.observed_state)
+        computed_bound_digest = compute_bound_evidence_digest(obs.target_resource, obs.observed_state)
+        if obs.evidence_digest != computed_state_digest and obs.evidence_digest != computed_bound_digest:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=(
+                    f"Evidence digest mismatch: submitted digest '{obs.evidence_digest}' does not match "
+                    f"canonical recomputed digest '{computed_state_digest}' over observed state. "
+                    "Evidence payload may have been tampered with or corrupted."
                 ),
             )
 
@@ -992,6 +1032,14 @@ class RealityVerifierService:
                 stored_conf = record.epistemic_confidence
                 expected_conf = canonical.get("epistemic_confidence")
                 mismatches.append(f"epistemic_confidence ('{stored_conf}' != '{expected_conf}')")
+            if canonical.get("evidence_source") and record.evidence_source != canonical.get("evidence_source"):
+                mismatches.append(
+                    f"evidence_source ('{record.evidence_source}' != '{canonical.get('evidence_source')}')"
+                )
+            if canonical.get("evidence_digest") and record.evidence_digest != canonical.get("evidence_digest"):
+                mismatches.append(
+                    f"evidence_digest ('{record.evidence_digest}' != '{canonical.get('evidence_digest')}')"
+                )
 
             if mismatches:
                 raise HTTPException(
@@ -1545,18 +1593,50 @@ class RealityVerifierService:
             raw_existing = (await session.execute(existing_stmt)).scalar_one_or_none()
             existing_record = raw_existing if isinstance(raw_existing, OutcomeVerificationRecord) else None
             if existing_record:
-                # Idempotency check: if existing is terminal or matches idempotency key
-                if existing_record.idempotency_key == idempotency_key and existing_record.outcome_status in (
+                # Idempotency and terminal state immutability check
+                if existing_record.outcome_status in (
                     OutcomeStatus.SUCCESS_CONFIRMED.value,
                     OutcomeStatus.VERIFIED_SUCCESS.value,
                     OutcomeStatus.FAILED.value,
                     OutcomeStatus.VERIFIED_FAILURE.value,
                 ):
-                    return await self.verify_record_against_audit_trail(session, existing_record)
+                    if existing_record.idempotency_key == idempotency_key:
+                        return await self.verify_record_against_audit_trail(session, existing_record)
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"ActionContract '{action.id}' outcome is already in terminal state "
+                            f"'{existing_record.outcome_status}'. Terminal outcomes are immutable."
+                        ),
+                    )
 
             # Auto-route to INDEPENDENT_OBSERVER when observation payload is provided
             if request.observation is not None and request.verifier_type != OutcomeVerifierType.INDEPENDENT_OBSERVER:
                 request = request.model_copy(update={"verifier_type": OutcomeVerifierType.INDEPENDENT_OBSERVER})
+
+            # Observation ID Replay Defense:
+            # ensure observation_id has not been consumed by another action in this tenant
+            if request.observation:
+                obs_id = request.observation.observation_id
+                replay_stmt = (
+                    select(OutcomeVerificationRecord)
+                    .where(
+                        OutcomeVerificationRecord.tenant_id == auth.tenant_id,
+                        OutcomeVerificationRecord.action_id != action.id,
+                    )
+                )
+                existing_for_tenant = (await session.execute(replay_stmt)).scalars().all()
+                for rec in existing_for_tenant:
+                    rec_obs_id = (rec.evidence_payload or {}).get("observation_id")
+                    if rec_obs_id == obs_id:
+                        raise HTTPException(
+                            status_code=status.HTTP_409_CONFLICT,
+                            detail=(
+                                f"Observation replay attack detected: observation_id '{obs_id}' was already "
+                                f"consumed for action '{rec.action_id}'. "
+                                "Observations cannot be recycled across actions."
+                            ),
+                        )
 
             # 5. Environment Binding
             target_env = "DEFAULT"
@@ -1776,12 +1856,24 @@ class RealityVerifierService:
                 outcome_status = OutcomeStatus.UNKNOWN
                 epistemic_confidence = 0.0
 
-            if deadline_passed and request.observation is None and not probe_result.success_indicated:
-                outcome_status = OutcomeStatus.UNKNOWN
-                epistemic_confidence = 0.0
-                reconciliation_notes.append(
-                    "Verification deadline expired without independent confirmation. Downgraded to UNKNOWN."
-                )
+            if deadline_passed:
+                if outcome_status in (
+                    OutcomeStatus.VERIFIED_SUCCESS,
+                    OutcomeStatus.SUCCESS_CONFIRMED,
+                    OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED,
+                ):
+                    outcome_status = OutcomeStatus.UNKNOWN
+                    epistemic_confidence = 0.0
+                    reconciliation_notes.append(
+                        "Verification deadline expired. "
+                        "Late observation cannot convert an expired action into verified success."
+                    )
+                elif request.observation is None and not probe_result.success_indicated:
+                    outcome_status = OutcomeStatus.UNKNOWN
+                    epistemic_confidence = 0.0
+                    reconciliation_notes.append(
+                        "Verification deadline expired without independent confirmation. Downgraded to UNKNOWN."
+                    )
 
             # 10. Monotonic state transition enforcement against existing record
             if existing_record:
@@ -1813,6 +1905,8 @@ class RealityVerifierService:
                 "is_simulated": probe_result.is_simulated,
                 "expected_postconditions": effective_postconditions,
                 "observed_state_hash": observed_state_hash,
+                "evidence_source": request.observation.source_id if request.observation else probe_result.adapter_name,
+                "evidence_digest": request.observation.evidence_digest if request.observation else observed_state_hash,
                 "verified_at": verified_at_iso,
                 "idempotency_key": idempotency_key,
             }

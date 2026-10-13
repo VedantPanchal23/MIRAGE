@@ -125,9 +125,13 @@ MIRAGE has evolved from a hallucination detection platform (2.x) to a comprehens
 - **Risk-Sensitive Verification Policy:** Strict enforcement of `STRICT_DIRECT_ONLY`, prohibiting simulated probes and inferred/blind observability classes for high-risk actions.
 - **Deadline Expiration Downgrades:** Monotonic downgrade of pending outcomes to `UNKNOWN` with confidence `0.0` upon verification deadline expiration.
 - **Operator Escalation Workflow:** Human-in-the-loop escalation endpoints (`POST /v1/outcomes/{outcome_id}/escalate`) recording review status and audit chaining.
-- **Extended REST API & Dashboard:** Endpoints `GET /v1/outcomes/pending`, `GET /v1/outcomes/action/{action_id}`, and `POST /v1/outcomes/{outcome_id}/escalate`; dashboard API client and status badges updated (React 18 / JSX).
+- **Extended REST API & Dashboard:** Endpoints `GET /v1/outcomes/pending`, `GET /v1/outcomes/action/{action_id}`, `POST /v1/outcomes/{outcome_id}/escalate`, and canonical aliases `GET /v1/actions/{action_id}/outcome`, `POST /v1/actions/{action_id}/outcome`, `GET /v1/transactions/{transaction_id}/outcomes`; dashboard API client and status badges updated (React 18 / JSX).
 - **Alembic Migration 016:** Additive schema migration `016_phase6_outcome_assurance_lifecycle.py` with PostgreSQL Row-Level Security.
-- **Test Suite:** Comprehensive unit and security test suites (`test_outcome_state_machine.py`, `test_outcome_contracts.py`, `test_phase6_outcome_assurance.py`) with 100% pass rate.
+- **Evidence Digest Recomputation:** Full cryptographic recomputation of SHA-256 evidence digests over canonical key-sorted JSON (`compute_evidence_digest`, `compute_bound_evidence_digest`), failing closed with HTTP 400 Bad Request on format errors, tampering, or digest mismatches.
+- **Temporal & Replay Defenses:** Strict rejection of future observation timestamps (`obs_dt > now_utc + 60s`) and observations captured after verification deadlines (`obs_dt > executed_at + verification_deadline_seconds`) with HTTP 400; cross-action observation ID replay attack detection with HTTP 409 Conflict.
+- **Terminal Immutability & Late Observation Hardening:** Immutable terminal states (`VERIFIED_SUCCESS`, `SUCCESS_CONFIRMED`, `VERIFIED_FAILURE`, `FAILED`) rejecting conflicting reverification; late observations strictly prohibited from converting expired actions into verified success (locked to `UNKNOWN` with confidence `0.0`).
+- **PostgreSQL Row-Level Security Validation:** Empirically verified strict cross-tenant RLS isolation on `action_contracts` and `outcome_verification_records` against PostgreSQL 16 Testcontainer under unprivileged `mirage_app` role.
+- **Test Suite & Release Closure:** 100% pass rate across dedicated unit, security, integration, and migration test batteries (49/49 outcome tests, 169/169 security tests, 9/9 RLS tests). Final release decision: **PASS**.
 
 ### Deprecated
 - Streamlit dashboard deprecated in favor of React 18/JSX frontend.

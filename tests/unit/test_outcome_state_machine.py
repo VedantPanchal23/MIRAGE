@@ -19,6 +19,7 @@ from shared.schemas.outcome import (
     OutcomeStatus,
     OutcomeVerificationRequest,
     OutcomeVerifierType,
+    compute_evidence_digest,
 )
 
 
@@ -118,14 +119,15 @@ async def test_independent_observer_adapter_verifies_success() -> None:
     adapter = IndependentObserverAdapter()
     action = _mock_action()
     now = datetime.now(UTC)
+    state = {"status": "SHIPPED", "tracking_number": "TRK123456"}
 
     obs = IndependentObservation(
         observation_id="obs_001",
         source_id="observer_warehouse_sql",
         target_resource=action.target_resource,
         observed_at=now,
-        observed_state={"status": "SHIPPED", "tracking_number": "TRK123456"},
-        evidence_digest="a" * 64,
+        observed_state=state,
+        evidence_digest=compute_evidence_digest(state),
         epistemic_confidence=0.98,
     )
     req = OutcomeVerificationRequest(
@@ -142,6 +144,102 @@ async def test_independent_observer_adapter_verifies_success() -> None:
     assert len(probe.discrepancies) == 0
     assert probe.is_simulated is False
     assert probe.observed_state["status"] == "SHIPPED"
+
+
+@pytest.mark.asyncio
+async def test_independent_observer_adapter_rejects_digest_mismatch() -> None:
+    """Tampered observation state with mismatched digest must fail closed with HTTP 400."""
+    adapter = IndependentObserverAdapter()
+    action = _mock_action()
+    now = datetime.now(UTC)
+
+    obs = IndependentObservation(
+        observation_id="obs_tampered_001",
+        source_id="observer_warehouse_sql",
+        target_resource=action.target_resource,
+        observed_at=now,
+        observed_state={"status": "SHIPPED", "tampered_field": "injected_value"},
+        evidence_digest="a" * 64,  # Does not match recomputed SHA-256 of observed_state!
+        epistemic_confidence=0.98,
+    )
+    req = OutcomeVerificationRequest(
+        transaction_id=action.transaction_id,
+        action_id=action.id,
+        observability_class=ObservabilityClass.OBS_DIRECT,
+        verifier_type=OutcomeVerifierType.INDEPENDENT_OBSERVER,
+        expected_postconditions={"status": "SHIPPED"},
+        observation=obs,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await adapter.verify(action, req, action.tenant_id)
+    assert exc_info.value.status_code == 400
+    assert "Evidence digest mismatch" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_independent_observer_adapter_rejects_future_timestamp() -> None:
+    """Observation timestamp in the future must fail closed with HTTP 400."""
+    adapter = IndependentObserverAdapter()
+    action = _mock_action()
+    future_time = datetime.now(UTC) + timedelta(minutes=10)
+    state = {"status": "SHIPPED"}
+
+    obs = IndependentObservation(
+        observation_id="obs_future_001",
+        source_id="observer_warehouse_sql",
+        target_resource=action.target_resource,
+        observed_at=future_time,
+        observed_state=state,
+        evidence_digest=compute_evidence_digest(state),
+        epistemic_confidence=0.98,
+    )
+    req = OutcomeVerificationRequest(
+        transaction_id=action.transaction_id,
+        action_id=action.id,
+        observability_class=ObservabilityClass.OBS_DIRECT,
+        verifier_type=OutcomeVerifierType.INDEPENDENT_OBSERVER,
+        expected_postconditions={"status": "SHIPPED"},
+        observation=obs,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await adapter.verify(action, req, action.tenant_id)
+    assert exc_info.value.status_code == 400
+    assert "Future observation timestamp" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_independent_observer_adapter_rejects_expired_observation() -> None:
+    """Observation captured after action verification deadline must fail closed with HTTP 400."""
+    adapter = IndependentObserverAdapter()
+    action = _mock_action()
+    # Action outcome_contract defines verification_deadline_seconds=30.0
+    late_time = (action.executed_at or datetime.now(UTC)) + timedelta(seconds=45)
+    state = {"status": "SHIPPED"}
+
+    obs = IndependentObservation(
+        observation_id="obs_expired_001",
+        source_id="observer_warehouse_sql",
+        target_resource=action.target_resource,
+        observed_at=late_time,
+        observed_state=state,
+        evidence_digest=compute_evidence_digest(state),
+        epistemic_confidence=0.98,
+    )
+    req = OutcomeVerificationRequest(
+        transaction_id=action.transaction_id,
+        action_id=action.id,
+        observability_class=ObservabilityClass.OBS_DIRECT,
+        verifier_type=OutcomeVerifierType.INDEPENDENT_OBSERVER,
+        expected_postconditions={"status": "SHIPPED"},
+        observation=obs,
+    )
+
+    with pytest.raises(HTTPException) as exc_info:
+        await adapter.verify(action, req, action.tenant_id)
+    assert exc_info.value.status_code == 400
+    assert "Expired observation" in exc_info.value.detail
 
 
 @pytest.mark.asyncio

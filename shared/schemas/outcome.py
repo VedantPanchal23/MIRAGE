@@ -3,11 +3,42 @@
 Implements Reality_Verification.md, Input_Output_Assurance.md §6, and AI_Action_Contract.md.
 """
 
+import hashlib
+import json
 from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+def compute_evidence_digest(observed_state: dict[str, Any]) -> str:
+    """Computes authoritative SHA-256 evidence digest over canonical sorted JSON of observed state."""
+    canonical_bytes = json.dumps(
+        observed_state,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical_bytes).hexdigest()
+
+
+def compute_bound_evidence_digest(
+    target_resource: str,
+    observed_state: dict[str, Any],
+) -> str:
+    """Computes authoritative SHA-256 evidence digest binding target resource and observed state."""
+    payload = {
+        "target_resource": target_resource,
+        "observed_state": observed_state,
+    }
+    canonical_bytes = json.dumps(
+        payload,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical_bytes).hexdigest()
 
 
 class ObservabilityClass(StrEnum):

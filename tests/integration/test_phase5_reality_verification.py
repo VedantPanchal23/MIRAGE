@@ -312,3 +312,57 @@ async def test_eventual_consistency_async_event_adapter_api(phase5_setup: dict[s
     assert data["epistemic_confidence"] == 0.95
     assert data["evidence_payload"]["poll_attempts"] == 2
     assert len(data["discrepancies"]) == 0
+
+
+@pytest.mark.asyncio
+async def test_action_and_transaction_outcome_alias_routes(phase5_setup: dict[str, str]) -> None:
+    """Test /v1/actions/{action_id}/outcome and /v1/transactions/{transaction_id}/outcomes endpoints."""
+    tenant_id = phase5_setup["tenant_id"]
+    actor_id = phase5_setup["actor_id"]
+    actor_sub = phase5_setup["actor_sub"]
+    suffix = phase5_setup["suffix"]
+
+    txn_id, act_id, _ = await _seed_test_environment(tenant_id, actor_id, actor_sub, suffix)
+
+    client = TestClient(create_app())
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
+
+    # 1. POST /v1/actions/{action_id}/outcome to execute reality verification
+    req_payload = {
+        "transaction_id": txn_id,
+        "action_id": act_id,
+        "observability_class": "OBS_DIRECT",
+        "verifier_type": "SIMULATED",
+        "expected_postconditions": {"status": "ACTIVE"},
+        "adapter_config": {"simulated_state": {"status": "ACTIVE"}, "allow_simulated_for_test": True},
+    }
+    verify_resp = client.post(f"/v1/actions/{act_id}/outcome", json=req_payload, headers=headers)
+    assert verify_resp.status_code == 200
+    verify_data = verify_resp.json()
+    assert verify_data["action_id"] == act_id
+    assert verify_data["outcome_status"] == "ACKNOWLEDGED_UNVERIFIED"
+
+    # 2. GET /v1/actions/{action_id}/outcome to retrieve outcome contract
+    get_resp = client.get(f"/v1/actions/{act_id}/outcome", headers=headers)
+    assert get_resp.status_code == 200
+    get_data = get_resp.json()
+    assert get_data["action_id"] == act_id
+    assert get_data["outcome_id"] == verify_data["outcome_id"]
+
+    # 3. GET /v1/transactions/{transaction_id}/outcomes to list transaction outcomes
+    txn_outcomes_resp = client.get(f"/v1/transactions/{txn_id}/outcomes", headers=headers)
+    assert txn_outcomes_resp.status_code == 200
+    txn_outcomes = txn_outcomes_resp.json()
+    assert len(txn_outcomes) >= 1
+    assert any(o["action_id"] == act_id for o in txn_outcomes)
+
+    # 4. Cross-tenant isolation on alias endpoints: Tenant Beta must get 404 Not Found
+    other_headers = AuthTestFactory.auth_headers(
+        tenant_id=f"other_{suffix}", user_id=f"other_{actor_sub}", role=Role.API_CLIENT
+    )
+    cross_act_resp = client.get(f"/v1/actions/{act_id}/outcome", headers=other_headers)
+    assert cross_act_resp.status_code == 404
+
+    cross_txn_resp = client.get(f"/v1/transactions/{txn_id}/outcomes", headers=other_headers)
+    assert cross_txn_resp.status_code == 200
+    assert len(cross_txn_resp.json()) == 0  # Tenant boundary returns zero rows for another tenant's txn

@@ -387,3 +387,68 @@ class TestPostgresOutcomeMigration:
                 )
             ).scalar_one_or_none()
             assert constraint_restored == "uq_outcome_records_tenant_action"
+
+    def test_phase6_migration_016_downgrade_and_reupgrade_cycle(self, sync_engine: Any) -> None:
+        """Executes Alembic downgrade of migration 016 to 015 and re-upgrade to head."""
+        sync_url = os.environ.get("DATABASE_SYNC_URL")
+        cfg = Config("alembic.ini")
+        cfg.set_main_option("sqlalchemy.url", sync_url)
+
+        # 1. Downgrade migration 016 (reverts to 015_routing_remediation)
+        command.downgrade(cfg, "015_routing_remediation")
+
+        with sync_engine.connect() as conn:
+            # Check Phase 6 columns were dropped from outcome_verification_records
+            col_check = conn.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'outcome_verification_records'
+                    AND column_name IN ('evidence_source', 'evidence_digest', 'observed_at', 'verification_deadline');
+                    """
+                )
+            ).scalars().all()
+            assert len(col_check) == 0, f"Expected Phase 6 columns dropped, found {col_check}"
+
+            # Check Phase 6 columns were dropped from action_contracts
+            act_col_check = conn.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'action_contracts'
+                    AND column_name IN ('requires_outcome_assurance', 'outcome_contract', 'outcome_status');
+                    """
+                )
+            ).scalars().all()
+            assert len(act_col_check) == 0, f"Expected Phase 6 action columns dropped, found {act_col_check}"
+
+        # 2. Re-upgrade to head (016)
+        command.upgrade(cfg, "head")
+
+        with sync_engine.connect() as conn:
+            # Check Phase 6 columns restored
+            col_restored = conn.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'outcome_verification_records'
+                    AND column_name IN ('evidence_source', 'evidence_digest', 'observed_at', 'verification_deadline');
+                    """
+                )
+            ).scalars().all()
+            assert set(col_restored) == {"evidence_source", "evidence_digest", "observed_at", "verification_deadline"}
+
+            act_col_restored = conn.execute(
+                text(
+                    """
+                    SELECT column_name
+                    FROM information_schema.columns
+                    WHERE table_name = 'action_contracts'
+                    AND column_name IN ('requires_outcome_assurance', 'outcome_contract', 'outcome_status');
+                    """
+                )
+            ).scalars().all()
+            assert set(act_col_restored) == {"requires_outcome_assurance", "outcome_contract", "outcome_status"}

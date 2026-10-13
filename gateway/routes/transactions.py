@@ -26,6 +26,7 @@ from shared.schemas.control_plane import (
     TransactionResponse,
     TransactionTransitionRequest,
 )
+from shared.schemas.outcome import OutcomeVerificationContract
 
 router = APIRouter(prefix="/v1", tags=["Governed Transactions"])
 
@@ -83,3 +84,12 @@ async def validate_governed_capability(
 ) -> PolicyDecision:
     """Validate a scoped Phase 1 capability for the authenticated identity."""
     return await validate_capability(auth, request)
+
+
+@router.get("/transactions/{transaction_id}/outcomes", response_model=list[OutcomeVerificationContract])
+async def list_transaction_outcomes_endpoint(
+    transaction_id: str, auth: Annotated[AuthContext, Depends(get_current_auth)]
+) -> list[OutcomeVerificationContract]:
+    """Fetch all Gate 5 outcome verification records for an AI Transaction under tenant boundary."""
+    from gateway.routes.outcomes import list_outcomes_for_transaction
+    return await list_outcomes_for_transaction(transaction_id, auth)

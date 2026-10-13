@@ -188,5 +188,11 @@ async def verify_action_outcome_endpoint(
 ) -> OutcomeVerificationContract:
     """Execute Gate 5 reality verification for an action."""
     if req.action_id != action_id:
-        req = req.model_copy(update={"action_id": action_id})
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                f"Action ID mismatch: path parameter '{action_id}' does not match "
+                f"request body action_id '{req.action_id}'"
+            ),
+        )
     return await reality_verifier_service.verify_action_outcome(req, auth)

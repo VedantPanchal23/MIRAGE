@@ -21,7 +21,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine, text
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import DBAPIError, IntegrityError, ProgrammingError
 
 
 @pytest.mark.security
@@ -452,3 +452,351 @@ class TestPostgresOutcomeMigration:
                 )
             ).scalars().all()
             assert set(act_col_restored) == {"requires_outcome_assurance", "outcome_contract", "outcome_status"}
+
+    def test_clean_schema_migration_rls_and_unprivileged_app_role_isolation(self, sync_engine: Any) -> None:
+        """Starts from clean schema, runs real migrations, verifies RLS, and proves isolation under mirage_app."""
+        _ = sync_engine
+        sync_url = os.environ.get("DATABASE_SYNC_URL")
+        assert sync_url is not None
+        clean_db_name = f"test_clean_rls_{uuid.uuid4().hex[:8]}"
+
+        # Step 1: Create a brand new clean database as admin
+        admin_engine = create_engine(sync_url, isolation_level="AUTOCOMMIT")
+        with admin_engine.connect() as conn:
+            conn.execute(text(f"CREATE DATABASE {clean_db_name};"))
+
+        try:
+            # Step 2: Configure alembic to upgrade the clean database to head
+            clean_sync_url = sync_url.rsplit("/", 1)[0] + f"/{clean_db_name}"
+            orig_sync_env = os.environ.get("DATABASE_SYNC_URL")
+            try:
+                os.environ["DATABASE_SYNC_URL"] = clean_sync_url
+                cfg = Config("alembic.ini")
+                cfg.set_main_option("sqlalchemy.url", clean_sync_url)
+                command.upgrade(cfg, "head")
+            finally:
+                if orig_sync_env is not None:
+                    os.environ["DATABASE_SYNC_URL"] = orig_sync_env
+
+            # Step 3: Inspect pg_class & pg_policies on clean database as admin
+            clean_engine = create_engine(clean_sync_url)
+            with clean_engine.connect() as conn:
+                for tbl in ("action_contracts", "outcome_verification_records"):
+                    class_info = (
+                        conn.execute(
+                            text(
+                                f"""
+                                SELECT relrowsecurity, relforcerowsecurity
+                                FROM pg_class
+                                WHERE relname = '{tbl}';
+                                """
+                            )
+                        )
+                        .mappings()
+                        .one()
+                    )
+                    assert class_info["relrowsecurity"] is True, f"RLS not enabled on {tbl} in clean database"
+                    assert class_info["relforcerowsecurity"] is True, f"RLS not FORCED on {tbl} in clean database"
+
+                    policy_info = (
+                        conn.execute(
+                            text(
+                                f"""
+                                SELECT policyname, tablename, cmd, qual, with_check
+                                FROM pg_policies
+                                WHERE tablename = '{tbl}' AND policyname = 'tenant_isolation_{tbl}';
+                                """
+                            )
+                        )
+                        .mappings()
+                        .one_or_none()
+                    )
+                    assert policy_info is not None, f"Policy tenant_isolation_{tbl} missing in clean database"
+                    assert policy_info["cmd"] == "ALL", f"Policy on {tbl} must be for ALL commands"
+
+                # Verify mirage_app role properties
+                role_info = (
+                    conn.execute(
+                        text(
+                            """
+                            SELECT rolname, rolsuper, rolbypassrls
+                            FROM pg_roles
+                            WHERE rolname = 'mirage_app';
+                            """
+                        )
+                    )
+                    .mappings()
+                    .one_or_none()
+                )
+                assert role_info is not None, "mirage_app role must exist after migration"
+                assert role_info["rolsuper"] is False, "mirage_app must be NOSUPERUSER"
+                assert role_info["rolbypassrls"] is False, "mirage_app must be NOBYPASSRLS"
+
+                # Grant connect on clean database to mirage_app (database-level connect privilege)
+                conn.execute(text(f"GRANT CONNECT ON DATABASE {clean_db_name} TO mirage_app;"))
+                conn.commit()
+            clean_engine.dispose()
+
+            # Step 4: Connect strictly as unprivileged mirage_app (no test fixture grants!)
+            if "@" in clean_sync_url:
+                prefix = clean_sync_url.split("://")[0]
+                host_part = clean_sync_url.split("@")[1]
+                app_sync_url = f"{prefix}://mirage_app:mirage_app_pw@{host_part}"
+            else:
+                app_sync_url = clean_sync_url
+
+            app_engine = create_engine(app_sync_url)
+            tenant_a = f"t_clean_a_{uuid.uuid4().hex[:6]}"
+            tenant_b = f"t_clean_b_{uuid.uuid4().hex[:6]}"
+            act_a = f"act_clean_a_{uuid.uuid4().hex[:6]}"
+            act_b = f"act_clean_b_{uuid.uuid4().hex[:6]}"
+            txn_a = f"txn_clean_a_{uuid.uuid4().hex[:6]}"
+            txn_b = f"txn_clean_b_{uuid.uuid4().hex[:6]}"
+            outc_a = f"outc_clean_a_{uuid.uuid4().hex[:6]}"
+            outc_b = f"outc_clean_b_{uuid.uuid4().hex[:6]}"
+
+            # Test A: Unauthenticated (no tenant context set) -> Fail closed
+            with app_engine.connect() as conn:
+                unauth_acts = conn.execute(text("SELECT id FROM action_contracts")).fetchall()
+                assert len(unauth_acts) == 0
+                unauth_outc = conn.execute(text("SELECT id FROM outcome_verification_records")).fetchall()
+                assert len(unauth_outc) == 0
+
+            # Test B: Seed Tenant A and insert under Tenant A context
+            with app_engine.connect() as conn:
+                conn.execute(
+                    text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                    {"t": tenant_a},
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO tenants (id, name, api_key_hash, created_at) "
+                        "VALUES (:t, 'TenantA', 'h_a', NOW())"
+                    ),
+                    {"t": tenant_a},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO actor_identities (id, tenant_id, subject, principal_type, role, active, created_at)
+                        VALUES ('actor_a', :t, 'sub_a', 'USER', 'ADMIN', true, NOW())
+                        """
+                    ),
+                    {"t": tenant_a},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO tool_registry (
+                            id, tenant_id, name, description, tool_type, egress_type, trust_level,
+                            required_capability, parameters_schema, config, active, created_at, updated_at
+                        ) VALUES (
+                            'tool_a', :t, 'tool_a', 'desc', 'NATIVE', 'INTERNAL_ISOLATED', 'VERIFIED',
+                            'EXECUTE', '{}', '{}', true, NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {"t": tenant_a},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO ai_transactions (
+                            id, tenant_id, actor_identity_id, idempotency_key, correlation_id,
+                            state, max_turns, turn_count, taint_flags, context_sources, created_at, updated_at
+                        ) VALUES (
+                            :txn, :t, 'actor_a', 'idem_txn_a', 'corr_a',
+                            'IN_FLIGHT', 10, 0, '[]', '[]', NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {"txn": txn_a, "t": tenant_a},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO action_contracts (
+                            id, tenant_id, transaction_id, actor_identity_id, tool_id, tool_name,
+                            action_type, target_resource, parameters, normalized_parameters, parameters_hash,
+                            required_capability, taint_flags, risk_score, blast_radius, state, idempotency_key,
+                            preconditions, postconditions, requires_outcome_assurance, outcome_status, created_at
+                        ) VALUES (
+                            :act, :t, :txn, 'actor_a', 'tool_a', 'exec_action',
+                            'EXECUTE', 'db://target', '{}', '{}', 'hash_a',
+                            'EXECUTE', '[]', 50, '{}', 'EXECUTED', 'idem_act_a',
+                            '[]', '[]', true, 'PENDING_VERIFICATION', NOW()
+                        )
+                        """
+                    ),
+                    {"act": act_a, "t": tenant_a, "txn": txn_a},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO outcome_verification_records (
+                            id, tenant_id, transaction_id, action_id, observability_class,
+                            outcome_status, epistemic_confidence, verifier_adapter, is_simulated,
+                            expected_postconditions, observed_state, discrepancies, evidence_payload,
+                            reconciliation_notes, verification_hash, target_environment, created_at, verified_at
+                        ) VALUES (
+                            :outc, :t, :txn, :act, 'OBS_DIRECT',
+                            'VERIFIED_SUCCESS', 1.0, 'IndependentObserverAdapter', false,
+                            '{}', '{}', '[]', '{}', '[]', 'hash_outc_a', 'DEFAULT', NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {"outc": outc_a, "t": tenant_a, "txn": txn_a, "act": act_a},
+                )
+                conn.commit()
+
+            # Test C: Seed Tenant B under Tenant B context
+            with app_engine.connect() as conn:
+                conn.execute(
+                    text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                    {"t": tenant_b},
+                )
+                conn.execute(
+                    text(
+                        "INSERT INTO tenants (id, name, api_key_hash, created_at) "
+                        "VALUES (:t, 'TenantB', 'h_b', NOW())"
+                    ),
+                    {"t": tenant_b},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO actor_identities (id, tenant_id, subject, principal_type, role, active, created_at)
+                        VALUES ('actor_b', :t, 'sub_b', 'USER', 'ADMIN', true, NOW())
+                        """
+                    ),
+                    {"t": tenant_b},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO tool_registry (
+                            id, tenant_id, name, description, tool_type, egress_type, trust_level,
+                            required_capability, parameters_schema, config, active, created_at, updated_at
+                        ) VALUES (
+                            'tool_b', :t, 'tool_b', 'desc', 'NATIVE', 'INTERNAL_ISOLATED', 'VERIFIED',
+                            'EXECUTE', '{}', '{}', true, NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {"t": tenant_b},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO ai_transactions (
+                            id, tenant_id, actor_identity_id, idempotency_key, correlation_id,
+                            state, max_turns, turn_count, taint_flags, context_sources, created_at, updated_at
+                        ) VALUES (
+                            :txn, :t, 'actor_b', 'idem_txn_b', 'corr_b',
+                            'IN_FLIGHT', 10, 0, '[]', '[]', NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {"txn": txn_b, "t": tenant_b},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO action_contracts (
+                            id, tenant_id, transaction_id, actor_identity_id, tool_id, tool_name,
+                            action_type, target_resource, parameters, normalized_parameters, parameters_hash,
+                            required_capability, taint_flags, risk_score, blast_radius, state, idempotency_key,
+                            preconditions, postconditions, requires_outcome_assurance, outcome_status, created_at
+                        ) VALUES (
+                            :act, :t, :txn, 'actor_b', 'tool_b', 'exec_action',
+                            'EXECUTE', 'db://target_b', '{}', '{}', 'hash_b',
+                            'EXECUTE', '[]', 60, '{}', 'EXECUTED', 'idem_act_b',
+                            '[]', '[]', true, 'PENDING_VERIFICATION', NOW()
+                        )
+                        """
+                    ),
+                    {"act": act_b, "t": tenant_b, "txn": txn_b},
+                )
+                conn.execute(
+                    text(
+                        """
+                        INSERT INTO outcome_verification_records (
+                            id, tenant_id, transaction_id, action_id, observability_class,
+                            outcome_status, epistemic_confidence, verifier_adapter, is_simulated,
+                            expected_postconditions, observed_state, discrepancies, evidence_payload,
+                            reconciliation_notes, verification_hash, target_environment, created_at, verified_at
+                        ) VALUES (
+                            :outc, :t, :txn, :act, 'OBS_DIRECT',
+                            'VERIFIED_FAILURE', 0.9, 'IndependentObserverAdapter', false,
+                            '{}', '{}', '[]', '{}', '[]', 'hash_outc_b', 'DEFAULT', NOW(), NOW()
+                        )
+                        """
+                    ),
+                    {"outc": outc_b, "t": tenant_b, "txn": txn_b, "act": act_b},
+                )
+                conn.commit()
+
+            # Test D: Isolation Checks under Tenant A context
+            with app_engine.connect() as conn:
+                conn.execute(
+                    text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                    {"t": tenant_a},
+                )
+                # 1. SELECT isolation
+                acts = conn.execute(text("SELECT id FROM action_contracts")).scalars().all()
+                assert acts == [act_a], f"Tenant A saw unexpected actions: {acts}"
+                outcs = conn.execute(text("SELECT id FROM outcome_verification_records")).scalars().all()
+                assert outcs == [outc_a], f"Tenant A saw unexpected outcomes: {outcs}"
+
+                # 2. Cross-tenant UPDATE attack -> 0 rows affected
+                upd = conn.execute(
+                    text("UPDATE outcome_verification_records SET outcome_status = 'VERIFIED_SUCCESS' WHERE id = :id"),
+                    {"id": outc_b},
+                )
+                assert upd.rowcount == 0
+
+                # 3. Cross-tenant DELETE attack -> 0 rows affected
+                dele = conn.execute(
+                    text("DELETE FROM action_contracts WHERE id = :id"),
+                    {"id": act_b},
+                )
+                assert dele.rowcount == 0
+
+                with pytest.raises((ProgrammingError, DBAPIError, IntegrityError)) as exc_info:
+                    conn.execute(
+                        text(
+                            """
+                            INSERT INTO outcome_verification_records (
+                                id, tenant_id, transaction_id, action_id, observability_class,
+                                outcome_status, epistemic_confidence, verifier_adapter, is_simulated,
+                                expected_postconditions, observed_state, discrepancies, evidence_payload,
+                                reconciliation_notes, verification_hash, target_environment, created_at, verified_at
+                            ) VALUES (
+                                'outc_spoofed', :forged_t, :txn, :act, 'OBS_DIRECT',
+                                'VERIFIED_SUCCESS', 1.0, 'IndependentObserverAdapter', false,
+                                '{}', '{}', '[]', '{}', '[]', 'hash_spoof', 'DEFAULT', NOW(), NOW()
+                            )
+                            """
+                        ),
+                        {"forged_t": tenant_b, "txn": txn_a, "act": act_a},
+                    )
+                err_msg = str(exc_info.value).lower()
+                assert "row-level security" in err_msg or "check violation" in err_msg
+                conn.rollback()
+
+                # 5. Parameter injection attempt into set_config cannot bypass isolation
+                malicious = f"{tenant_a}'; DROP TABLE action_contracts; --"
+                conn.execute(
+                    text("SELECT set_config('app.current_tenant_id', :t, true)"),
+                    {"t": malicious},
+                )
+                curr = conn.execute(text("SELECT current_setting('app.current_tenant_id', true)")).scalar()
+                assert curr == malicious
+                tbl_cnt = conn.execute(text("SELECT COUNT(*) FROM action_contracts")).scalar()
+                assert tbl_cnt == 0
+
+            app_engine.dispose()
+        finally:
+            with admin_engine.connect() as conn:
+                conn.execute(text(f"DROP DATABASE IF EXISTS {clean_db_name} WITH (FORCE);"))
+            admin_engine.dispose()

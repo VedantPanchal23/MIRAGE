@@ -76,14 +76,28 @@ def upgrade() -> None:
         ["verification_deadline"],
     )
 
-    # 3. Ensure permissions for mirage_app role
+    # 3. Ensure permissions and RLS for unprivileged application role mirage_app
     if is_postgres:
         op.execute(
             """
             DO $$
             BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mirage_app') THEN
+                    BEGIN
+                        CREATE ROLE mirage_app WITH LOGIN PASSWORD 'mirage_app_pw'
+                            NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
+                    EXCEPTION WHEN insufficient_privilege THEN
+                        RAISE NOTICE 'Role mirage_app missing and lacks CREATEROLE; skipping creation';
+                    END;
+                END IF;
+
                 IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'mirage_app') THEN
+                    GRANT USAGE ON SCHEMA public TO mirage_app;
                     GRANT SELECT, INSERT, UPDATE, DELETE ON
+                        tenants,
+                        actor_identities,
+                        tool_registry,
+                        ai_transactions,
                         action_contracts,
                         outcome_verification_records
                     TO mirage_app;
@@ -91,6 +105,27 @@ def upgrade() -> None:
             END $$;
             """
         )
+
+        # 4. Guarantee RLS is ENABLED, FORCED, and policies installed
+        for tbl in ("action_contracts", "outcome_verification_records"):
+            op.execute(f"ALTER TABLE {tbl} ENABLE ROW LEVEL SECURITY;")
+            op.execute(f"ALTER TABLE {tbl} FORCE ROW LEVEL SECURITY;")
+            op.execute(
+                f"""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_policies
+                        WHERE tablename = '{tbl}' AND policyname = 'tenant_isolation_{tbl}'
+                    ) THEN
+                        CREATE POLICY tenant_isolation_{tbl} ON {tbl}
+                            FOR ALL
+                            USING (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), ''))
+                            WITH CHECK (tenant_id = NULLIF(current_setting('app.current_tenant_id', true), ''));
+                    END IF;
+                END $$;
+                """
+            )
 
 
 def downgrade() -> None:

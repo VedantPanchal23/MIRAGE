@@ -366,3 +366,23 @@ async def test_action_and_transaction_outcome_alias_routes(phase5_setup: dict[st
     cross_txn_resp = client.get(f"/v1/transactions/{txn_id}/outcomes", headers=other_headers)
     assert cross_txn_resp.status_code == 200
     assert len(cross_txn_resp.json()) == 0  # Tenant boundary returns zero rows for another tenant's txn
+
+    # 5. Mismatched action_id rejection: path parameter differs from request body -> 400 Bad Request
+    mismatched_payload = dict(req_payload)
+    mismatched_payload["action_id"] = f"other_act_{suffix}"
+    mismatch_resp = client.post(f"/v1/actions/{act_id}/outcome", json=mismatched_payload, headers=headers)
+    assert mismatch_resp.status_code == 400
+    assert "Action ID mismatch" in mismatch_resp.json()["detail"]
+
+    # 6. Nonexistent action rejection -> 404 Not Found
+    nonexistent_act_id = f"act_nonexistent_{suffix}"
+    nonexistent_payload = dict(req_payload)
+    nonexistent_payload["action_id"] = nonexistent_act_id
+    nonexistent_resp = client.post(
+        f"/v1/actions/{nonexistent_act_id}/outcome", json=nonexistent_payload, headers=headers
+    )
+    assert nonexistent_resp.status_code == 404
+
+    # 7. Cross-tenant POST rejection: Tenant Beta attempting to verify Tenant Alpha's action -> 404 Not Found
+    cross_post_resp = client.post(f"/v1/actions/{act_id}/outcome", json=req_payload, headers=other_headers)
+    assert cross_post_resp.status_code == 404

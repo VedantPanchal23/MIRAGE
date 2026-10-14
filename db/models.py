@@ -338,9 +338,7 @@ class TenantAuditLedger(Base):
 
     __tablename__ = "tenant_audit_ledgers"
 
-    tenant_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
-    )
+    tenant_id: Mapped[str] = mapped_column(String(64), ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True)
     head_entry_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     head_chain_hash: Mapped[str] = mapped_column(String(64), default="0" * 64, nullable=False)
     sequence_number: Mapped[int] = mapped_column(BigInteger, default=0, nullable=False)
@@ -738,12 +736,8 @@ class ModelRegistryRecord(Base):
     expected_latency_ms: Mapped[float] = mapped_column(Float, default=800.0, nullable=False)
     deployment_type: Mapped[str] = mapped_column(String(64), default="cloud_shared", nullable=False)
     privacy_verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
-    privacy_attestation_expires_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
-    privacy_attestation_revoked_at: Mapped[datetime | None] = mapped_column(
-        DateTime(timezone=True), nullable=True
-    )
+    privacy_attestation_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    privacy_attestation_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     privacy_policy_version: Mapped[str | None] = mapped_column(String(32), default="v1.0", nullable=True)
     attestation_issuer: Mapped[str | None] = mapped_column(String(128), nullable=True)
     attestation_signature: Mapped[str | None] = mapped_column(String(256), nullable=True)
@@ -909,7 +903,48 @@ class ProviderInvocationRecord(Base):
     )
 
 
+class AgentDelegation(Base):
+    """First-class durable delegation grant governing cross-agent authority attenuation."""
 
+    __tablename__ = "agent_delegations"
 
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    parent_agent_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("agents.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    parent_transaction_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("ai_transactions.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    child_agent_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("agents.id", ondelete="RESTRICT"), nullable=False, index=True
+    )
+    child_transaction_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("ai_transactions.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    delegated_capabilities: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, default=list, nullable=False)
+    resource_scope: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    max_autonomy_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    delegation_depth: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    max_turns: Mapped[int] = mapped_column(Integer, default=4, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False, index=True)
+    purpose: Mapped[str] = mapped_column(String(500), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, index=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
-
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "idempotency_key", name="uq_agent_delegations_tenant_idempotency"),
+        Index("ix_agent_delegations_tenant_parent_txn", "tenant_id", "parent_transaction_id"),
+        Index("ix_agent_delegations_tenant_child_txn", "tenant_id", "child_transaction_id"),
+        Index("ix_agent_delegations_tenant_status", "tenant_id", "status"),
+        Index("ix_agent_delegations_tenant_expires", "tenant_id", "expires_at"),
+    )

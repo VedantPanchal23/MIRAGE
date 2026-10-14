@@ -40,6 +40,12 @@ from shared.schemas.claims import (
     EvidenceChunk,
     VerificationStatus,
 )
+from shared.schemas.delegation import (
+    AttenuatedCapabilitySpec,
+    DelegationGrantRequest,
+    DelegationGrantResponse,
+    DelegationStatus,
+)
 from shared.schemas.error import ErrorDetail, ErrorEnvelope
 from shared.schemas.hrs import (
     ConformalInterval,
@@ -184,4 +190,8 @@ __all__ = [
     "BudgetReservation",
     "BudgetSettlementRequest",
     "TransactionCostRecordSchema",
+    "DelegationStatus",
+    "AttenuatedCapabilitySpec",
+    "DelegationGrantRequest",
+    "DelegationGrantResponse",
 ]

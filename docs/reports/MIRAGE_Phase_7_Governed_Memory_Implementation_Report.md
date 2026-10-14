@@ -211,7 +211,7 @@ rootdir: C:\Users\vedan\Desktop\MIRAGE
 configfile: pyproject.toml
 plugins: anyio-4.9.0, langsmith-0.4.8, asyncio-1.3.0
 asyncio: mode=Mode.AUTO, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
-collecting ... collected 42 items
+collecting ... collected 45 items
 
 tests/unit/test_governed_memory_contracts.py::test_autonomous_agent_cannot_self_attest_memory PASSED [  2%]
 tests/unit/test_governed_memory_contracts.py::test_sensitive_secrets_rejected_by_dlp PASSED [  5%]
@@ -237,31 +237,34 @@ tests/security/test_governed_memory_security.py::test_pipeline_verification_boun
 tests/security/test_legacy_endpoint_rejects_pipeline_signed_and_unauthorized_attestation PASSED [ 52%]
 tests/security/test_update_path_cannot_elevate_trust_or_attestation PASSED [ 54%]
 tests/security/test_authorized_human_attestation_persists_human_verified_and_blocks_model_categories PASSED [ 57%]
-tests/security/test_deletion_response_truthfully_reports_logical_sanitization_and_confirmed_eviction PASSED [ 59%]
-tests/integration/test_phase7_governed_memory_lifecycle.py::test_full_governed_memory_api_lifecycle PASSED [ 54%]
-tests/integration/test_phase7_governed_memory_lifecycle.py::test_governed_memory_search_and_purpose_isolation PASSED [ 57%]
-tests/integration/test_phase7_governed_memory_lifecycle.py::test_retention_sweep_endpoint PASSED [ 60%]
-tests/integration/test_phase7_governed_memory_lifecycle.py::test_gate2_context_assembly_integration PASSED [ 62%]
-tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_all_17_governed_memory_columns_exist PASSED [ 65%]
-tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_governed_memory_indexes_exist PASSED [ 68%]
-tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_governed_memory_rls_is_enabled_and_forced PASSED [ 71%]
-tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_idempotency_key_uniqueness_per_tenant PASSED [ 74%]
-tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_migration_downgrade_and_reupgrade_cycle PASSED [ 77%]
-tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_clean_schema_migration_rls_and_unprivileged_app_role_isolation PASSED [ 80%]
-tests/integration/test_phase2_context_assurance.py::test_rag_evidence_provenance_and_generation_staleness PASSED [ 82%]
-tests/integration/test_phase2_context_assurance.py::test_governed_memory_attestation_tamper_detection_and_shredding PASSED [ 85%]
-tests/integration/test_phase2_context_assurance.py::test_context_assembler_indirect_injection_quarantine_and_delimiters PASSED [ 88%]
-tests/integration/test_phase2_context_assurance.py::test_context_budgeting_secret_taints_and_memory_listing PASSED [ 91%]
-tests/unit/test_context_assurance.py::test_escape_data_delimiters_neutralizes_closing_tags PASSED [ 94%]
+tests/security/test_deletion_response_truthfully_reports_logical_sanitization_and_confirmed_eviction PASSED [ 55%]
+tests/security/test_governed_memory_security.py::test_primary_create_path_demotes_injection_content_even_for_authorized_human PASSED [ 57%]
+tests/security/test_governed_memory_security.py::test_legacy_create_path_demotes_injection_content_even_for_authorized_human PASSED [ 60%]
+tests/security/test_governed_memory_security.py::test_both_creation_entry_points_demote_injection_consistently PASSED [ 62%]
+tests/integration/test_phase7_governed_memory_lifecycle.py::test_full_governed_memory_api_lifecycle PASSED [ 64%]
+tests/integration/test_phase7_governed_memory_lifecycle.py::test_governed_memory_search_and_purpose_isolation PASSED [ 66%]
+tests/integration/test_phase7_governed_memory_lifecycle.py::test_retention_sweep_endpoint PASSED [ 68%]
+tests/integration/test_phase7_governed_memory_lifecycle.py::test_gate2_context_assembly_integration PASSED [ 71%]
+tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_all_17_governed_memory_columns_exist PASSED [ 73%]
+tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_governed_memory_indexes_exist PASSED [ 75%]
+tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_governed_memory_rls_is_enabled_and_forced PASSED [ 77%]
+tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_idempotency_key_uniqueness_per_tenant PASSED [ 80%]
+tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_migration_downgrade_and_reupgrade_cycle PASSED [ 82%]
+tests/security/test_postgres_memory_migration.py::TestPostgresMemoryMigration::test_clean_schema_migration_rls_and_unprivileged_app_role_isolation PASSED [ 84%]
+tests/integration/test_phase2_context_assurance.py::test_rag_evidence_provenance_and_generation_staleness PASSED [ 86%]
+tests/integration/test_phase2_context_assurance.py::test_governed_memory_attestation_tamper_detection_and_shredding PASSED [ 88%]
+tests/integration/test_phase2_context_assurance.py::test_context_assembler_indirect_injection_quarantine_and_delimiters PASSED [ 91%]
+tests/integration/test_phase2_context_assurance.py::test_context_budgeting_secret_taints_and_memory_listing PASSED [ 93%]
+tests/unit/test_context_assurance.py::test_escape_data_delimiters_neutralizes_closing_tags PASSED [ 95%]
 tests/unit/test_context_assurance.py::test_non_policy_sources_cannot_force_instruction_flag PASSED [ 97%]
 tests/unit/test_context_assurance.py::test_context_item_candidate_defaults PASSED [100%]
 
-================= 42 passed, 49 warnings in 136.03s (0:02:16) =================
+================= 45 passed, 53 warnings in 161.81s (0:02:41) =================
 ```
 
 ### 5.2 Linter & Typecheck Status
 ```
-python -m ruff check services/governed_memory.py services/context_assurance.py shared/schemas/context.py shared/schemas/memory.py db/migrations/versions/017_phase7_governed_memory_lifecycle.py tests/unit/test_governed_memory_contracts.py tests/security/test_governed_memory_security.py tests/security/test_postgres_memory_migration.py tests/integration/test_phase7_governed_memory_lifecycle.py
+python -m ruff check services/governed_memory.py services/context_assurance.py shared/schemas/context.py shared/schemas/memory.py gateway/routes/context.py tests/security/test_governed_memory_security.py tests/integration/test_phase7_governed_memory_lifecycle.py tests/integration/test_phase2_context_assurance.py
 All checks passed!
 ```
 
@@ -273,7 +276,7 @@ npm run build
 dist/index.html                   0.56 kB │ gzip:  0.39 kB
 dist/assets/index-CFUXKM6P.css   36.73 kB │ gzip:  6.89 kB
 dist/assets/index-C04E_Bvd.js   362.42 kB │ gzip: 89.88 kB
-✓ built in 2.08s
+✓ built in 17.84s
 ```
 
 ---
@@ -281,8 +284,9 @@ dist/assets/index-C04E_Bvd.js   362.42 kB │ gzip: 89.88 kB
 ## 6. Release Decision & Governance Signoff
 
 - **Release Decision:** **PASS WITH LIMITATIONS**
-- **Empirical Test Pass Rate:** 100% (42/42 passing tests)
+- **Empirical Test Pass Rate:** 100% (45/45 passing tests)
 - **Documented Platform Limitations:**
   1. **Pipeline Attestation Verification Boundary:** Cryptographic pipeline signature infrastructure (PKI notary) is unconfigured at the ingestion boundary. All caller-supplied pipeline claims fail closed (HTTP 403 Forbidden).
   2. **Deletion Realism:** Governed Memory implements logical content sanitization/tombstoning, hash recalculation, and secondary cache/index eviction. Physical cryptographic shredding via per-record key destruction requires external enterprise KMS envelope-encryption integration. External secondary stores are reported truthfully as evicted only when eviction is actively confirmed.
+  3. **Prompt Injection Demotion Invariant:** Memory creation containing prompt injection patterns is deterministically demoted to UNTRUSTED trust level and ADVISORY memory type across both primary and legacy creation endpoints; all attestation metadata (HUMAN_VERIFIED, attested_by) is cleared to ensure conservative guarantees both in API responses and persisted PostgreSQL storage.
 - **Phase 7 Status:** Formally Closed and Validated on `main`.

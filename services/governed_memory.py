@@ -62,6 +62,8 @@ _INJECTION_PATTERNS = (
     re.compile(r"\b(ignore|disregard)\b.{0,40}\b(previous|prior|system|above|instructions)\b", re.IGNORECASE),
     re.compile(r"\b(system prompt|developer message|jailbreak|DAN mode|developer mode)\b", re.IGNORECASE),
     re.compile(r"\b(leak your prompt|leak instructions|repeat everything above|reveal instructions)\b", re.IGNORECASE),
+    re.compile(r"!\[.*?\]\(https?://[^\s\)]+\?[^\s\)]*\)", re.IGNORECASE),
+    re.compile(r"(?:^|\n)(?:System|User|Assistant|Human)\s*:\s*", re.IGNORECASE),
     re.compile(r"<\|im_start\|>(?:system|user|assistant)", re.IGNORECASE),
     re.compile(r"\[/?INST\]", re.IGNORECASE),
 )
@@ -481,10 +483,14 @@ async def create_governed_memory_record(
     # 4. Indirect Prompt Injection Scanner
     has_injection = any(p.search(request.content) for p in _INJECTION_PATTERNS)
     taint_value = request.declared_taint.value
+    memory_type = request.memory_type
     if has_injection:
         initial_trust = TrustLevel.UNTRUSTED
         initial_confidence = 0.05
         taint_value = Taint.UNTRUSTED.value
+        memory_type = "ADVISORY"
+        attestation = AttestationStatus.NONE
+        attested_by = None
 
     now = datetime.now(UTC)
     expires_at = now + timedelta(seconds=request.ttl_seconds) if request.ttl_seconds else None
@@ -526,7 +532,7 @@ async def create_governed_memory_record(
             id=record_id,
             tenant_id=auth.tenant_id,
             owner_id=request.owner_id,
-            memory_type=request.memory_type,
+            memory_type=memory_type,
             memory_category=request.memory_category.value,
             purpose=request.purpose.value,
             lifecycle_state=MemoryLifecycleState.ACTIVE.value,
@@ -566,10 +572,19 @@ async def create_governed_memory_record(
             target_id=record_id,
             event_type="governed_memory_created",
             decision="MEMORY_CREATED",
-            reason=f"Created {request.memory_category.value} memory (version {version})",
+            reason=(
+                f"Created {request.memory_category.value} memory (version {version})"
+                if not has_injection
+                else (
+                    f"Created {request.memory_category.value} memory (version {version}) "
+                    "[quarantined: prompt injection detected]"
+                )
+            ),
             payload={
                 "memory_category": request.memory_category.value,
                 "purpose": request.purpose.value,
+                "memory_type": memory_type,
+                "attestation_status": attestation.value,
                 "trust_level": initial_trust.value,
                 "retention_policy": request.retention_policy.value,
                 "content": request.content,

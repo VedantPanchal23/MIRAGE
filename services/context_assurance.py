@@ -178,7 +178,39 @@ async def create_governed_memory(auth: AuthContext, request: MemoryCreateRequest
             )
         attestation = AttestationStatus.HUMAN_VERIFIED
         attested_by = auth.user_id or auth.identity_id
+        initial_trust = "VERIFIED"
+        initial_confidence = 0.95
     else:
+        attestation = AttestationStatus.NONE
+        attested_by = None
+        initial_trust = "PROVISIONAL"
+        initial_confidence = 0.50
+
+    if str(category).upper() in untrusted_cats:
+        initial_trust = "PROVISIONAL"
+        initial_confidence = min(initial_confidence, 0.50)
+
+    # 3. Sensitive Data / Secret Scanner (DLP Minimization)
+    if any(p.search(request.content) for p in _SECRET_PATTERNS):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=(
+                "Sensitive secrets or credential tokens detected in memory content. "
+                "Write rejected under DLP policy."
+            ),
+        )
+
+    # 4. Indirect Prompt Injection Scanner
+    has_injection = any(p.search(request.content) for p in _INJECTION_PATTERNS) or any(
+        p.search(request.content) for p in _ROLE_IMPERSONATION_PATTERNS
+    )
+    taint_value = request.declared_taint.value
+    memory_type = request.memory_type
+    if has_injection:
+        initial_trust = "UNTRUSTED"
+        initial_confidence = 0.05
+        taint_value = Taint.UNTRUSTED.value
+        memory_type = "ADVISORY"
         attestation = AttestationStatus.NONE
         attested_by = None
 
@@ -203,11 +235,11 @@ async def create_governed_memory(auth: AuthContext, request: MemoryCreateRequest
             id=record_id,
             tenant_id=auth.tenant_id,
             owner_id=request.owner_id,
-            memory_type=request.memory_type,
+            memory_type=memory_type,
             memory_category=category,
             purpose=purpose,
             lifecycle_state="ACTIVE",
-            trust_level="VERIFIED" if request.memory_type == "ATTESTED" else "PROVISIONAL",
+            trust_level=initial_trust,
             scope=request.scope.value,
             content=request.content,
             content_hash=content_hash,
@@ -215,8 +247,8 @@ async def create_governed_memory(auth: AuthContext, request: MemoryCreateRequest
             superseded_by_id=None,
             attestation_status=attestation.value,
             attested_by=attested_by,
-            taint=request.declared_taint.value,
-            confidence=0.95 if request.memory_type == "ATTESTED" else 0.50,
+            taint=taint_value,
+            confidence=initial_confidence,
             retention_policy=retention,
             retention_exception_reason=retention_reason,
             ttl_seconds=request.ttl_seconds,
@@ -241,8 +273,19 @@ async def create_governed_memory(auth: AuthContext, request: MemoryCreateRequest
             auth.identity_id,
             record_id,
             "MEMORY_CREATED",
-            f"Created {request.memory_type} memory with scope {request.scope.value}",
-            {"memory_type": request.memory_type, "attestation": attestation.value},
+            (
+                f"Created {memory_type} memory with scope {request.scope.value}"
+                if not has_injection
+                else (
+                    f"Created {memory_type} memory with scope {request.scope.value} "
+                    "[quarantined: prompt injection detected]"
+                )
+            ),
+            {
+                "memory_type": memory_type,
+                "attestation": attestation.value,
+                "trust_level": initial_trust,
+            },
         )
         await session.flush()
         return MemoryResponse(

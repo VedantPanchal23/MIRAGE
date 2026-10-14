@@ -4,6 +4,7 @@
 **Audit Date:** October 14, 2026  
 **Audited Branch:** `main`  
 **Audited Baseline Commit:** `17e1ec58673c4bb4d3cd3826392423a4d64f737f`  
+**Audit Closure Commit:** `7fd10a995e82e4962f00c2ec1ecfc8e40e929839`  
 **Author:** AI Execution Assurance Lead / Antigravity Agent  
 **Status:** Canonical & Closed  
 **Final Release Disposition:** **PASS WITH LIMITATIONS**  
@@ -94,7 +95,7 @@ The platform is certified as **PASS WITH LIMITATIONS**, with an unambiguous **GO
 | **FIND-03** | Low | Action Assurance / P3.5 | Capability revocation test proposal omitted postconditions required by Phase 6 autonomous authorization policies. | `test_runtime_capability_revocation_blocks_execution` failed authorization before reaching execution stage. | **Resolved**: Added deterministic `postconditions` rule to proposal payload. |
 | **FIND-04** | Low | Integration & Contracts / P1 | Tests queried unseeded session IDs (`sess_integration_test_99`, `sess_cert_demo_01`) and expected `verify-chain` valid on empty tables. | `test_audit_chain_and_compliance_report_integration` and `test_single_session_certificate_pdf_contract` failed with `KeyError: 'session_id'` or 404. | **Resolved**: Pre-seeded verification requests via `POST /v1/verify` and extracted returned `request_id`. |
 | **FIND-05** | Low | Chaos Test Harness / P3.5 | Substring assertion mismatch on downstream LLM circuit trip error detail. | `test_scenario_8` expected `"Downstream LLM provider error"` instead of `"Downstream LLM"`. | **Resolved**: Aligned assertion to `"Downstream LLM" in resp_json["detail"]`. |
-| **FIND-06** | Low | Dashboard Frontend / P2 | Navigation component test asserted legacy tab count of 5 instead of the 9 tabs implemented across Phases 3–7. | `Navigation.test.jsx` failed with `expected 9 to be 5`. | **Resolved**: Updated navigation item count and role assertions for all 9 tabs. |
+| **FIND-06** | Low | Dashboard Frontend / P2 | Navigation component test asserted legacy tab count of 5 instead of the 9 tabs implemented across Phases 3–7, with a stale test description. | `Navigation.test.jsx` failed with `expected 9 to be 5` under description `renders all 5 core navigation tabs`. | **Resolved**: Updated navigation item count, role assertions, and test description for all 9 tabs. |
 
 ---
 
@@ -116,6 +117,7 @@ The platform is certified as **PASS WITH LIMITATIONS**, with an unambiguous **GO
    - Line 497: Updated exception detail substring assertion to `"Downstream LLM" in resp_json["detail"]`.
 7. **`dashboard/src/components/__tests__/Navigation.test.jsx`**
    - Lines 21–32: Expanded tab role assertions to cover all 9 views (`Overview`, `Context Assurance`, `Action Assurance`, `Output Assurance`, `Outcome Assurance`, `Drift`, `Sessions`, `Live Stream`, `Alerts`) and updated tab count assertion to 9.
+   - Updated test description to "renders all 9 navigation tabs with proper roles" to match the actual asserted tab set.
 
 ---
 

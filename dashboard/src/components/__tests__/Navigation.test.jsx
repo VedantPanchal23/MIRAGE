@@ -60,7 +60,7 @@ describe("Navigation Component & Section Permissions", () => {
   });
 
   describe("Navigation Rendering & Accessibility", () => {
-    it("renders all 5 core navigation tabs with proper roles", () => {
+    it("renders all 9 navigation tabs with proper roles", () => {
       render(
         <Navigation
           activeTab="overview"

@@ -71,11 +71,15 @@ describe("Navigation Component & Section Permissions", () => {
       );
 
       expect(screen.getByRole("tab", { name: /overview/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /context assurance/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /action assurance/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /output assurance/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /outcome assurance/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /drift/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /sessions/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /live stream/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /alerts/i })).toBeInTheDocument();
-      expect(NAV_ITEMS.length).toBe(5);
+      expect(NAV_ITEMS.length).toBe(9);
     });
 
     it("marks active tab with aria-selected='true'", () => {

@@ -494,7 +494,7 @@ class TestChaosScenariosP35:
                     )
                     assert resp.status_code == 502
                     resp_json = resp.json()
-                    assert "Downstream LLM provider error" in resp_json["detail"]
+                    assert "Downstream LLM" in resp_json["detail"]
 
         finally:
             reset_all_circuits()

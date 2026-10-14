@@ -168,7 +168,7 @@ celery_app.conf.update(
 celery_app.autodiscover_tasks(["workers.tasks"])
 
 
-def is_broker_reachable(timeout: float = 0.05) -> bool:
+def is_broker_reachable(timeout: float = 0.5) -> bool:
     """Non-blocking socket probe to verify if RabbitMQ broker is actively accepting connections."""
     import socket
 

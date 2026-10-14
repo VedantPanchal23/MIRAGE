@@ -93,7 +93,18 @@ class TestPipelineIntegration:
 
     def test_audit_chain_and_compliance_report_integration(self) -> None:
         """Verify cryptographic audit chain inspection and compliance certificate generation."""
+        api_headers = AuthTestFactory.auth_headers(tenant_id="tenant_integration_audit", role=Role.API_CLIENT)
         audit_headers = AuthTestFactory.auth_headers(tenant_id="tenant_integration_audit", role=Role.OPERATOR)
+
+        # 0. Seed a real verification session to populate PostgreSQL audit ledger
+        verify_payload = {
+            "prompt": "Explain cryptographic audit logging",
+            "response": "Cryptographic audit logging uses SHA-256 hash chains to ensure log immutability.",
+            "tenant_id": "tenant_integration_audit",
+        }
+        verify_res = client.post("/v1/verify", json=verify_payload, headers=api_headers)
+        assert verify_res.status_code == 200
+        session_id = verify_res.json()["request_id"]
 
         # 1. Verify chain
         chain_res = client.post(
@@ -105,7 +116,7 @@ class TestPipelineIntegration:
 
         # 2. Generate report
         report_res = client.get(
-            "/v1/audit/report/sess_integration_test_99",
+            f"/v1/audit/report/{session_id}",
             headers=audit_headers,
         )
         assert report_res.status_code == 200

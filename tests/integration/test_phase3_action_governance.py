@@ -139,8 +139,8 @@ async def test_end_to_end_action_lifecycle(phase3_setup: dict[str, str]) -> None
     exec_res = client.post("/v1/actions/execute", json={"action_id": action_id}, headers=headers)
     assert exec_res.status_code == 200
     exec_data = exec_res.json()
-    assert exec_data["state"] == ActionState.COMPLETED.value
-    assert exec_data["postconditions_satisfied"] is True
+    assert exec_data["state"] == ActionState.EXECUTED.value
+    assert exec_data["requires_outcome_assurance"] is True
     assert Taint.UNTRUSTED.value in exec_data["taints"]
 
     # 3. Retrieve Contract Details
@@ -148,7 +148,7 @@ async def test_end_to_end_action_lifecycle(phase3_setup: dict[str, str]) -> None
     assert get_res.status_code == 200
     get_data = get_res.json()
     assert get_data["id"] == action_id
-    assert get_data["state"] == ActionState.COMPLETED.value
+    assert get_data["state"] == ActionState.EXECUTED.value
     assert get_data["parameters_hash"] is not None
     assert get_data["observed_result"] is not None
 
@@ -386,7 +386,7 @@ async def test_l4_human_approval_grant_and_deny_lifecycle(phase3_setup: dict[str
     # 4. Now execution succeeds
     exec_res1 = client.post("/v1/actions/execute", json={"action_id": action_id1}, headers=headers)
     assert exec_res1.status_code == 200
-    assert exec_res1.json()["state"] == ActionState.COMPLETED.value
+    assert exec_res1.json()["state"] == ActionState.EXECUTED.value
 
     # 5. Propose a second high risk action and DENY it
     prop2 = {

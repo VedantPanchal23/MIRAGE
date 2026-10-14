@@ -369,7 +369,7 @@ async def test_approval_replay_attack_rejected() -> None:
     # First execution succeeds
     exec1_res = client.post("/v1/actions/execute", json={"action_id": action_id}, headers=headers)
     assert exec1_res.status_code == 200
-    assert exec1_res.json()["state"] == "COMPLETED"
+    assert exec1_res.json()["state"] == ActionState.EXECUTED.value
 
     # Reset contract to AUTHORIZED to simulate attacker attempting replay with same approval
     async with db_session.get_tenant_session(tenant_id) as session:
@@ -825,6 +825,13 @@ async def test_runtime_capability_revocation_blocks_execution() -> None:
         "target_resource": "math",
         "parameters": {"expression": "100 * 5"},
         "idempotency_key": f"idem_prop_{uuid.uuid4().hex[:8]}",
+        "postconditions": [
+            {
+                "assertion": "STATUS_EQUALS",
+                "target": "status",
+                "expected_value": "ok",
+            }
+        ],
     }
     prop_res = client.post("/v1/actions/propose", json=proposal, headers=headers)
     assert prop_res.status_code == 200

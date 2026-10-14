@@ -244,8 +244,20 @@ class TestP1Contracts:
 
     def test_single_session_certificate_pdf_contract(self) -> None:
         """Verify GET /v1/audit/report/{session_id}/pdf streams valid PDF certificate."""
+        api_headers = AuthTestFactory.auth_headers(tenant_id="tenant_cert_test", role=Role.API_CLIENT)
         headers = AuthTestFactory.auth_headers(tenant_id="tenant_cert_test", role=Role.TENANT_ADMIN)
-        res = client.get("/v1/audit/report/sess_cert_demo_01/pdf", headers=headers)
+
+        # 0. Seed a real verification session to generate reportable session record
+        verify_payload = {
+            "prompt": "Explain gravitational waves",
+            "response": "Gravitational waves are ripples in spacetime caused by accelerating massive objects.",
+            "tenant_id": "tenant_cert_test",
+        }
+        verify_res = client.post("/v1/verify", json=verify_payload, headers=api_headers)
+        assert verify_res.status_code == 200
+        session_id = verify_res.json()["request_id"]
+
+        res = client.get(f"/v1/audit/report/{session_id}/pdf", headers=headers)
         assert res.status_code == 200
         assert res.headers["content-type"] == "application/pdf"
         assert res.content.startswith(b"%PDF-")

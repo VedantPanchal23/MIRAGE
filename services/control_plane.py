@@ -482,6 +482,13 @@ async def transition_transaction(
                             f"({post_action.updated_at} > {out_rec.created_at})."
                         ),
                     )
+
+            # Enforce Gate 5 Hierarchical Outcome Assurance:
+            # Prevent parent from completing if child work is pending, executing, or unverified
+            from services.hierarchical_outcome_service import hierarchical_outcome_service
+
+            await hierarchical_outcome_service.verify_hierarchical_completion(auth, transaction_id, session)
+
         record.state = request.target_state.value
         all_taints = normalize_taints(set(record.taint_flags) | {item.value for item in request.add_taints})
         record.taint_flags = sorted(item.value for item in all_taints)
@@ -506,18 +513,25 @@ async def transition_transaction(
 async def cancel_transaction(
     auth: AuthContext, transaction_id: str, reason: str = "Transaction cancelled by client"
 ) -> TransactionResponse:
-    """Abort an in-flight transaction with audit recording."""
+    """Abort an in-flight transaction with audit recording and downward hierarchy propagation."""
     if auth.identity_id is None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="A resolved identity is required")
     async with db_session.get_tenant_session(auth.tenant_id) as session:
         record = await session.get(AITransaction, transaction_id, with_for_update=True)
         if record is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found")
-        source = TransactionState(record.state)
-        if source in _TERMINAL:
+        try:
+            source = TransactionState(record.state)
+            is_terminal = source in _TERMINAL
+            terminal_val = source.value
+        except ValueError:
+            is_terminal = record.state in {s.value for s in _TERMINAL}
+            terminal_val = str(record.state)
+
+        if is_terminal:
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail=f"Transaction is already terminal ({source.value}) and cannot be cancelled",
+                detail=f"Transaction is already terminal ({terminal_val}) and cannot be cancelled",
             )
         record.state = TransactionState.CANCELLED.value
         record.final_disposition = TransactionState.CANCELLED.value
@@ -533,6 +547,62 @@ async def cancel_transaction(
             record.policy_id,
             {"taints": record.taint_flags, "version": record.version},
         )
+
+        # Propagate cancellation to active handoffs
+        from services.handoff_service import handoff_service
+
+        cancelled_handoff_count = await handoff_service.cancel_handoffs_for_parent_transaction(
+            tenant_id=auth.tenant_id,
+            parent_transaction_id=record.id,
+            reason=f"Parent transaction cancelled: {reason}",
+            cancelled_by=auth.identity_id,
+            session=session,
+        )
+
+        # Propagate cancellation to active child transactions
+        child_stmt = (
+            select(AITransaction)
+            .where(
+                AITransaction.tenant_id == auth.tenant_id,
+                AITransaction.parent_transaction_id == record.id,
+                AITransaction.state.not_in([s.value for s in _TERMINAL]),
+            )
+            .with_for_update()
+        )
+        child_res = await session.execute(child_stmt)
+        children = child_res.scalars().all()
+        for child in children:
+            child.state = TransactionState.CANCELLED.value
+            child.final_disposition = TransactionState.CANCELLED.value
+            child.version += 1
+            child.updated_at = datetime.now(UTC)
+            await _append_audit(
+                session,
+                auth.tenant_id,
+                auth.identity_id,
+                child.id,
+                TransactionState.CANCELLED.value,
+                f"Parent transaction '{record.id}' cancelled: {reason}",
+                child.policy_id,
+                {"taints": child.taint_flags, "version": child.version},
+            )
+
+        if children or cancelled_handoff_count > 0:
+            prop_msg = (
+                f"Propagated cancellation to {len(children)} child transaction(s) "
+                f"and {cancelled_handoff_count} handoff(s)"
+            )
+            await _append_audit(
+                session,
+                auth.tenant_id,
+                auth.identity_id,
+                record.id,
+                "TRANSACTION_CANCELLED_HIERARCHY_PROPAGATED",
+                prop_msg,
+                record.policy_id,
+                {"cancelled_children": [c.id for c in children], "cancelled_handoffs": cancelled_handoff_count},
+            )
+
         await session.flush()
         return _transaction_response(record)
 

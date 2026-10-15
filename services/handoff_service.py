@@ -543,6 +543,99 @@ class AgentHandoffService:
         async with get_tenant_session(auth.tenant_id) as s:
             return await _execute(s)
 
+    async def complete_handoff(
+        self,
+        auth: AuthContext,
+        handoff_id: str,
+        session: AsyncSession | None = None,
+    ) -> AgentHandoffResponse:
+        """Mark an accepted handoff as completed following successful child execution & outcome assurance."""
+        now = datetime.now(UTC)
+
+        async def _execute(s: AsyncSession) -> AgentHandoffResponse:
+            hnd_stmt = (
+                select(AgentHandoff)
+                .where(
+                    AgentHandoff.id == handoff_id,
+                    AgentHandoff.tenant_id == auth.tenant_id,
+                )
+                .with_for_update()
+            )
+            hnd_res = await s.execute(hnd_stmt)
+            handoff = hnd_res.scalar_one_or_none()
+            if not handoff:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Agent handoff '{handoff_id}' not found in tenant '{auth.tenant_id}'",
+                )
+            if handoff.status != HandoffStatus.ACCEPTED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Cannot complete handoff in non-ACCEPTED status '{handoff.status}'",
+                )
+            handoff.status = HandoffStatus.COMPLETED.value
+            handoff.completed_at = now
+            handoff.updated_at = now
+            await s.flush()
+
+            await self._emit_audit_event(
+                session=s,
+                tenant_id=auth.tenant_id,
+                action="AGENT_HANDOFF_COMPLETED",
+                details={
+                    "handoff_id": handoff.id,
+                    "child_transaction_id": handoff.child_transaction_id,
+                    "completed_by": auth.identity_id,
+                },
+            )
+            return self._map_to_response(handoff)
+
+        if session is not None:
+            return await _execute(session)
+        async with get_tenant_session(auth.tenant_id) as s:
+            return await _execute(s)
+
+    async def cancel_handoffs_for_parent_transaction(
+        self,
+        tenant_id: str,
+        parent_transaction_id: str,
+        reason: str,
+        cancelled_by: str,
+        session: AsyncSession,
+    ) -> int:
+        """Cancel all pending or accepted handoffs for a cancelled parent transaction."""
+        now = datetime.now(UTC)
+        stmt = (
+            select(AgentHandoff)
+            .where(
+                AgentHandoff.tenant_id == tenant_id,
+                AgentHandoff.parent_transaction_id == parent_transaction_id,
+                AgentHandoff.status.in_([HandoffStatus.PENDING.value, HandoffStatus.ACCEPTED.value]),
+            )
+            .with_for_update()
+        )
+        res = await session.execute(stmt)
+        handoffs = res.scalars().all()
+        count = 0
+        for hnd in handoffs:
+            hnd.status = HandoffStatus.CANCELLED.value
+            hnd.cancelled_at = now
+            hnd.cancellation_reason = reason
+            hnd.updated_at = now
+            count += 1
+            await self._emit_audit_event(
+                session=session,
+                tenant_id=tenant_id,
+                action="AGENT_HANDOFF_CANCELLED",
+                details={
+                    "handoff_id": hnd.id,
+                    "parent_transaction_id": parent_transaction_id,
+                    "reason": reason,
+                    "cancelled_by": cancelled_by,
+                },
+            )
+        return count
+
     def _map_to_response(self, handoff: AgentHandoff) -> AgentHandoffResponse:
         return AgentHandoffResponse(
             id=handoff.id,

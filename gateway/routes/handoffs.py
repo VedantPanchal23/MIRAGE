@@ -75,3 +75,12 @@ async def cancel_handoff_endpoint(
 ) -> AgentHandoffResponse:
     """Cancel a pending agent handoff with an explicit audit reason."""
     return await handoff_service.cancel_handoff(auth=auth, handoff_id=handoff_id, request=req)
+
+
+@router.post("/handoffs/{handoff_id}/complete", response_model=AgentHandoffResponse)
+async def complete_handoff_endpoint(
+    handoff_id: str,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> AgentHandoffResponse:
+    """Mark an accepted handoff as completed following successful child execution & outcome assurance."""
+    return await handoff_service.complete_handoff(auth=auth, handoff_id=handoff_id)

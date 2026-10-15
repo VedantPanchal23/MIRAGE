@@ -537,6 +537,43 @@ class ActionGovernorService:
             # 4. Cross-Agent Delegation Resolution & Verification for Child Transactions
             delegation: AgentDelegation | None = None
             if transaction.parent_transaction_id is not None:
+                # 4a. Check Parent Transaction Liveness
+                parent_stmt = select(AITransaction).where(
+                    AITransaction.id == transaction.parent_transaction_id,
+                    AITransaction.tenant_id == auth.tenant_id,
+                )
+                parent_res = await session.execute(parent_stmt)
+                parent_txn = parent_res.scalar_one_or_none()
+                if (
+                    not parent_txn
+                    or parent_txn.state
+                    in (
+                        "COMPLETED",
+                        "FAILED",
+                        "BLOCKED",
+                        "CANCELLED",
+                        "TIMEOUT",
+                        "PARTIAL",
+                        "TERMINATED",
+                    )
+                    or parent_txn.final_disposition in ("BLOCKED", "FAILED", "CANCELLED", "TIMEOUT")
+                ):
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.BLOCK,
+                        state=ActionState.BLOCKED,
+                        reason=(
+                            f"Parent transaction '{transaction.parent_transaction_id}' is not active "
+                            f"(state: {parent_txn.state if parent_txn else 'NOT_FOUND'}, "
+                            f"disposition: {parent_txn.final_disposition if parent_txn else 'NONE'}); "
+                            "child action execution prohibited"
+                        ),
+                        risk_score=100,
+                        autonomy_level=4,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+
                 del_stmt = select(AgentDelegation).where(
                     AgentDelegation.tenant_id == auth.tenant_id,
                     AgentDelegation.child_transaction_id == transaction.id,
@@ -1516,9 +1553,38 @@ class ActionGovernorService:
 
             now = datetime.now(UTC)
 
-            # Re-verify Delegation Grant at Execution Boundary for Child Transactions
+            # Re-verify Delegation Grant and Parent Transaction at Execution Boundary for Child Transactions
             delegation: AgentDelegation | None = None
             if transaction.parent_transaction_id is not None:
+                parent_stmt = select(AITransaction).where(
+                    AITransaction.id == transaction.parent_transaction_id,
+                    AITransaction.tenant_id == auth.tenant_id,
+                )
+                parent_res = await session.execute(parent_stmt)
+                parent_txn = parent_res.scalar_one_or_none()
+                if (
+                    not parent_txn
+                    or parent_txn.state
+                    in (
+                        "COMPLETED",
+                        "FAILED",
+                        "BLOCKED",
+                        "CANCELLED",
+                        "TIMEOUT",
+                        "PARTIAL",
+                        "TERMINATED",
+                    )
+                    or parent_txn.final_disposition in ("BLOCKED", "FAILED", "CANCELLED", "TIMEOUT")
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Execution blocked: Parent transaction '{transaction.parent_transaction_id}' "
+                            f"is not active (state: {parent_txn.state if parent_txn else 'NOT_FOUND'}, "
+                            f"disposition: {parent_txn.final_disposition if parent_txn else 'NONE'})."
+                        ),
+                    )
+
                 del_stmt = (
                     select(AgentDelegation)
                     .where(

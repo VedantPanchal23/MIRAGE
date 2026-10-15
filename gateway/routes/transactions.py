@@ -26,6 +26,7 @@ from shared.schemas.control_plane import (
     TransactionResponse,
     TransactionTransitionRequest,
 )
+from shared.schemas.hierarchical_outcome import HierarchicalOutcomeResponse
 from shared.schemas.outcome import OutcomeVerificationContract
 
 router = APIRouter(prefix="/v1", tags=["Governed Transactions"])
@@ -92,4 +93,15 @@ async def list_transaction_outcomes_endpoint(
 ) -> list[OutcomeVerificationContract]:
     """Fetch all Gate 5 outcome verification records for an AI Transaction under tenant boundary."""
     from gateway.routes.outcomes import list_outcomes_for_transaction
+
     return await list_outcomes_for_transaction(transaction_id, auth)
+
+
+@router.get("/transactions/{transaction_id}/hierarchy", response_model=HierarchicalOutcomeResponse)
+async def get_transaction_hierarchy_endpoint(
+    transaction_id: str, auth: Annotated[AuthContext, Depends(get_current_auth)]
+) -> HierarchicalOutcomeResponse:
+    """Fetch aggregated hierarchical outcome status, child executions, and handoffs across lineage."""
+    from services.hierarchical_outcome_service import hierarchical_outcome_service
+
+    return await hierarchical_outcome_service.aggregate_transaction_outcome(auth, transaction_id)

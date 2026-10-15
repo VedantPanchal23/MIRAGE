@@ -77,6 +77,14 @@ from shared.schemas.handoff import (
     is_terminal_handoff_status,
     is_valid_handoff_transition,
 )
+from shared.schemas.hierarchical_outcome import (
+    ActionOutcomeSummary,
+    ChildExecutionSummary,
+    HandoffSummary,
+    HierarchicalOutcomeResponse,
+    HierarchicalOutcomeStatus,
+    compute_hierarchical_evaluation_hash,
+)
 from shared.schemas.hrs import (
     ConformalInterval,
     HRSResult,
@@ -248,4 +256,10 @@ __all__ = [
     "ResourceLeaseResponse",
     "ResourceLeaseReleaseRequest",
     "ResourceLeaseRenewRequest",
+    "HierarchicalOutcomeStatus",
+    "ActionOutcomeSummary",
+    "ChildExecutionSummary",
+    "HandoffSummary",
+    "HierarchicalOutcomeResponse",
+    "compute_hierarchical_evaluation_hash",
 ]

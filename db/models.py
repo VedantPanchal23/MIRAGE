@@ -67,7 +67,7 @@ class User(Base):
 
 
 class Agent(Base):
-    """Tenant-scoped governed agent identity."""
+    """Tenant-scoped governed agent identity with explicit lifecycle state."""
 
     __tablename__ = "agents"
 
@@ -77,12 +77,26 @@ class Agent(Base):
     )
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
     max_autonomy_level: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    registered_by_identity_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("actor_identities.id", ondelete="SET NULL"), nullable=True
+    )
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suspension_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    revocation_reason: Mapped[str | None] = mapped_column(String(512), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
 
-    __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_agents_tenant_name"),)
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_agents_tenant_name"),
+        Index("ix_agents_tenant_status", "tenant_id", "status"),
+    )
 
 
 class ActorIdentity(Base):

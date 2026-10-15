@@ -11,11 +11,14 @@ from typing import Annotated, Any
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from jose import ExpiredSignatureError, JWTError, jwt
-from sqlalchemy import text
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import session as db_session
+from db.models import ActorIdentity, Agent
 from shared.config import EnvironmentType, get_settings
 from shared.logging import get_logger
+from shared.schemas.agent import AgentStatus
 from shared.schemas.audit import compute_sha256
 from shared.schemas.auth import AuthContext, Role
 
@@ -40,6 +43,32 @@ def _claims_from_access_token(
     """Verify credential cryptography and return identity-only claims."""
     key = secret_key or settings.secret_key
     algo = algorithm or settings.algorithm
+
+    # Enforce fail-closed production key configuration
+    if settings.environment == EnvironmentType.PRODUCTION:
+        if not key or key == "dev-insecure-secret-key-change-in-production-min32chars" or len(key) < 32:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Production authentication secret key is unconfigured or using insecure default",
+            )
+
+    # Reject algorithm confusion or 'none' algorithm
+    if not algo or algo.lower() == "none":
+        raise _unauthorized("Unsigned tokens with 'none' algorithm are strictly prohibited")
+
+    try:
+        unverified_header = jwt.get_unverified_header(token)
+        if unverified_header.get("alg", "").lower() == "none":
+            raise _unauthorized("Unsigned tokens with 'none' algorithm are strictly prohibited")
+        if unverified_header.get("jku") or unverified_header.get("x5u"):
+            raise _unauthorized("Arbitrary key URLs (jku/x5u) in token headers are prohibited")
+    except JWTError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Malformed authentication token: {exc}",
+            headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
+        ) from exc
+
     try:
         payload = jwt.decode(
             token,
@@ -63,6 +92,16 @@ def _claims_from_access_token(
             detail=f"Invalid authentication token signature or malformed token: {exc}",
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         ) from exc
+
+    # Validate issuer if present in token claims
+    if "iss" in payload and settings.jwt_issuer and payload["iss"] != settings.jwt_issuer:
+        raise _unauthorized(f"Token issuer '{payload['iss']}' does not match trusted issuer '{settings.jwt_issuer}'")
+
+    # Validate audience if present in token claims
+    if "aud" in payload and settings.jwt_audience and payload["aud"] != settings.jwt_audience:
+        raise _unauthorized(
+            f"Token audience '{payload['aud']}' does not match expected audience '{settings.jwt_audience}'"
+        )
 
     tenant_id = payload.get("tenant_id")
     if not tenant_id or not isinstance(tenant_id, str):
@@ -115,12 +154,117 @@ async def _context_from_result(result: Any, token_type: str) -> AuthContext | No
     )
 
 
-async def resolve_jwt_context(token: str) -> AuthContext:
+async def resolve_agent_context(
+    token: str,
+    session: AsyncSession | None = None,
+    secret_key: str | None = None,
+    algorithm: str | None = None,
+) -> AuthContext:
+    """Authoritatively verify and resolve a token for a governed agent principal.
+
+    Enforces:
+    1. Cryptographic token signature and expiration verification.
+    2. Tenant binding matching asserted claims.
+    3. Persisted Agent existence in asserted tenant.
+    4. Authoritative Agent lifecycle status (must be ACTIVE; rejects REGISTERED, SUSPENDED, REVOKED).
+    5. Persisted ActorIdentity existence and active status.
+    6. Returns an AuthContext with agent_id strictly bound from PostgreSQL.
+    """
+    claims = _claims_from_access_token(token, secret_key=secret_key, algorithm=algorithm)
+    tenant_id = claims["tenant_id"]
+    agent_id = claims.get("agent_id")
+    if not agent_id:
+        sub = str(claims.get("sub", ""))
+        if sub.startswith("agent:"):
+            agent_id = sub[len("agent:") :]
+        else:
+            agent_id = sub
+
+    if not agent_id:
+        raise _unauthorized("Agent token missing mandatory agent identification claims")
+
+    async def _resolve_with_session(s: AsyncSession) -> AuthContext:
+        agent = await s.get(Agent, agent_id)
+        if agent is None or agent.tenant_id != tenant_id:
+            raise _unauthorized(f"Agent '{agent_id}' does not exist in asserted tenant '{tenant_id}'")
+
+        if agent.status == AgentStatus.SUSPENDED.value:
+            raise _unauthorized(
+                f"Authenticated agent '{agent_id}' is suspended: {agent.suspension_reason or 'No reason provided'}"
+            )
+        if agent.status == AgentStatus.REVOKED.value or agent.revoked_at is not None:
+            raise _unauthorized(
+                f"Authenticated agent '{agent_id}' is permanently revoked: "
+                f"{agent.revocation_reason or 'No reason provided'}"
+            )
+        if agent.status != AgentStatus.ACTIVE.value or not agent.active:
+            raise _unauthorized(
+                f"Authenticated agent '{agent_id}' is not in active state (current status: {agent.status})"
+            )
+
+        act_stmt = select(ActorIdentity).where(
+            ActorIdentity.tenant_id == tenant_id,
+            (ActorIdentity.agent_id == agent_id)
+            | (ActorIdentity.subject == f"agent:{agent_id}")
+            | (ActorIdentity.subject == agent_id),
+        )
+        actor_identity = (await s.execute(act_stmt)).scalar_one_or_none()
+        if actor_identity is None or not actor_identity.active:
+            raise _unauthorized(f"Actor identity for agent '{agent_id}' is inactive or missing")
+
+        role_str = actor_identity.role or claims.get("role", Role.API_CLIENT.value)
+        try:
+            role = Role(str(role_str).lower())
+        except ValueError:
+            role = Role.API_CLIENT
+
+        return AuthContext(
+            tenant_id=agent.tenant_id,
+            role=role,
+            user_id=actor_identity.subject,
+            identity_id=actor_identity.id,
+            principal_type="agent",
+            agent_id=agent.id,
+            is_authenticated=True,
+            token_type="jwt",
+        )
+
+    if session is not None:
+        return await _resolve_with_session(session)
+
+    if settings.environment == EnvironmentType.TEST and not getattr(db_session, "engine", None):
+        # Fallback only for isolated offline unit tests where database engine is completely absent
+        role = Role(str(claims.get("role", Role.API_CLIENT.value)).lower())
+        return AuthContext(
+            tenant_id=tenant_id,
+            role=role,
+            user_id=str(claims["sub"]),
+            identity_id=f"test_identity_{agent_id}",
+            principal_type="agent",
+            agent_id=agent_id,
+            is_authenticated=True,
+            token_type="jwt",
+        )
+
+    async with db_session.AsyncSessionLocal() as s:
+        return await _resolve_with_session(s)
+
+
+async def resolve_jwt_context(token: str, session: AsyncSession | None = None) -> AuthContext:
     """Resolve a signed JWT subject against the authoritative identity directory."""
     claims = _claims_from_access_token(token)
+
+    # Route agent principals to authoritative agent verifier
+    if (
+        claims.get("principal_type") == "agent"
+        or claims.get("agent_id") is not None
+        or str(claims.get("sub", "")).startswith("agent:")
+    ):
+        return await resolve_agent_context(token, session=session)
+
     # Test fixtures are isolated from runtime identity authority. pytest sets
     # ENVIRONMENT=test before importing the gateway; no credentials are seeded.
-    if settings.environment == EnvironmentType.TEST:
+    if settings.environment == EnvironmentType.TEST and session is None:
         try:
             role = Role(str(claims.get("role", Role.API_CLIENT.value)).lower())
         except ValueError as exc:
@@ -134,21 +278,30 @@ async def resolve_jwt_context(token: str) -> AuthContext:
             is_authenticated=True,
             token_type="jwt",
         )
+
+    async def _resolve_user(s: AsyncSession) -> AuthContext:
+        result = await s.execute(
+            text("SELECT * FROM mirage_resolve_jwt_identity(:subject, :tenant_id)"),
+            {"subject": claims["sub"], "tenant_id": claims["tenant_id"]},
+        )
+        context = await _context_from_result(result, "jwt")
+        if context is None:
+            raise _unauthorized("Token subject is not an active identity for its asserted tenant")
+        return context
+
+    if session is not None:
+        return await _resolve_user(session)
+
     try:
-        async with db_session.AsyncSessionLocal() as session:
-            result = await session.execute(
-                text("SELECT * FROM mirage_resolve_jwt_identity(:subject, :tenant_id)"),
-                {"subject": claims["sub"], "tenant_id": claims["tenant_id"]},
-            )
-            context = await _context_from_result(result, "jwt")
+        async with db_session.AsyncSessionLocal() as s:
+            return await _resolve_user(s)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("Authoritative identity lookup failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Identity authority unavailable"
         ) from exc
-    if context is None:
-        raise _unauthorized("Token subject is not an active identity for its asserted tenant")
-    return context
 
 
 async def resolve_api_key_context(api_key: str) -> AuthContext:
@@ -210,6 +363,33 @@ def create_access_token(
     if extra_claims:
         claims.update(extra_claims)
     return str(jwt.encode(claims, secret_key or settings.secret_key, algorithm=algorithm or settings.algorithm))
+
+
+def create_agent_access_token(
+    tenant_id: str,
+    agent_id: str,
+    role: Role | str = Role.API_CLIENT,
+    expires_delta: timedelta | None = None,
+    secret_key: str | None = None,
+    algorithm: str | None = None,
+    extra_claims: dict[str, Any] | None = None,
+) -> str:
+    """Create a local signed JWT access token bound to a governed agent principal."""
+    claims: dict[str, Any] = {
+        "principal_type": "agent",
+        "agent_id": agent_id,
+    }
+    if extra_claims:
+        claims.update(extra_claims)
+    return create_access_token(
+        tenant_id=tenant_id,
+        role=role,
+        user_id=f"agent:{agent_id}",
+        expires_delta=expires_delta,
+        secret_key=secret_key,
+        algorithm=algorithm,
+        extra_claims=claims,
+    )
 
 
 def register_api_key(api_key: str, tenant_id: str, role: Role = Role.API_CLIENT) -> str:

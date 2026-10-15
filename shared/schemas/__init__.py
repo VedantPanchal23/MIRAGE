@@ -1,5 +1,14 @@
 """Shared schema exports."""
 
+from shared.schemas.agent import (
+    AgentListResponse,
+    AgentRegistrationRequest,
+    AgentResponse,
+    AgentStatus,
+    AgentTransitionRequest,
+    is_agent_transition_allowed,
+    is_terminal_agent_status,
+)
 from shared.schemas.alerts import (
     AcknowledgeAlertRequest,
     AlertSeverity,
@@ -194,4 +203,11 @@ __all__ = [
     "AttenuatedCapabilitySpec",
     "DelegationGrantRequest",
     "DelegationGrantResponse",
+    "AgentStatus",
+    "AgentRegistrationRequest",
+    "AgentResponse",
+    "AgentTransitionRequest",
+    "AgentListResponse",
+    "is_agent_transition_allowed",
+    "is_terminal_agent_status",
 ]

@@ -19,6 +19,7 @@ from db.models import (
     OutputAssuranceRecord,
     Policy,
 )
+from shared.schemas.agent import AgentStatus
 from shared.schemas.audit import compute_sha256
 from shared.schemas.auth import AuthContext
 from shared.schemas.control_plane import (
@@ -317,8 +318,25 @@ async def create_transaction(auth: AuthContext, request: TransactionCreateReques
         ).scalar_one_or_none()
         if existing is not None:
             return _transaction_response(existing)
-        if request.agent_id and await session.get(Agent, request.agent_id) is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown agent")
+        if request.agent_id:
+            req_agent = await session.get(Agent, request.agent_id)
+            if req_agent is None or req_agent.tenant_id != auth.tenant_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Unknown agent")
+            if req_agent.status == AgentStatus.SUSPENDED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Agent '{request.agent_id}' is suspended and cannot initiate transactions",
+                )
+            if req_agent.status == AgentStatus.REVOKED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Agent '{request.agent_id}' is permanently revoked and cannot initiate transactions",
+                )
+            if not req_agent.active or req_agent.status == AgentStatus.REGISTERED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Agent '{request.agent_id}' is not active",
+                )
         parent: AITransaction | None = None
         if request.parent_transaction_id:
             parent = await session.get(AITransaction, request.parent_transaction_id)
@@ -440,8 +458,7 @@ async def transition_transaction(
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
                         detail=(
-                            "Cannot complete transaction: Output requires human review "
-                            f"before release ({out_rec.id})."
+                            f"Cannot complete transaction: Output requires human review before release ({out_rec.id})."
                         ),
                     )
 
@@ -533,6 +550,15 @@ async def validate_capability(auth: AuthContext, request: CapabilityValidationRe
             return PolicyDecision(decision=Decision.DENY, reason="Capability is not bound to this identity")
         if capability.revoked_at is not None or (capability.expires_at is not None and capability.expires_at <= now):
             return PolicyDecision(decision=Decision.DENY, reason="Capability is revoked or expired")
+        if capability.agent_id:
+            cap_agent = await session.get(Agent, capability.agent_id)
+            if cap_agent is not None and (
+                cap_agent.status in (AgentStatus.SUSPENDED.value, AgentStatus.REVOKED.value) or not cap_agent.active
+            ):
+                return PolicyDecision(
+                    decision=Decision.DENY,
+                    reason=f"Owning agent '{cap_agent.id}' is {cap_agent.status}; capability execution denied",
+                )
         if request.requested_autonomy_level > capability.max_autonomy_level:
             return PolicyDecision(
                 decision=Decision.REQUIRE_APPROVAL, reason="Requested autonomy exceeds capability ceiling"

@@ -35,6 +35,7 @@ from db.models import (
     Capability,
 )
 from shared.logging import get_logger
+from shared.schemas.agent import AgentStatus
 from shared.schemas.audit import compute_sha256
 from shared.schemas.auth import AuthContext
 from shared.schemas.control_plane import (
@@ -456,13 +457,41 @@ class DelegationService:
 
             # 3. Verify parent and child agents
             parent_agent = await s.get(Agent, parent_agent_id)
-            if parent_agent is None or parent_agent.tenant_id != auth.tenant_id or not parent_agent.active:
+            if parent_agent is None or parent_agent.tenant_id != auth.tenant_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Parent agent is inactive or not found"
+                )
+            if parent_agent.status == AgentStatus.SUSPENDED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Parent agent '{parent_agent_id}' is suspended and cannot delegate authority",
+                )
+            if parent_agent.status == AgentStatus.REVOKED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Parent agent '{parent_agent_id}' is revoked and cannot delegate authority",
+                )
+            if not parent_agent.active or parent_agent.status == AgentStatus.REGISTERED.value:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Parent agent is inactive or not found"
                 )
 
             child_agent = await s.get(Agent, request.delegatee_agent_id)
-            if child_agent is None or child_agent.tenant_id != auth.tenant_id or not child_agent.active:
+            if child_agent is None or child_agent.tenant_id != auth.tenant_id:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND, detail="Delegatee agent is inactive or not found"
+                )
+            if child_agent.status == AgentStatus.SUSPENDED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Delegatee agent '{request.delegatee_agent_id}' is suspended and cannot receive delegation",
+                )
+            if child_agent.status == AgentStatus.REVOKED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Delegatee agent '{request.delegatee_agent_id}' is revoked and cannot receive delegation",
+                )
+            if not child_agent.active or child_agent.status == AgentStatus.REGISTERED.value:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND, detail="Delegatee agent is inactive or not found"
                 )
@@ -1008,7 +1037,78 @@ class DelegationService:
                     reason=f"Delegation grant in non-active status '{grant.status}'",
                 )
 
-            # 4. Complete Ancestor Chain Verification
+            # 4. Check Child and Parent Agent Lifecycle Status
+            child_agent = await s.get(Agent, grant.child_agent_id)
+            if child_agent is not None:
+                if child_agent.status == AgentStatus.SUSPENDED.value:
+                    await _append_delegation_audit(
+                        s,
+                        auth.tenant_id,
+                        auth.identity_id or "system",
+                        grant.id,
+                        target_txn,
+                        "DELEGATION_AUTHORIZATION_DENIED",
+                        Decision.DENY.value,
+                        f"Delegated child agent '{grant.child_agent_id}' is suspended",
+                        {"child_agent_id": grant.child_agent_id},
+                    )
+                    return PolicyDecision(
+                        decision=Decision.DENY,
+                        reason=f"Delegated child agent '{grant.child_agent_id}' is suspended",
+                    )
+                if child_agent.status == AgentStatus.REVOKED.value or not child_agent.active:
+                    await _append_delegation_audit(
+                        s,
+                        auth.tenant_id,
+                        auth.identity_id or "system",
+                        grant.id,
+                        target_txn,
+                        "DELEGATION_AUTHORIZATION_DENIED",
+                        Decision.DENY.value,
+                        f"Delegated child agent '{grant.child_agent_id}' is revoked or inactive",
+                        {"child_agent_id": grant.child_agent_id},
+                    )
+                    return PolicyDecision(
+                        decision=Decision.DENY,
+                        reason=f"Delegated child agent '{grant.child_agent_id}' is revoked or inactive",
+                    )
+
+            parent_agent = await s.get(Agent, grant.parent_agent_id)
+            if parent_agent is not None:
+                if parent_agent.status == AgentStatus.SUSPENDED.value:
+                    await _append_delegation_audit(
+                        s,
+                        auth.tenant_id,
+                        auth.identity_id or "system",
+                        grant.id,
+                        target_txn,
+                        "DELEGATION_AUTHORIZATION_DENIED",
+                        Decision.DENY.value,
+                        f"Delegating parent agent '{grant.parent_agent_id}' is suspended",
+                        {"parent_agent_id": grant.parent_agent_id},
+                    )
+                    return PolicyDecision(
+                        decision=Decision.DENY,
+                        reason=f"Delegating parent agent '{grant.parent_agent_id}' is suspended",
+                    )
+                if parent_agent.status == AgentStatus.REVOKED.value or not parent_agent.active:
+                    await _append_delegation_audit(
+                        s,
+                        auth.tenant_id,
+                        auth.identity_id or "system",
+                        grant.id,
+                        target_txn,
+                        "DELEGATION_AUTHORIZATION_DENIED",
+                        Decision.DENY.value,
+                        f"Delegating parent agent '{grant.parent_agent_id}' is revoked or inactive",
+                        {"parent_agent_id": grant.parent_agent_id},
+                    )
+                    return PolicyDecision(
+                        decision=Decision.DENY,
+                        reason=f"Delegating parent agent '{grant.parent_agent_id}' is revoked or inactive",
+                    )
+
+            # 5. Complete Ancestor Chain Verification
             ancestors = await self._get_ancestor_chain(s, auth.tenant_id, grant.parent_transaction_id)
             for anc in ancestors:
                 if anc.status == DelegationStatus.REVOKED.value or anc.revoked_at is not None:
@@ -1042,6 +1142,53 @@ class DelegationService:
                     return PolicyDecision(
                         decision=Decision.DENY,
                         reason=f"Ancestor delegation grant '{anc.id}' has expired",
+                    )
+
+                anc_parent = await s.get(Agent, anc.parent_agent_id)
+                if anc_parent is not None and (
+                    anc_parent.status in (AgentStatus.SUSPENDED.value, AgentStatus.REVOKED.value)
+                    or not anc_parent.active
+                ):
+                    chain_break_msg = (
+                        f"Ancestor agent '{anc.parent_agent_id}' is {anc_parent.status}; delegation chain broken"
+                    )
+                    await _append_delegation_audit(
+                        s,
+                        auth.tenant_id,
+                        auth.identity_id or "system",
+                        grant.id,
+                        target_txn,
+                        "DELEGATION_AUTHORIZATION_DENIED",
+                        Decision.DENY.value,
+                        chain_break_msg,
+                        {"ancestor_agent_id": anc.parent_agent_id, "status": anc_parent.status},
+                    )
+                    return PolicyDecision(
+                        decision=Decision.DENY,
+                        reason=chain_break_msg,
+                    )
+
+                anc_child = await s.get(Agent, anc.child_agent_id)
+                if anc_child is not None and (
+                    anc_child.status in (AgentStatus.SUSPENDED.value, AgentStatus.REVOKED.value) or not anc_child.active
+                ):
+                    child_break_msg = (
+                        f"Ancestor agent '{anc.child_agent_id}' is {anc_child.status}; delegation chain broken"
+                    )
+                    await _append_delegation_audit(
+                        s,
+                        auth.tenant_id,
+                        auth.identity_id or "system",
+                        grant.id,
+                        target_txn,
+                        "DELEGATION_AUTHORIZATION_DENIED",
+                        Decision.DENY.value,
+                        child_break_msg,
+                        {"ancestor_agent_id": anc.child_agent_id, "status": anc_child.status},
+                    )
+                    return PolicyDecision(
+                        decision=Decision.DENY,
+                        reason=child_break_msg,
                     )
 
             # 5. Bound Child Transaction Checks

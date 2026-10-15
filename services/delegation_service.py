@@ -30,6 +30,7 @@ from db import session as db_session
 from db.models import (
     Agent,
     AgentDelegation,
+    AgentHandoff,
     AITransaction,
     AuditLogRecord,
     Capability,
@@ -51,6 +52,7 @@ from shared.schemas.delegation import (
     DelegationGrantResponse,
     DelegationStatus,
 )
+from shared.schemas.handoff import HandoffStatus
 
 logger = get_logger("delegation_service")
 
@@ -455,23 +457,19 @@ class DelegationService:
                 )
             parent_agent_id = parent_txn.agent_id
 
-            if (
-                auth.agent_id
-                and auth.agent_id != parent_agent_id
-                and auth.role
-                not in {
-                    Role.SUPER_ADMIN,
-                    Role.TENANT_ADMIN,
-                    Role.OPERATOR,
-                }
-            ):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
-                        f"Caller agent '{auth.agent_id}' is not authorized to create delegation for "
-                        f"parent agent '{parent_agent_id}'"
-                    ),
-                )
+            if auth.role not in {
+                Role.SUPER_ADMIN,
+                Role.TENANT_ADMIN,
+                Role.OPERATOR,
+            }:
+                if not auth.agent_id or auth.agent_id != parent_agent_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Caller '{auth.agent_id or auth.identity_id}' is not authorized to create delegation for "
+                            f"parent agent '{parent_agent_id}'"
+                        ),
+                    )
 
             # 3. Verify parent and child agents
             parent_agent = await s.get(Agent, parent_agent_id)
@@ -1429,6 +1427,44 @@ class DelegationService:
             grant.revoked_at = now
             grant.updated_at = now
 
+            # Cascade revocation to associated pending or accepted handoffs
+            hnd_stmt = (
+                select(AgentHandoff)
+                .where(
+                    AgentHandoff.tenant_id == auth.tenant_id,
+                    AgentHandoff.delegation_id == grant.id,
+                    AgentHandoff.status.in_([HandoffStatus.PENDING.value, HandoffStatus.ACCEPTED.value]),
+                )
+                .with_for_update()
+            )
+            hnd_res = await s.execute(hnd_stmt)
+            active_handoffs = hnd_res.scalars().all()
+            for h in active_handoffs:
+                h.status = HandoffStatus.REVOKED.value
+                h.cancelled_at = now
+                h.cancellation_reason = f"Bound delegation grant '{grant.id}' was revoked: {reason.strip()}"
+                h.updated_at = now
+                if h.child_transaction_id:
+                    c_txn = await s.get(AITransaction, h.child_transaction_id, with_for_update=True)
+                    if c_txn and hasattr(c_txn, "state") and c_txn.state not in _TERMINAL_TRANSACTION_STATES:
+                        c_txn.state = TransactionState.CANCELLED.value
+                        c_txn.final_disposition = TransactionState.CANCELLED.value
+                        c_txn.version += 1
+                        c_txn.updated_at = now
+
+            # If child transaction was directly bound to delegation grant, cancel if active
+            if grant.child_transaction_id:
+                direct_child = await s.get(AITransaction, grant.child_transaction_id, with_for_update=True)
+                if (
+                    direct_child
+                    and hasattr(direct_child, "state")
+                    and direct_child.state not in _TERMINAL_TRANSACTION_STATES
+                ):
+                    direct_child.state = TransactionState.CANCELLED.value
+                    direct_child.final_disposition = TransactionState.CANCELLED.value
+                    direct_child.version += 1
+                    direct_child.updated_at = now
+
             await _append_delegation_audit(
                 session=s,
                 tenant_id=auth.tenant_id,
@@ -1443,6 +1479,7 @@ class DelegationService:
                     "reason": reason.strip(),
                     "child_agent_id": grant.child_agent_id,
                     "parent_agent_id": grant.parent_agent_id,
+                    "cascaded_handoffs_count": len(active_handoffs),
                 },
             )
             await s.flush()

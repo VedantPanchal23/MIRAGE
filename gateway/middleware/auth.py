@@ -93,16 +93,6 @@ def _claims_from_access_token(
             headers={"WWW-Authenticate": 'Bearer error="invalid_token"'},
         ) from exc
 
-    # Validate issuer if present in token claims
-    if "iss" in payload and settings.jwt_issuer and payload["iss"] != settings.jwt_issuer:
-        raise _unauthorized(f"Token issuer '{payload['iss']}' does not match trusted issuer '{settings.jwt_issuer}'")
-
-    # Validate audience if present in token claims
-    if "aud" in payload and settings.jwt_audience and payload["aud"] != settings.jwt_audience:
-        raise _unauthorized(
-            f"Token audience '{payload['aud']}' does not match expected audience '{settings.jwt_audience}'"
-        )
-
     tenant_id = payload.get("tenant_id")
     if not tenant_id or not isinstance(tenant_id, str):
         raise HTTPException(
@@ -131,6 +121,25 @@ def _claims_from_access_token(
     subject = payload.get("sub")
     if not isinstance(subject, str) or not subject:
         raise _unauthorized("Token is missing mandatory identity claims")
+
+    # Validate issuer when configured in settings
+    if settings.jwt_issuer:
+        if "iss" not in payload:
+            raise _unauthorized("Token missing mandatory 'iss' claim required by configuration")
+        if payload["iss"] != settings.jwt_issuer:
+            raise _unauthorized(
+                f"Token issuer '{payload['iss']}' does not match trusted issuer '{settings.jwt_issuer}'"
+            )
+
+    # Validate audience when configured in settings
+    if settings.jwt_audience:
+        if "aud" not in payload:
+            raise _unauthorized("Token missing mandatory 'aud' claim required by configuration")
+        if payload["aud"] != settings.jwt_audience:
+            raise _unauthorized(
+                f"Token audience '{payload['aud']}' does not match expected audience '{settings.jwt_audience}'"
+            )
+
     return payload
 
 

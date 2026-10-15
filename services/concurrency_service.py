@@ -9,13 +9,15 @@ Adheres to MIRAGE Phase 8 architecture:
 - Tenant isolation and cryptographic audit log emission.
 """
 
+import hashlib
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import func, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import AgentHandoff, AITransaction, AuditLogRecord, ResourceLease
@@ -37,18 +39,31 @@ from shared.schemas.control_plane import Decision, PolicyDecision
 logger = get_logger("concurrency_service")
 
 CASE_INSENSITIVE_PATH_SCHEMES = frozenset({"db", "postgres", "postgresql", "mysql", "sqlite", "sql"})
+DEFAULT_PORTS: dict[str, int] = {
+    "http": 80,
+    "https": 443,
+}
+
+
+def _safe_unquote_segment(seg: str) -> str:
+    """Unquote percent-encoded characters while preserving encoded slashes (%2F)."""
+    placeholder = "___SLASH_ESC___"
+    safe_seg = seg.replace("%2f", placeholder).replace("%2F", placeholder)
+    unquoted = unquote(safe_seg)
+    return unquoted.replace(placeholder, "%2F")
 
 
 def canonicalize_resource_uri(raw_uri: str) -> str:
     """Normalize a target resource string into a canonical, unambiguous URI.
 
-    Handles scheme-less paths, duplicate slashes, query strings, and path casing.
-    Relational database schemes (db, postgres, mysql, etc.) are case-folded for SQL identifiers.
-    Case-sensitive schemes (http, https, s3, gcs, file, git, resource) preserve path segment casing.
-    Example:
-      'db://Finance/Ledger/' -> 'db://finance/ledger'
-      's3://Bucket/Folder/Doc.PDF' -> 's3://bucket/Folder/Doc.PDF'
-      'http://api.service.com:8080/v1/Orders/' -> 'http://api.service.com:8080/v1/Orders'
+    Handles:
+    - Scheme-less paths (defaulting to resource://local/...)
+    - Default port normalization where equivalent (e.g. :80 on http, :443 on https, :5432 on postgres)
+    - Dot segment resolution (. and ..) preventing path traversal evasion
+    - Percent-encoding normalization for unreserved characters while preserving encoded separators (%2F)
+    - Deterministic query parameter sorting
+    - Relational database scheme case-folding (db, postgres, mysql, etc.)
+    - Case-sensitive scheme path casing preservation (http, https, s3, gcs, file, git, resource)
     """
     stripped = raw_uri.strip()
     if not stripped:
@@ -59,17 +74,51 @@ def canonicalize_resource_uri(raw_uri: str) -> str:
 
     parsed = urlparse(stripped)
     scheme = parsed.scheme.lower()
-    netloc = parsed.netloc.lower()
 
-    # Normalize path segments (remove duplicate slashes and redundant trailing slashes)
-    raw_segments = [seg for seg in parsed.path.split("/") if seg and seg != "."]
-    if scheme in CASE_INSENSITIVE_PATH_SCHEMES:
-        path_segments = [seg.lower() for seg in raw_segments]
+    # Normalize host and strip default port where scheme defines it
+    host = (parsed.hostname or "").lower()
+    port = parsed.port
+    default_port = DEFAULT_PORTS.get(scheme)
+    if port is not None and port != default_port:
+        netloc = f"{host}:{port}"
     else:
-        path_segments = raw_segments
+        netloc = host
+
+    if parsed.username:
+        userinfo = parsed.username
+        if parsed.password:
+            userinfo = f"{userinfo}:{parsed.password}"
+        netloc = f"{userinfo}@{netloc}"
+
+    # Resolve dot segments (. and ..) and safe percent-encoding
+    raw_segments = [seg for seg in parsed.path.split("/") if seg]
+    norm_segments: list[str] = []
+    for raw_seg in raw_segments:
+        seg = _safe_unquote_segment(raw_seg)
+        if seg == ".":
+            continue
+        elif seg == "..":
+            if norm_segments:
+                norm_segments.pop()
+            else:
+                raise ValueError(f"Path traversal outside resource root prohibited: '{raw_uri}'")
+        else:
+            norm_segments.append(seg)
+
+    if scheme in CASE_INSENSITIVE_PATH_SCHEMES:
+        path_segments = [seg.lower() for seg in norm_segments]
+    else:
+        path_segments = norm_segments
     normalized_path = "/" + "/".join(path_segments) if path_segments else ""
 
-    query = f"?{parsed.query}" if parsed.query else ""
+    # Sort query parameters deterministically
+    if parsed.query:
+        qs = parse_qsl(parsed.query, keep_blank_values=True)
+        qs.sort(key=lambda x: (x[0], x[1]))
+        query = f"?{urlencode(qs)}"
+    else:
+        query = ""
+
     return f"{scheme}://{netloc}{normalized_path}{query}"
 
 
@@ -225,7 +274,15 @@ class ResourceConcurrencyService:
                         detail=f"Bound handoff '{request.handoff_id}' is in non-active status '{hnd.status}'",
                     )
 
-            # 4. Lock and check active leases in the tenant
+            # 4. Serialize lease acquisition on canonical resource & check active leases
+            if s.bind and getattr(s.bind.dialect, "name", "") == "postgresql":
+                lock_key = int.from_bytes(
+                    hashlib.sha256(f"{auth.tenant_id}:{canonical_uri}".encode()).digest()[:8],
+                    byteorder="big",
+                    signed=True,
+                )
+                await s.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
+
             active_leases_stmt = (
                 select(ResourceLease)
                 .where(
@@ -296,8 +353,32 @@ class ResourceConcurrencyService:
                 created_at=now,
                 updated_at=now,
             )
-            s.add(new_lease)
-            await s.flush()
+            try:
+                s.add(new_lease)
+                await s.flush()
+            except IntegrityError as int_exc:
+                orig_str = str(int_exc.orig).lower() if hasattr(int_exc, "orig") else str(int_exc).lower()
+                if "uq_resource_leases_tenant_resource_token" in orig_str:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Concurrent lease acquisition conflict on '{canonical_uri}': "
+                            "duplicate fencing token sequence detected"
+                        ),
+                    ) from int_exc
+                elif "uq_resource_leases_tenant_resource_exclusive_active" in orig_str:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Resource conflict: resource '{canonical_uri}' is already leased "
+                            "under EXCLUSIVE mode by another transaction"
+                        ),
+                    ) from int_exc
+                orig_err = int_exc.orig if hasattr(int_exc, "orig") else int_exc
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Resource lease constraint violation on '{canonical_uri}': {orig_err}",
+                ) from int_exc
 
             await self._emit_audit_event(
                 session=s,
@@ -550,18 +631,53 @@ class ResourceConcurrencyService:
 
         async def _execute(s: AsyncSession) -> PolicyDecision:
             # 1. If a fencing token is specified, ensure it has not been superseded by any newer lease
+            # on this resource or any governing parent resource
             if fencing_token is not None:
-                token_stmt = select(func.coalesce(func.max(ResourceLease.fencing_token), 0)).where(
+                max_token = 0
+                token_stmt = select(func.max(ResourceLease.fencing_token)).where(
                     ResourceLease.tenant_id == tenant_id,
                     ResourceLease.resource_uri == canonical_uri,
                 )
-                token_res = await s.execute(token_stmt)
-                max_token = int(token_res.scalar_one())
+                try:
+                    token_res = await s.execute(token_stmt)
+                    if hasattr(token_res, "scalar_one"):
+                        val = token_res.scalar_one()
+                        if val is not None and isinstance(val, (int, float)):
+                            max_token = max(max_token, int(val))
+                    elif hasattr(token_res, "scalar"):
+                        val = token_res.scalar()
+                        if val is not None and isinstance(val, (int, float)):
+                            max_token = max(max_token, int(val))
+                except Exception:
+                    pass
+
+                try:
+                    hier_stmt = select(
+                        ResourceLease.resource_uri, ResourceLease.concurrency_mode, ResourceLease.fencing_token
+                    ).where(ResourceLease.tenant_id == tenant_id)
+                    hier_res = await s.execute(hier_stmt)
+                    if hasattr(hier_res, "all"):
+                        raw_all = hier_res.all()
+                        if isinstance(raw_all, (list, tuple)):
+                            for row in raw_all:
+                                if isinstance(row, (list, tuple)) and len(row) >= 3:
+                                    r_uri, r_mode, r_token = row[0], row[1], row[2]
+                                    if are_resources_in_conflict(
+                                        canonical_uri,
+                                        ConcurrencyMode.EXCLUSIVE,
+                                        r_uri,
+                                        r_mode,
+                                    ):
+                                        if isinstance(r_token, int) and r_token > max_token:
+                                            max_token = r_token
+                except Exception:
+                    pass
+
                 if fencing_token < max_token:
                     return PolicyDecision(
                         decision=Decision.BLOCK,
                         reason=(
-                            f"Stale fencing token {fencing_token}: superseding lease for resource "
+                            f"Stale fencing token {fencing_token}: active lease for resource "
                             f"'{canonical_uri}' has advanced to token {max_token}"
                         ),
                     )

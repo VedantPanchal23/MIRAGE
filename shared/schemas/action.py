@@ -59,6 +59,7 @@ class ActionState(StrEnum):
     COMPLETED = "COMPLETED"
     FAILED = "FAILED"
     BLOCKED = "BLOCKED"
+    EXECUTION_UNCERTAIN = "EXECUTION_UNCERTAIN"
 
 
 class ApprovalStatus(StrEnum):
@@ -155,14 +156,7 @@ _RESTRICTED_HOSTNAMES = {
 
 def _is_ip_restricted(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     """Check if an IP address belongs to loopback, private, link-local, multicast, or unspecified ranges."""
-    if (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_multicast
-        or ip.is_reserved
-        or ip.is_unspecified
-    ):
+    if ip.is_loopback or ip.is_private or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
         return True
 
     # IPv4-mapped IPv6 check (e.g., ::ffff:127.0.0.1 or ::ffff:169.254.169.254)
@@ -227,9 +221,7 @@ def _check_and_normalize_url(val: str, clean_key: str) -> str:
                 pass
 
     if target_ip is not None and _is_ip_restricted(target_ip):
-        raise ValueError(
-            f"SSRF attempt blocked to restricted IP address '{target_ip}' in parameter '{clean_key}'"
-        )
+        raise ValueError(f"SSRF attempt blocked to restricted IP address '{target_ip}' in parameter '{clean_key}'")
 
     # Standard port and host normalization
     port = parsed.port
@@ -351,6 +343,10 @@ class ActionAuthorizationDecision(BaseModel):
     cumulative_window_risk: int = 0
     cumulative_window_cost: float = 0.0
     is_salami_slice_violation: bool = False
+    fencing_token: int | None = Field(
+        default=None,
+        description="Active lease monotonic fencing token bound to target resource",
+    )
 
 
 class BatchAuthorizationDecision(BaseModel):

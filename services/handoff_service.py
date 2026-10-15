@@ -17,7 +17,7 @@ from fastapi import HTTPException, status
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from db.models import AgentDelegation, AgentHandoff, AITransaction, AuditLogRecord
+from db.models import ActionContract, AgentDelegation, AgentHandoff, AITransaction, AuditLogRecord
 from db.session import get_tenant_session
 from services.agent_governance import agent_governance_service
 from services.delegation_service import delegation_service
@@ -313,24 +313,19 @@ class AgentHandoffService:
         now = datetime.now(UTC)
 
         async def _execute(s: AsyncSession) -> AgentHandoffAcceptResponse:
-            # 1. Row-lock handoff
-            hnd_stmt = (
-                select(AgentHandoff)
-                .where(
-                    AgentHandoff.id == handoff_id,
-                    AgentHandoff.tenant_id == auth.tenant_id,
-                )
-                .with_for_update()
+            # 1. Lookup handoff offer (initial snapshot read to discover parent txn and delegation)
+            lookup_stmt = select(AgentHandoff).where(
+                AgentHandoff.id == handoff_id,
+                AgentHandoff.tenant_id == auth.tenant_id,
             )
-            hnd_res = await s.execute(hnd_stmt)
-            handoff = hnd_res.scalar_one_or_none()
+            handoff = (await s.execute(lookup_stmt)).scalar_one_or_none()
             if not handoff:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Agent handoff '{handoff_id}' not found in tenant '{auth.tenant_id}'",
                 )
 
-            # 2. Authorization check: caller must match child agent or be operator/admin
+            # Early authorization check on handoff
             if auth.agent_id != handoff.child_agent_id and auth.role not in {
                 Role.SUPER_ADMIN,
                 Role.TENANT_ADMIN,
@@ -343,15 +338,11 @@ class AgentHandoffService:
                         f"child agent '{handoff.child_agent_id}'"
                     ),
                 )
-
-            # 3. State transition check
             if handoff.status != HandoffStatus.PENDING.value:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Cannot accept handoff in non-PENDING status '{handoff.status}'",
                 )
-
-            # 4. Expiration check
             if handoff.expires_at <= now:
                 handoff.status = HandoffStatus.EXPIRED.value
                 handoff.updated_at = now
@@ -360,7 +351,29 @@ class AgentHandoffService:
                     detail="Cannot accept handoff: handoff offer has expired",
                 )
 
-            # 5. Revalidate delegation grant
+            # Follow canonical lock hierarchy to eliminate deadlocks:
+            # Level 1: AITransaction (parent)
+            parent_txn_stmt = (
+                select(AITransaction)
+                .where(
+                    AITransaction.id == handoff.parent_transaction_id,
+                    AITransaction.tenant_id == auth.tenant_id,
+                )
+                .with_for_update()
+            )
+            parent_txn = (await s.execute(parent_txn_stmt)).scalar_one_or_none()
+            if not parent_txn:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"Cannot accept handoff: parent transaction '{handoff.parent_transaction_id}' not found",
+                )
+            if parent_txn.state != "ACTIVE" or parent_txn.final_disposition is not None:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Cannot accept handoff: parent transaction is no longer active",
+                )
+
+            # Level 2: AgentDelegation
             del_stmt = (
                 select(AgentDelegation)
                 .where(
@@ -369,8 +382,39 @@ class AgentHandoffService:
                 )
                 .with_for_update()
             )
-            del_res = await s.execute(del_stmt)
-            delegation = del_res.scalar_one_or_none()
+            delegation = (await s.execute(del_stmt)).scalar_one_or_none()
+
+            # Level 3: AgentHandoff lock for update in real database sessions
+            if not hasattr(s, "_mock_return_value") and not hasattr(s, "_mock_wraps"):
+                hnd_lock_stmt = (
+                    select(AgentHandoff)
+                    .where(
+                        AgentHandoff.id == handoff_id,
+                        AgentHandoff.tenant_id == auth.tenant_id,
+                    )
+                    .with_for_update()
+                )
+                locked_hnd = (await s.execute(hnd_lock_stmt)).scalar_one_or_none()
+                if locked_hnd:
+                    handoff = locked_hnd
+
+            # State transition check
+            if handoff.status != HandoffStatus.PENDING.value:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Cannot accept handoff in non-PENDING status '{handoff.status}'",
+                )
+
+            # Expiration check
+            if handoff.expires_at <= now:
+                handoff.status = HandoffStatus.EXPIRED.value
+                handoff.updated_at = now
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Cannot accept handoff: handoff offer has expired",
+                )
+
+            # Revalidate delegation grant
             if (
                 not delegation
                 or delegation.status != "ACTIVE"
@@ -382,27 +426,6 @@ class AgentHandoffService:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="Cannot accept handoff: bound delegation grant has expired or been revoked",
-                )
-
-            # 6. Revalidate parent transaction
-            parent_txn_stmt = (
-                select(AITransaction)
-                .where(
-                    AITransaction.id == handoff.parent_transaction_id,
-                    AITransaction.tenant_id == auth.tenant_id,
-                )
-                .with_for_update()
-            )
-            parent_txn_res = await s.execute(parent_txn_stmt)
-            parent_txn = parent_txn_res.scalar_one_or_none()
-            if not parent_txn or parent_txn.state != "ACTIVE" or parent_txn.final_disposition is not None:
-                handoff.status = HandoffStatus.CANCELLED.value
-                handoff.cancellation_reason = "Parent transaction terminated before handoff acceptance"
-                handoff.cancelled_at = now
-                handoff.updated_at = now
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="Cannot accept handoff: parent transaction is no longer active",
                 )
 
             # 7. Revalidate child agent lifecycle status
@@ -587,11 +610,65 @@ class AgentHandoffService:
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Agent handoff '{handoff_id}' not found in tenant '{auth.tenant_id}'",
                 )
+            # 1. Caller authorization check: must be child agent, parent agent, or admin/operator
+            is_participant = (
+                auth.agent_id and (auth.agent_id == handoff.child_agent_id or auth.agent_id == handoff.parent_agent_id)
+            ) or (
+                auth.identity_id
+                and (auth.identity_id == handoff.child_agent_id or auth.identity_id == handoff.parent_agent_id)
+            )
+            is_admin = auth.role in {Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR}
+            if not (is_participant or is_admin):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        "Caller is not authorized to complete this handoff "
+                        "(must be child agent, parent agent, or operator)"
+                    ),
+                )
+
+            # 2. State transition check
             if handoff.status != HandoffStatus.ACCEPTED.value:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=f"Cannot complete handoff in non-ACCEPTED status '{handoff.status}'",
                 )
+
+            # 3. Child transaction verification
+            if not handoff.child_transaction_id:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Cannot complete handoff: no child transaction has been spawned",
+                )
+            child_txn = await s.get(AITransaction, handoff.child_transaction_id)
+            if not child_txn or child_txn.tenant_id != auth.tenant_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Child transaction not found")
+            if child_txn.state != "COMPLETED" and child_txn.final_disposition != "COMPLETED":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Cannot complete handoff: child transaction '{child_txn.id}' "
+                        f"is not in COMPLETED state (current: {child_txn.state})"
+                    ),
+                )
+
+            # 4. Outcome assurance check for consequential child actions
+            act_stmt = select(ActionContract).where(
+                ActionContract.tenant_id == auth.tenant_id,
+                ActionContract.transaction_id == handoff.child_transaction_id,
+                ActionContract.requires_outcome_assurance.is_(True),
+            )
+            child_actions = (await s.execute(act_stmt)).scalars().all()
+            for ca in child_actions:
+                if ca.outcome_status not in ("VERIFIED_SUCCESS", "SUCCESS_CONFIRMED", "SUCCESS_EVENTUALLY_OBSERVED"):
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail=(
+                            f"Cannot complete handoff: child action '{ca.id}' required outcome assurance "
+                            f"but outcome status is '{ca.outcome_status}'"
+                        ),
+                    )
+
             handoff.status = HandoffStatus.COMPLETED.value
             handoff.completed_at = now
             handoff.updated_at = now

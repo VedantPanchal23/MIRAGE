@@ -86,7 +86,8 @@ class AuthTestFactory:
             "iat": int(now.timestamp()),
             "nbf": int(now.timestamp()),
             "exp": int((now + timedelta(hours=1)).timestamp()),
-            "iss": "mirage-auth",
+            "iss": settings.jwt_issuer,
+            "aud": settings.jwt_audience,
         }
         claims.pop(omit_claim, None)
         return jwt.encode(claims, settings.secret_key, algorithm=settings.algorithm)

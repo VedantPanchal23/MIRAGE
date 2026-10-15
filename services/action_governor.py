@@ -2,6 +2,7 @@
 
 import ast
 import json
+import logging
 import operator
 import uuid
 from collections.abc import Callable
@@ -58,6 +59,8 @@ from shared.schemas.control_plane import (
 )
 from shared.schemas.delegation import DelegationStatus
 from shared.schemas.outcome import ObservabilityClass, OutcomeStatus
+
+logger = logging.getLogger(__name__)
 
 # Constants for Salami-Slicing Defense & Cumulative Blast Radius
 MAX_WINDOW_HOURS = 1
@@ -418,10 +421,52 @@ class ActionGovernorService:
                     normalized_parameters={},
                     parameters_hash="",
                 )
+            # Verify caller authorization for parent transaction
+            if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR):
+                if auth.agent_id:
+                    if transaction.agent_id != auth.agent_id:
+                        del_check = await session.execute(
+                            select(AgentDelegation).where(
+                                AgentDelegation.tenant_id == auth.tenant_id,
+                                AgentDelegation.child_agent_id == auth.agent_id,
+                                (AgentDelegation.child_transaction_id == transaction.id)
+                                | (AgentDelegation.parent_transaction_id == transaction.id),
+                                AgentDelegation.status == DelegationStatus.ACTIVE.value,
+                            )
+                        )
+                        if not del_check.scalar_one_or_none():
+                            return ActionAuthorizationDecision(
+                                action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                                decision=Decision.BLOCK,
+                                state=ActionState.BLOCKED,
+                                reason=(
+                                    f"Authenticated agent '{auth.agent_id}' is not authorized for transaction "
+                                    f"'{transaction.id}' (owned by agent '{transaction.agent_id}')"
+                                ),
+                                risk_score=100,
+                                autonomy_level=4,
+                                normalized_parameters={},
+                                parameters_hash="",
+                            )
+                elif auth.identity_id:
+                    if transaction.actor_identity_id != auth.identity_id:
+                        return ActionAuthorizationDecision(
+                            action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                            decision=Decision.BLOCK,
+                            state=ActionState.BLOCKED,
+                            reason=(
+                                f"Authenticated actor '{auth.identity_id}' is not authorized for transaction "
+                                f"'{transaction.id}' (owned by actor '{transaction.actor_identity_id}')"
+                            ),
+                            risk_score=100,
+                            autonomy_level=4,
+                            normalized_parameters={},
+                            parameters_hash="",
+                        )
 
             # Check initiating agent lifecycle eligibility
             if transaction.agent_id:
-                is_eligible = await agent_governance_service.is_agent_eligible_for_transaction(
+                is_eligible, _ = await agent_governance_service.evaluate_agent_eligibility(
                     session=session,
                     tenant_id=auth.tenant_id,
                     agent_id=transaction.agent_id,
@@ -1085,19 +1130,28 @@ class ActionGovernorService:
                 final_state = ActionState.AUTHORIZED
                 decision_reason = "Action authorized: capabilities verified, preconditions passed, risk within budget."
 
-            # Resolve active fencing token if lease is held by current transaction
+            # Resolve active fencing token if lease is held by current transaction (exact or governing parent)
             active_fencing_token: int | None = None
             try:
                 canonical_target = canonicalize_resource_uri(req.target_resource)
-                lease_stmt = select(ResourceLease.fencing_token).where(
+                lease_stmt = select(ResourceLease).where(
                     ResourceLease.tenant_id == auth.tenant_id,
                     ResourceLease.holder_transaction_id == req.transaction_id,
-                    ResourceLease.resource_uri == canonical_target,
                     ResourceLease.status == LeaseStatus.ACQUIRED.value,
                     ResourceLease.expires_at > now,
                 )
                 lease_res = await session.execute(lease_stmt)
-                active_fencing_token = lease_res.scalar_one_or_none()
+                holder_leases = lease_res.scalars().all()
+                best_match_lease: ResourceLease | None = None
+                best_len = -1
+                for hl in holder_leases:
+                    h_uri = hl.resource_uri
+                    if canonical_target == h_uri or canonical_target.startswith(h_uri.rstrip("/") + "/"):
+                        if len(h_uri) > best_len:
+                            best_len = len(h_uri)
+                            best_match_lease = hl
+                if best_match_lease:
+                    active_fencing_token = best_match_lease.fencing_token
             except Exception:
                 active_fencing_token = None
 
@@ -1185,6 +1239,7 @@ class ActionGovernorService:
                 cumulative_window_risk=window_risk,
                 cumulative_window_cost=window_cost,
                 is_salami_slice_violation=is_salami_violation,
+                fencing_token=active_fencing_token,
             )
 
     # -------------------------------------------------------------------------
@@ -1469,7 +1524,14 @@ class ActionGovernorService:
     # -------------------------------------------------------------------------
 
     async def execute_action(self, auth: AuthContext, req: ActionExecutionRequest) -> ActionExecutionResult:
-        """Execute an authorized action contract strictly through the Governed Tool Proxy."""
+        """Execute an authorized action contract strictly through the Governed Tool Proxy
+        using a durable execution protocol.
+        """
+        now = datetime.now(UTC)
+
+        # ---------------------------------------------------------------------
+        # Phase 1: Pre-dispatch authorization, validation, and durable commitment of EXECUTING state
+        # ---------------------------------------------------------------------
         async with db_session.get_tenant_session(auth.tenant_id) as session:
             stmt = (
                 select(ActionContract)
@@ -1486,13 +1548,28 @@ class ActionGovernorService:
 
             # Principal binding check: Prevent proposals authorized under one principal from being executed by another
             if auth.role != Role.SUPER_ADMIN:
-                if auth.identity_id != contract.actor_identity_id and (
-                    not auth.agent_id or auth.agent_id != contract.agent_id
-                ):
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Principal mismatch: action contract was authorized for a different actor or agent",
-                    )
+                if auth.agent_id:
+                    if contract.agent_id != auth.agent_id:
+                        del_check = await session.execute(
+                            select(AgentDelegation).where(
+                                AgentDelegation.tenant_id == auth.tenant_id,
+                                AgentDelegation.child_agent_id == auth.agent_id,
+                                (AgentDelegation.child_transaction_id == contract.transaction_id)
+                                | (AgentDelegation.parent_transaction_id == contract.transaction_id),
+                                AgentDelegation.status == DelegationStatus.ACTIVE.value,
+                            )
+                        )
+                        if not del_check.scalar_one_or_none():
+                            raise HTTPException(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Principal mismatch: action contract was authorized for a different agent",
+                            )
+                elif auth.identity_id:
+                    if auth.identity_id != contract.actor_identity_id:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Principal mismatch: action contract was authorized for a different actor",
+                        )
 
             # Invariant: Action must not be in terminal or blocked states
             if contract.state == ActionState.BLOCKED.value:
@@ -1501,10 +1578,28 @@ class ActionGovernorService:
                     detail="Action contract is in state 'BLOCKED' and cannot be executed",
                 )
 
-            if contract.state in (ActionState.COMPLETED.value, ActionState.EXECUTING.value, ActionState.EXECUTED.value):
+            if contract.state == ActionState.EXECUTING.value:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Action contract is already executed or executing (current: {contract.state})",
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Action contract is currently EXECUTING. "
+                        "Retries are rejected to prevent duplicate external side effects."
+                    ),
+                )
+
+            if contract.state == ActionState.EXECUTION_UNCERTAIN.value:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Action contract is in EXECUTION_UNCERTAIN state due to post-dispatch "
+                        "persistence failure; operator reconciliation required before retry."
+                    ),
+                )
+
+            if contract.state in (ActionState.COMPLETED.value, ActionState.EXECUTED.value):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Action contract is already executed (current: {contract.state})",
                 )
 
             if contract.state != ActionState.AUTHORIZED.value:
@@ -1540,7 +1635,7 @@ class ActionGovernorService:
 
             # Re-verify Initiating Agent Lifecycle State at Execution Boundary
             if contract.agent_id:
-                is_eligible = await agent_governance_service.is_agent_eligible_for_transaction(
+                is_eligible, reason = await agent_governance_service.evaluate_agent_eligibility(
                     session=session,
                     tenant_id=auth.tenant_id,
                     agent_id=contract.agent_id,
@@ -1548,7 +1643,10 @@ class ActionGovernorService:
                 if not is_eligible:
                     raise HTTPException(
                         status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Agent '{contract.agent_id}' is suspended, revoked, or inactive at execution time.",
+                        detail=(
+                            f"Agent '{contract.agent_id}' is suspended, revoked, "
+                            f"or inactive at execution time: {reason}"
+                        ),
                     )
 
             # Re-verify Tool is still active in Registry
@@ -1563,8 +1661,6 @@ class ActionGovernorService:
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=f"Tool '{contract.tool_name}' is inactive or has been revoked in the registry.",
                 )
-
-            now = datetime.now(UTC)
 
             # Re-verify Delegation Grant and Parent Transaction at Execution Boundary for Child Transactions
             delegation: AgentDelegation | None = None
@@ -1791,142 +1887,221 @@ class ActionGovernorService:
                     detail=f"Execution blocked by concurrency fencing revalidation: {lease_val.reason}",
                 )
 
+            # Durable state transition committed before external side effects
             contract.state = ActionState.EXECUTING.value
             contract.executed_at = now
-            await session.flush()
-
-            # Dispatch strictly via Governed Tool Proxy
-            observed_output, error_msg = await self.tool_proxy.dispatch(
-                contract=contract,
-                auth=auth,
-            )
-
-            # Postcondition Evaluation against Tool Return Value
-            postconditions_ok = True
-            evidence_records: list[dict[str, Any]] = []
-            postconds = [PostconditionRule(**p) for p in (contract.postconditions or [])]
-
-            for post in postconds:
-                satisfied, ev = self._evaluate_postcondition(post, observed_output)
-                evidence_records.append(ev)
-                if not satisfied:
-                    postconditions_ok = False
-
-            outcome_id: str | None = None
-            if error_msg:
-                final_state = ActionState.FAILED
-                contract.outcome_status = OutcomeStatus.VERIFIED_FAILURE.value
-            elif contract.requires_outcome_assurance:
-                # Core Invariant: A tool acknowledgment (HTTP 200, success response) is NOT proof of real-world success
-                # State transitions to EXECUTED; Outcome enters PENDING_VERIFICATION awaiting independent observation.
-                final_state = ActionState.EXECUTED
-                contract.outcome_status = OutcomeStatus.PENDING_VERIFICATION.value
-
-                deadline_sec = 30.0
-                if contract.outcome_contract and isinstance(contract.outcome_contract, dict):
-                    deadline_sec = float(contract.outcome_contract.get("verification_deadline_seconds", 30.0))
-
-                outcome_id = f"outc_{uuid.uuid4().hex[:12]}"
-                target_env = (
-                    contract.blast_radius.get("target_environment", "DEFAULT")
-                    if isinstance(contract.blast_radius, dict)
-                    else "DEFAULT"
-                )
-
-                expected_posts: dict[str, Any] = {}
-                if contract.postconditions and isinstance(contract.postconditions, list):
-                    for p in contract.postconditions:
-                        if isinstance(p, dict) and "target" in p:
-                            expected_posts[p["target"]] = p.get("expected_value")
-
-                outcome_record = OutcomeVerificationRecord(
-                    id=outcome_id,
-                    tenant_id=auth.tenant_id,
-                    transaction_id=contract.transaction_id,
-                    action_id=contract.id,
-                    observability_class=ObservabilityClass.OBS_DIRECT.value,
-                    outcome_status=OutcomeStatus.PENDING_VERIFICATION.value,
-                    epistemic_confidence=0.0,
-                    verifier_adapter="PENDING_INDEPENDENT_OBSERVATION",
-                    is_simulated=False,
-                    expected_postconditions=expected_posts,
-                    observed_state={},
-                    discrepancies=[],
-                    evidence_payload={"transport_ack": observed_output, "dispatch_status": "EXECUTED"},
-                    reconciliation_notes=[
-                        "Action dispatched via tool proxy; awaiting independent target-state observation."
-                    ],
-                    verification_hash=compute_sha256(f"{auth.tenant_id}:{contract.id}:PENDING_VERIFICATION"),
-                    idempotency_key=f"idem_outc_{contract.id}_pending",
-                    target_environment=target_env,
-                    contract_binding_hash=contract.parameters_hash,
-                    verification_deadline=now + timedelta(seconds=deadline_sec),
-                    created_at=now,
-                    verified_at=now,
-                )
-                session.add(outcome_record)
-                postconditions_ok = False  # Not yet verified by independent observer!
-            else:
-                final_state = ActionState.COMPLETED if postconditions_ok else ActionState.FAILED
-                contract.outcome_status = None
-
-            contract.state = final_state.value
-            contract.observed_result = observed_output
-            contract.error_message = error_msg
-            contract.completed_at = datetime.now(UTC)
-
-            # Append Tool Observation Context Source to parent transaction
-            if transaction:
-                sources = list(transaction.context_sources or [])
-                sources.append(
-                    {
-                        "id": f"ctx_tool_{uuid.uuid4().hex[:12]}",
-                        "source_type": "TOOL_OBSERVATION",
-                        "tool_name": contract.tool_name,
-                        "target_resource": contract.target_resource,
-                        "content": json.dumps(observed_output, default=str),
-                        "trust_score": 0.6,
-                        "taints": [Taint.UNTRUSTED.value],
-                        "timestamp": datetime.now(UTC).isoformat(),
-                    }
-                )
-                transaction.context_sources = sources
-                curr_taints = set(transaction.taint_flags or [])
-                curr_taints.add(Taint.UNTRUSTED.value)
-                transaction.taint_flags = list(curr_taints)
-
-            # Audit record
             await _record_action_audit_event(
                 session=session,
                 tenant_id=auth.tenant_id,
-                event_type="ACTION_EXECUTED",
+                event_type="ACTION_DISPATCH_STARTED",
                 actor_identity_id=auth.identity_id,
                 transaction_id=contract.transaction_id,
-                decision=final_state.value,
-                payload={
-                    "action_id": contract.id,
-                    "tool": contract.tool_name,
-                    "state": final_state.value,
-                    "requires_outcome_assurance": contract.requires_outcome_assurance,
-                    "outcome_status": contract.outcome_status,
-                    "outcome_id": outcome_id,
-                },
+                decision="EXECUTING",
+                reason="Pre-dispatch checks passed, state committed to EXECUTING before tool proxy dispatch.",
+                payload={"action_id": contract.id, "tool": contract.tool_name},
             )
-            await session.flush()
+            # Phase 1 commits upon exiting this context manager
 
-            return ActionExecutionResult(
-                action_id=contract.id,
-                transaction_id=contract.transaction_id,
-                state=final_state,
-                observed_output=observed_output,
-                taints={Taint.UNTRUSTED},
-                postconditions_satisfied=postconditions_ok,
-                postcondition_evidence=evidence_records,
-                error_message=error_msg,
-                outcome_status=OutcomeStatus(contract.outcome_status) if contract.outcome_status else None,
-                outcome_id=outcome_id,
-                requires_outcome_assurance=contract.requires_outcome_assurance,
-            )
+        # ---------------------------------------------------------------------
+        # Phase 2: Dispatch strictly via Governed Tool Proxy
+        # ---------------------------------------------------------------------
+        observed_output, error_msg = await self.tool_proxy.dispatch(
+            contract=contract,
+            auth=auth,
+        )
+
+        # ---------------------------------------------------------------------
+        # Phase 3: Post-dispatch outcome persistence & state finalization
+        # ---------------------------------------------------------------------
+        try:
+            async with db_session.get_tenant_session(auth.tenant_id) as session:
+                stmt = (
+                    select(ActionContract)
+                    .where(
+                        ActionContract.tenant_id == auth.tenant_id,
+                        ActionContract.id == req.action_id,
+                    )
+                    .with_for_update()
+                )
+                res = await session.execute(stmt)
+                contract = res.scalar_one_or_none()
+                if not contract:
+                    raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action contract not found")
+
+                txn_stmt = (
+                    select(AITransaction)
+                    .where(
+                        AITransaction.tenant_id == auth.tenant_id,
+                        AITransaction.id == contract.transaction_id,
+                    )
+                    .with_for_update()
+                )
+                transaction = (await session.execute(txn_stmt)).scalar_one_or_none()
+
+                # Postcondition Evaluation against Tool Return Value
+                postconditions_ok = True
+                evidence_records: list[dict[str, Any]] = []
+                postconds = [PostconditionRule(**p) for p in (contract.postconditions or [])]
+
+                for post in postconds:
+                    satisfied, ev = self._evaluate_postcondition(post, observed_output)
+                    evidence_records.append(ev)
+                    if not satisfied:
+                        postconditions_ok = False
+
+                outcome_id: str | None = None
+                if error_msg:
+                    final_state = ActionState.FAILED
+                    contract.outcome_status = OutcomeStatus.VERIFIED_FAILURE.value
+                elif contract.requires_outcome_assurance:
+                    final_state = ActionState.EXECUTED
+                    contract.outcome_status = OutcomeStatus.PENDING_VERIFICATION.value
+
+                    deadline_sec = 30.0
+                    if contract.outcome_contract and isinstance(contract.outcome_contract, dict):
+                        deadline_sec = float(contract.outcome_contract.get("verification_deadline_seconds", 30.0))
+
+                    outcome_id = f"outc_{uuid.uuid4().hex[:12]}"
+                    target_env = (
+                        contract.blast_radius.get("target_environment", "DEFAULT")
+                        if isinstance(contract.blast_radius, dict)
+                        else "DEFAULT"
+                    )
+
+                    expected_posts: dict[str, Any] = {}
+                    if contract.postconditions and isinstance(contract.postconditions, list):
+                        for p in contract.postconditions:
+                            if isinstance(p, dict) and "target" in p:
+                                expected_posts[p["target"]] = p.get("expected_value")
+
+                    outcome_record = OutcomeVerificationRecord(
+                        id=outcome_id,
+                        tenant_id=auth.tenant_id,
+                        transaction_id=contract.transaction_id,
+                        action_id=contract.id,
+                        observability_class=ObservabilityClass.OBS_DIRECT.value,
+                        outcome_status=OutcomeStatus.PENDING_VERIFICATION.value,
+                        epistemic_confidence=0.0,
+                        verifier_adapter="PENDING_INDEPENDENT_OBSERVATION",
+                        is_simulated=False,
+                        expected_postconditions=expected_posts,
+                        observed_state={},
+                        discrepancies=[],
+                        evidence_payload={"transport_ack": observed_output, "dispatch_status": "EXECUTED"},
+                        reconciliation_notes=[
+                            "Action dispatched via tool proxy; awaiting independent target-state observation."
+                        ],
+                        verification_hash=compute_sha256(f"{auth.tenant_id}:{contract.id}:PENDING_VERIFICATION"),
+                        idempotency_key=f"idem_outc_{contract.id}_pending",
+                        target_environment=target_env,
+                        contract_binding_hash=contract.parameters_hash,
+                        verification_deadline=now + timedelta(seconds=deadline_sec),
+                        created_at=now,
+                        verified_at=now,
+                    )
+                    session.add(outcome_record)
+                    postconditions_ok = False
+                else:
+                    final_state = ActionState.COMPLETED if postconditions_ok else ActionState.FAILED
+                    contract.outcome_status = None
+
+                contract.state = final_state.value
+                contract.observed_result = observed_output
+                contract.error_message = error_msg
+                contract.completed_at = datetime.now(UTC)
+
+                # Append Tool Observation Context Source to parent transaction
+                if transaction:
+                    sources = list(transaction.context_sources or [])
+                    sources.append(
+                        {
+                            "id": f"ctx_tool_{uuid.uuid4().hex[:12]}",
+                            "source_type": "TOOL_OBSERVATION",
+                            "tool_name": contract.tool_name,
+                            "target_resource": contract.target_resource,
+                            "content": json.dumps(observed_output, default=str),
+                            "trust_score": 0.6,
+                            "taints": [Taint.UNTRUSTED.value],
+                            "timestamp": datetime.now(UTC).isoformat(),
+                        }
+                    )
+                    transaction.context_sources = sources
+                    curr_taints = set(transaction.taint_flags or [])
+                    curr_taints.add(Taint.UNTRUSTED.value)
+                    transaction.taint_flags = list(curr_taints)
+
+                # Audit record
+                await _record_action_audit_event(
+                    session=session,
+                    tenant_id=auth.tenant_id,
+                    event_type="ACTION_EXECUTED",
+                    actor_identity_id=auth.identity_id,
+                    transaction_id=contract.transaction_id,
+                    decision=final_state.value,
+                    payload={
+                        "action_id": contract.id,
+                        "tool": contract.tool_name,
+                        "state": final_state.value,
+                        "requires_outcome_assurance": contract.requires_outcome_assurance,
+                        "outcome_status": contract.outcome_status,
+                        "outcome_id": outcome_id,
+                    },
+                )
+                await session.flush()
+
+                return ActionExecutionResult(
+                    action_id=contract.id,
+                    transaction_id=contract.transaction_id,
+                    state=final_state,
+                    observed_output=observed_output,
+                    taints={Taint.UNTRUSTED},
+                    postconditions_satisfied=postconditions_ok,
+                    postcondition_evidence=evidence_records,
+                    error_message=error_msg,
+                    outcome_status=OutcomeStatus(contract.outcome_status) if contract.outcome_status else None,
+                    outcome_id=outcome_id,
+                    requires_outcome_assurance=contract.requires_outcome_assurance,
+                )
+        except Exception as post_err:
+            logger.error("Post-dispatch persistence failure for action %s: %s", req.action_id, post_err)
+            try:
+                async with db_session.get_tenant_session(auth.tenant_id) as rescue_session:
+                    r_stmt = (
+                        select(ActionContract)
+                        .where(
+                            ActionContract.tenant_id == auth.tenant_id,
+                            ActionContract.id == req.action_id,
+                        )
+                        .with_for_update()
+                    )
+                    r_res = await rescue_session.execute(r_stmt)
+                    r_contract = r_res.scalar_one_or_none()
+                    if r_contract:
+                        r_contract.state = ActionState.EXECUTION_UNCERTAIN.value
+                        r_contract.error_message = f"Post-dispatch persistence failure: {post_err}"
+                    await _record_action_audit_event(
+                        session=rescue_session,
+                        tenant_id=auth.tenant_id,
+                        event_type="ACTION_EXECUTION_UNCERTAIN",
+                        actor_identity_id=auth.identity_id,
+                        transaction_id=contract.transaction_id,
+                        decision="EXECUTION_UNCERTAIN",
+                        reason=f"External dispatch occurred but post-dispatch persistence failed: {post_err}",
+                        payload={"action_id": req.action_id, "error": str(post_err)},
+                    )
+            except Exception as rescue_err:
+                logger.critical(
+                    "Failed to record EXECUTION_UNCERTAIN state for action %s: %s",
+                    req.action_id,
+                    rescue_err,
+                )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=(
+                    "External dispatch succeeded but outcome persistence failed. "
+                    f"Action is in EXECUTION_UNCERTAIN state: {post_err}"
+                ),
+            ) from post_err
 
     # -------------------------------------------------------------------------
     # Helper Evaluators

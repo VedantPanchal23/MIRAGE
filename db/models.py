@@ -1050,4 +1050,12 @@ class ResourceLease(Base):
         Index("ix_resource_leases_tenant_resource_status", "tenant_id", "resource_uri", "status"),
         Index("ix_resource_leases_tenant_holder_txn", "tenant_id", "holder_transaction_id"),
         Index("ix_resource_leases_tenant_expires", "tenant_id", "expires_at"),
+        UniqueConstraint("tenant_id", "resource_uri", "fencing_token", name="uq_resource_leases_tenant_resource_token"),
+        Index(
+            "uq_resource_leases_tenant_resource_exclusive_active",
+            "tenant_id",
+            "resource_uri",
+            unique=True,
+            postgresql_where=text("status = 'ACQUIRED' AND concurrency_mode = 'EXCLUSIVE'"),
+        ),
     )

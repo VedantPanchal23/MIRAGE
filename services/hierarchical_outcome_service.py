@@ -399,6 +399,17 @@ class HierarchicalOutcomeService:
                 ),
             )
 
+        for c in outcome_resp.child_executions:
+            if not c.outcomes_verified or (c.state != "COMPLETED" and c.final_disposition != "COMPLETED"):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"Cannot complete transaction '{transaction_id}': child transaction '{c.child_transaction_id}' "
+                        f"is not verified completed (state: {c.state}, disposition: {c.final_disposition}, "
+                        f"outcomes_verified: {c.outcomes_verified})."
+                    ),
+                )
+
     def _evaluate_hierarchical_status(
         self,
         parent_txn: AITransaction,
@@ -429,6 +440,22 @@ class HierarchicalOutcomeService:
         if active_children:
             reconciliation_notes.append(f"{len(active_children)} child transaction(s) are actively executing.")
             return HierarchicalOutcomeStatus.PENDING_CHILD_WORK, 0.0
+
+        # Check for child transactions that terminated in non-successful state
+        failed_or_aborted_children = [
+            c
+            for c in child_executions
+            if c.state in ("FAILED", "CANCELLED", "TIMEOUT", "BLOCKED", "TERMINATED")
+            or c.final_disposition in ("FAILED", "CANCELLED", "TIMEOUT", "BLOCKED", "TERMINATED")
+        ]
+        if failed_or_aborted_children:
+            discrepancies.append(
+                f"Child transactions failed or aborted: {[c.child_transaction_id for c in failed_or_aborted_children]}"
+            )
+            reconciliation_notes.append("Child transaction(s) terminated in non-successful state.")
+            if any(c.state == "CANCELLED" or c.final_disposition == "CANCELLED" for c in failed_or_aborted_children):
+                return HierarchicalOutcomeStatus.CANCELLED, 0.0
+            return HierarchicalOutcomeStatus.HIERARCHICAL_FAILURE, 0.0
 
         # 4. Check for rejected, expired, or revoked handoffs without completed children
         aborted_handoffs = [
@@ -499,14 +526,16 @@ class HierarchicalOutcomeService:
             return HierarchicalOutcomeStatus.VERIFIED_SUCCESS, min_confidence
 
         # If no actions required outcome assurance, check if transactions completed cleanly
-        all_completed = (parent_txn.state == "COMPLETED" or parent_txn.final_disposition == "COMPLETED") and all(
-            c.execution_completed for c in child_executions
-        )
-        if all_completed:
+        all_completed_success = (
+            parent_txn.state == "COMPLETED" or parent_txn.final_disposition == "COMPLETED"
+        ) and all((c.state == "COMPLETED" or c.final_disposition == "COMPLETED") for c in child_executions)
+        if all_completed_success:
             reconciliation_notes.append(
-                "All transactions completed cleanly with no external outcome assurance required."
+                "All transactions completed with execution status COMPLETED, "
+                "but without independent Gate 5 outcome verification contracts; "
+                "epistemic confidence calibrated downward."
             )
-            return HierarchicalOutcomeStatus.VERIFIED_SUCCESS, 1.0
+            return HierarchicalOutcomeStatus.VERIFIED_SUCCESS, 0.5
 
         return HierarchicalOutcomeStatus.UNKNOWN, 0.0
 

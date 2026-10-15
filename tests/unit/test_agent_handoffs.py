@@ -482,7 +482,7 @@ class TestAgentHandoffLifecycle:
         exec_audit = MagicMock()
         exec_audit.first.return_value = None
 
-        session.execute.side_effect = [exec_hnd, exec_del, exec_parent, exec_audit]
+        session.execute.side_effect = [exec_hnd, exec_parent, exec_del, exec_audit]
 
         with (
             patch("services.handoff_service.get_tenant_session") as mock_ts,
@@ -610,7 +610,7 @@ class TestAgentHandoffLifecycle:
         exec_parent = MagicMock()
         exec_parent.scalar_one_or_none.return_value = parent_txn
 
-        session.execute.side_effect = [exec_hnd, exec_del, exec_parent]
+        session.execute.side_effect = [exec_hnd, exec_parent, exec_del]
 
         with patch("services.handoff_service.get_tenant_session") as mock_ts:
             mock_cm = AsyncMock()
@@ -810,7 +810,7 @@ class TestAgentHandoffLifecycle:
         )
 
         exec_mock = MagicMock()
-        exec_mock.scalar_one_or_none.side_effect = [handoff, delegation, parent_txn]
+        exec_mock.scalar_one_or_none.side_effect = [handoff, parent_txn, delegation]
         session.execute.return_value = exec_mock
 
         # Make flush inside begin_nested fail with an operational error

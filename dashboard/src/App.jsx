@@ -19,6 +19,7 @@ import { ContextAssuranceView } from "./views/ContextAssuranceView";
 import { ActionAssuranceView } from "./views/ActionAssuranceView";
 import { OutputAssuranceView } from "./views/OutputAssuranceView";
 import { OutcomeAssuranceView } from "./views/OutcomeAssuranceView";
+import { MultiAgentGovernanceView } from "./views/MultiAgentGovernanceView";
 
 /**
  * Dashboard application shell managing navigation state, header actions, and view routing.
@@ -106,6 +107,14 @@ export function DashboardShell() {
       case "outcomes":
         return (
           <OutcomeAssuranceView
+            isRefreshing={isRefreshing}
+            onDataLoaded={handleDataLoaded}
+          />
+        );
+
+      case "multiagent":
+        return (
+          <MultiAgentGovernanceView
             isRefreshing={isRefreshing}
             onDataLoaded={handleDataLoaded}
           />

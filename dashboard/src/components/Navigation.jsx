@@ -9,6 +9,7 @@ import {
   Wrench,
   ShieldCheck,
   Eye,
+  Network,
 } from "lucide-react";
 import { PERMISSIONS } from "../context/AuthContext";
 
@@ -23,6 +24,7 @@ import { PERMISSIONS } from "../context/AuthContext";
  * - alerts: DASHBOARD_READ (backend GET /v1/alerts)
  * - context: DASHBOARD_READ (backend Gate 2 Context & Memory)
  * - actions: DASHBOARD_READ (backend Gate 3 Action Assurance & Tool Governance)
+ * - multiagent: DASHBOARD_READ (backend Phase 8 Agent Governance, Delegations, Handoffs, Leases)
  */
 export const SECTION_PERMISSIONS = Object.freeze({
   overview: [PERMISSIONS.DASHBOARD_READ],
@@ -34,6 +36,7 @@ export const SECTION_PERMISSIONS = Object.freeze({
   actions: [PERMISSIONS.DASHBOARD_READ],
   output: [PERMISSIONS.DASHBOARD_READ],
   outcomes: [PERMISSIONS.DASHBOARD_READ],
+  multiagent: [PERMISSIONS.DASHBOARD_READ],
 });
 
 export const NAV_ITEMS = [
@@ -66,6 +69,12 @@ export const NAV_ITEMS = [
     label: "Outcome Assurance",
     icon: Eye,
     requiredPermissions: SECTION_PERMISSIONS.outcomes,
+  },
+  {
+    id: "multiagent",
+    label: "Multi-Agent",
+    icon: Network,
+    requiredPermissions: SECTION_PERMISSIONS.multiagent,
   },
   {
     id: "drift",

@@ -133,6 +133,12 @@ describe("Dashboard Shell & Application Integration (App.test.jsx)", () => {
     await waitFor(() => {
       expect(screen.getByRole("heading", { name: "Operator Alerts & Operational Events" })).toBeInTheDocument();
     });
+
+    // Switch to Multi-Agent tab -> Renders MultiAgentGovernanceView
+    fireEvent.click(screen.getByRole("tab", { name: /multi-agent/i }));
+    await waitFor(() => {
+      expect(screen.getByRole("heading", { name: "Governed Multi-Agent Coordination & Assurance" })).toBeInTheDocument();
+    });
   });
 
   describe("Canonical RBAC UX Gating Across All 5 Canonical Roles", () => {

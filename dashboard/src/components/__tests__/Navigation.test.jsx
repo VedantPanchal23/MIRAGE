@@ -30,6 +30,9 @@ describe("Navigation Component & Section Permissions", () => {
 
       // alerts: GET /v1/alerts requires DASHBOARD_READ (gateway/routes/alerts.py)
       expect(SECTION_PERMISSIONS.alerts).toEqual([PERMISSIONS.DASHBOARD_READ]);
+
+      // multiagent: Phase 8 Agent Governance & Assurance requires DASHBOARD_READ
+      expect(SECTION_PERMISSIONS.multiagent).toEqual([PERMISSIONS.DASHBOARD_READ]);
     });
 
     it("evaluates isSectionPermitted based strictly on permission checks", () => {
@@ -38,6 +41,7 @@ describe("Navigation Component & Section Permissions", () => {
       expect(isSectionPermitted("overview", dashboardOnly)).toBe(true);
       expect(isSectionPermitted("drift", dashboardOnly)).toBe(true);
       expect(isSectionPermitted("alerts", dashboardOnly)).toBe(true);
+      expect(isSectionPermitted("multiagent", dashboardOnly)).toBe(true);
       expect(isSectionPermitted("stream", dashboardOnly)).toBe(false);
       expect(isSectionPermitted("sessions", dashboardOnly)).toBe(false);
 
@@ -60,7 +64,7 @@ describe("Navigation Component & Section Permissions", () => {
   });
 
   describe("Navigation Rendering & Accessibility", () => {
-    it("renders all 9 navigation tabs with proper roles", () => {
+    it("renders all 10 navigation tabs with proper roles", () => {
       render(
         <Navigation
           activeTab="overview"
@@ -75,11 +79,12 @@ describe("Navigation Component & Section Permissions", () => {
       expect(screen.getByRole("tab", { name: /action assurance/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /output assurance/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /outcome assurance/i })).toBeInTheDocument();
+      expect(screen.getByRole("tab", { name: /multi-agent/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /drift/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /sessions/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /live stream/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /alerts/i })).toBeInTheDocument();
-      expect(NAV_ITEMS.length).toBe(9);
+      expect(NAV_ITEMS.length).toBe(10);
     });
 
     it("marks active tab with aria-selected='true'", () => {

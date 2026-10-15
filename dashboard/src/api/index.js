@@ -72,6 +72,32 @@ export {
   getOutputAssuranceRecord,
 } from "./output";
 
+export {
+  listAgents,
+  getAgent,
+  registerAgent,
+  activateAgent,
+  suspendAgent,
+  revokeAgent,
+  listDelegations,
+  getDelegation,
+  createDelegation,
+  activateDelegation,
+  revokeDelegation,
+  validateDelegation,
+  listHandoffs,
+  getHandoff,
+  createHandoff,
+  acceptHandoff,
+  cancelHandoff,
+  completeHandoff,
+  listLeases,
+  acquireLease,
+  releaseLease,
+  renewLease,
+  getTransactionHierarchy,
+} from "./multiagent";
+
 import * as dashboard from "./dashboard";
 import * as alerts from "./alerts";
 import * as stream from "./stream";
@@ -81,6 +107,7 @@ import * as auth from "./auth";
 import * as context from "./context";
 import * as actions from "./actions";
 import * as output from "./output";
+import * as multiagent from "./multiagent";
 import { apiFetch, setApiToken, getApiToken, onUnauthorized, ApiError } from "./client";
 
 export const api = {
@@ -98,6 +125,7 @@ export const api = {
   context,
   actions,
   output,
+  multiagent,
 };
 
 export default api;

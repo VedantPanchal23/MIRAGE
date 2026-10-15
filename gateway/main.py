@@ -18,12 +18,14 @@ from db.redis import RedisServiceError, default_redis_client_manager
 from gateway.middleware.pii import PIIDetectionMiddleware
 from gateway.middleware.security import HeaderSanitizationMiddleware, SecurityHeadersMiddleware
 from gateway.routes.actions import router as actions_router
+from gateway.routes.agents import router as agents_router
 from gateway.routes.alerts import router as alerts_router
 from gateway.routes.audit import router as audit_router
 from gateway.routes.auth import router as auth_router
 from gateway.routes.budgets import router as budgets_router
 from gateway.routes.context import router as context_router
 from gateway.routes.dashboard import router as dashboard_router
+from gateway.routes.delegations import router as delegations_router
 from gateway.routes.health import router as health_router
 from gateway.routes.knowledge_base import router as knowledge_base_router
 from gateway.routes.models import router as models_router
@@ -140,6 +142,8 @@ def create_app() -> FastAPI:
     app.include_router(transactions_router)
     app.include_router(context_router)
     app.include_router(actions_router)
+    app.include_router(agents_router)
+    app.include_router(delegations_router)
     app.include_router(output_router)
     app.include_router(outcomes_router)
     app.include_router(dashboard_router)

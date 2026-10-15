@@ -51,8 +51,11 @@ from shared.schemas.claims import (
 )
 from shared.schemas.delegation import (
     AttenuatedCapabilitySpec,
+    DelegationActivationRequest,
     DelegationGrantRequest,
     DelegationGrantResponse,
+    DelegationOperationValidationRequest,
+    DelegationRevocationRequest,
     DelegationStatus,
 )
 from shared.schemas.error import ErrorDetail, ErrorEnvelope
@@ -203,6 +206,9 @@ __all__ = [
     "AttenuatedCapabilitySpec",
     "DelegationGrantRequest",
     "DelegationGrantResponse",
+    "DelegationActivationRequest",
+    "DelegationRevocationRequest",
+    "DelegationOperationValidationRequest",
     "AgentStatus",
     "AgentRegistrationRequest",
     "AgentResponse",

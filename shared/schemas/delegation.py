@@ -154,3 +154,47 @@ class DelegationGrantResponse(BaseModel):
     expires_at: datetime = Field(description="UTC timestamp when the delegation grant expires")
     revoked_at: datetime | None = Field(default=None, description="UTC timestamp of explicit revocation, if revoked")
     created_at: datetime = Field(description="UTC timestamp of grant creation")
+
+
+class DelegationActivationRequest(BaseModel):
+    """Request payload to bind a pending delegation grant to a child transaction."""
+
+    child_transaction_id: str = Field(
+        min_length=1,
+        max_length=255,
+        description="ID of the spawned child transaction to bind to this grant",
+    )
+
+    @field_validator("child_transaction_id")
+    @classmethod
+    def validate_non_whitespace(cls, val: str) -> str:
+        stripped = val.strip()
+        if not stripped:
+            raise ValueError("Field cannot be empty or whitespace only")
+        return stripped
+
+
+class DelegationRevocationRequest(BaseModel):
+    """Request payload to explicitly revoke an active or pending delegation grant."""
+
+    reason: str = Field(
+        min_length=1,
+        max_length=1000,
+        description="Mandatory operational or security reason for grant revocation",
+    )
+
+    @field_validator("reason")
+    @classmethod
+    def validate_non_whitespace(cls, val: str) -> str:
+        stripped = val.strip()
+        if not stripped:
+            raise ValueError("Reason cannot be empty or whitespace only")
+        return stripped
+
+
+class DelegationOperationValidationRequest(BaseModel):
+    """Request payload to evaluate delegation validity for a specific operation."""
+
+    capability_type: str = Field(min_length=1, max_length=255, description="Required capability type")
+    resource: dict[str, Any] = Field(default_factory=dict, description="Target resource and parameters")
+    requested_autonomy_level: int = Field(default=0, ge=0, le=4, description="Requested autonomy level")

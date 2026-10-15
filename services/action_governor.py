@@ -15,12 +15,15 @@ from db import session as db_session
 from db.models import (
     ActionApproval,
     ActionContract,
+    AgentDelegation,
     AITransaction,
     AuditLogRecord,
     Capability,
     OutcomeVerificationRecord,
     ToolDefinition,
 )
+from services.agent_governance import agent_governance_service
+from services.delegation_service import delegation_service
 from shared.schemas.action import (
     ActionAuthorizationDecision,
     ActionBatchProposal,
@@ -50,17 +53,19 @@ from shared.schemas.control_plane import (
     Taint,
     is_dangerous_triad_active,
 )
+from shared.schemas.delegation import DelegationStatus
 from shared.schemas.outcome import ObservabilityClass, OutcomeStatus
 
 # Constants for Salami-Slicing Defense & Cumulative Blast Radius
 MAX_WINDOW_HOURS = 1
 MAX_WINDOW_CUMULATIVE_COST = 1000.0  # Max aggregate dollars spent in 1-hour window
-MAX_WINDOW_CUMULATIVE_RISK = 250    # Max aggregate risk score points in 1-hour window
-MAX_WINDOW_ACTION_COUNT = 50        # Max actions in 1-hour window
+MAX_WINDOW_CUMULATIVE_RISK = 250  # Max aggregate risk score points in 1-hour window
+MAX_WINDOW_ACTION_COUNT = 50  # Max actions in 1-hour window
 
 
 class ToolProxyBypassError(Exception):
     """Raised when an unverified or direct tool call attempts to bypass Gate 3 Action Governance."""
+
     pass
 
 
@@ -79,6 +84,7 @@ _SAFE_ARITHMETIC_OPS: dict[type[ast.AST], Callable[..., Any]] = {
 
 def _safe_eval_math(expr: str) -> float | int:
     """Safe abstract syntax tree mathematical evaluator eliminating eval()."""
+
     def _eval_node(node: ast.AST) -> float | int:
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
             return node.value
@@ -375,9 +381,7 @@ class ActionGovernorService:
     # Gate 3 Action Assurance & Authorization Evaluation
     # -------------------------------------------------------------------------
 
-    async def propose_and_authorize_action(
-        self, auth: AuthContext, req: ActionProposal
-    ) -> ActionAuthorizationDecision:
+    async def propose_and_authorize_action(self, auth: AuthContext, req: ActionProposal) -> ActionAuthorizationDecision:
         """Evaluate Gate 3 Action Assurance for a proposed action contract."""
         async with db_session.get_tenant_session(auth.tenant_id) as session:
             # 1. Verify parent transaction existence and tenancy
@@ -399,6 +403,28 @@ class ActionGovernorService:
                     parameters_hash="",
                 )
 
+            # Check initiating agent lifecycle eligibility
+            if transaction.agent_id:
+                is_eligible = await agent_governance_service.is_agent_eligible_for_transaction(
+                    session=session,
+                    tenant_id=auth.tenant_id,
+                    agent_id=transaction.agent_id,
+                )
+                if not is_eligible:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.BLOCK,
+                        state=ActionState.BLOCKED,
+                        reason=(
+                            f"Initiating agent '{transaction.agent_id}' is not eligible to propose actions "
+                            f"(suspended, revoked, or inactive)"
+                        ),
+                        risk_score=100,
+                        autonomy_level=4,
+                        normalized_parameters={},
+                        parameters_hash="",
+                    )
+
             # Check idempotency for existing action contract
             existing_act_stmt = select(ActionContract).where(
                 ActionContract.tenant_id == auth.tenant_id,
@@ -407,6 +433,23 @@ class ActionGovernorService:
             existing_act_res = await session.execute(existing_act_stmt)
             existing_contract = existing_act_res.scalar_one_or_none()
             if existing_contract:
+                # Semantic mismatch check: reject key reuse for materially different action semantics
+                if (
+                    existing_contract.transaction_id != req.transaction_id
+                    or existing_contract.tool_name != req.tool_name
+                    or existing_contract.action_type != req.action_type.value
+                    or existing_contract.target_resource != req.target_resource
+                ):
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.BLOCK,
+                        state=ActionState.BLOCKED,
+                        reason="Idempotency key reuse across materially different action semantics is prohibited",
+                        risk_score=100,
+                        autonomy_level=4,
+                        normalized_parameters={},
+                        parameters_hash="",
+                    )
                 dec = (
                     Decision.ALLOW
                     if existing_contract.state in (ActionState.AUTHORIZED, ActionState.COMPLETED)
@@ -488,7 +531,97 @@ class ActionGovernorService:
 
             params_hash = compute_parameters_hash(normalized_params)
 
-            # 4. Capability Authorization
+            # 4. Cross-Agent Delegation Resolution & Verification for Child Transactions
+            delegation: AgentDelegation | None = None
+            if transaction.parent_transaction_id is not None:
+                del_stmt = select(AgentDelegation).where(
+                    AgentDelegation.tenant_id == auth.tenant_id,
+                    AgentDelegation.child_transaction_id == transaction.id,
+                )
+                del_res = await session.execute(del_stmt)
+                delegation = del_res.scalar_one_or_none()
+                if not delegation:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.BLOCK,
+                        state=ActionState.BLOCKED,
+                        reason=f"Child transaction '{transaction.id}' has no bound delegation grant",
+                        risk_score=100,
+                        autonomy_level=4,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+                if delegation.status != DelegationStatus.ACTIVE.value:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.BLOCK,
+                        state=ActionState.BLOCKED,
+                        reason=f"Delegation grant '{delegation.id}' is not ACTIVE (current: {delegation.status})",
+                        risk_score=100,
+                        autonomy_level=4,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+                now_utc = datetime.now(UTC)
+                if delegation.expires_at <= now_utc or delegation.revoked_at is not None:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.BLOCK,
+                        state=ActionState.BLOCKED,
+                        reason=f"Delegation grant '{delegation.id}' has expired or is revoked",
+                        risk_score=100,
+                        autonomy_level=4,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+                if delegation.child_agent_id != transaction.agent_id:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.BLOCK,
+                        state=ActionState.BLOCKED,
+                        reason=(
+                            f"Delegation grant child agent '{delegation.child_agent_id}' does not match "
+                            f"transaction agent '{transaction.agent_id}'"
+                        ),
+                        risk_score=100,
+                        autonomy_level=4,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+                if delegation.parent_transaction_id != transaction.parent_transaction_id:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.BLOCK,
+                        state=ActionState.BLOCKED,
+                        reason="Delegation grant parent transaction does not match child transaction parent",
+                        risk_score=100,
+                        autonomy_level=4,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+
+                # Validate delegation operation via DelegationService (status, ancestor chain, scope, constraints)
+                pol_decision = await delegation_service.validate_delegation_for_operation(
+                    auth=auth,
+                    delegation_id=delegation.id,
+                    capability_type=tool.required_capability,
+                    resource={"target_resource": req.target_resource, **normalized_params},
+                    requested_autonomy_level=0,  # preliminary check; autonomy level ceiling evaluated in risk section
+                    session=session,
+                )
+                if pol_decision.decision == Decision.DENY:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.DENY,
+                        state=ActionState.BLOCKED,
+                        reason=f"Delegation policy denial: {pol_decision.reason}",
+                        risk_score=95,
+                        autonomy_level=4,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+
+            # 5. Capability Authorization
             now = datetime.now(UTC)
             cap_stmt = select(Capability).where(
                 Capability.tenant_id == auth.tenant_id,
@@ -506,7 +639,52 @@ class ActionGovernorService:
 
             cap_res = await session.execute(cap_stmt)
             granted_capabilities = cap_res.scalars().all()
-            if not granted_capabilities:
+
+            matching_cap: Any = None
+            if granted_capabilities:
+                matching_cap = granted_capabilities[0]
+
+            if delegation is not None:
+                delegated_cap_dict = next(
+                    (
+                        c
+                        for c in delegation.delegated_capabilities
+                        if c.get("capability_type") == tool.required_capability
+                    ),
+                    None,
+                )
+                if not delegated_cap_dict and matching_cap is None:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.DENY,
+                        state=ActionState.BLOCKED,
+                        reason=f"Missing capability: Delegated scope lacks capability '{tool.required_capability}'",
+                        risk_score=85,
+                        autonomy_level=4,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+                if delegated_cap_dict:
+                    cap_constraints = delegated_cap_dict.get("constraints") or {}
+                    cap_scope = delegated_cap_dict.get("resource_scope") or {}
+                    cap_autonomy = min(
+                        delegation.max_autonomy_level,
+                        delegated_cap_dict.get("max_autonomy_level", 0),
+                    )
+                    if matching_cap is not None:
+                        cap_autonomy = min(cap_autonomy, matching_cap.max_autonomy_level)
+                    from types import SimpleNamespace
+
+                    matching_cap = SimpleNamespace(
+                        constraints=cap_constraints
+                        if matching_cap is None
+                        else {**(matching_cap.constraints or {}), **cap_constraints},
+                        resource_scope=cap_scope
+                        if matching_cap is None
+                        else {**(matching_cap.resource_scope or {}), **cap_scope},
+                        max_autonomy_level=cap_autonomy,
+                    )
+            elif not granted_capabilities:
                 return ActionAuthorizationDecision(
                     action_id=f"act_err_{uuid.uuid4().hex[:8]}",
                     decision=Decision.DENY,
@@ -522,7 +700,6 @@ class ActionGovernorService:
                 )
 
             # Check capability constraints (e.g., allowed resource prefixes, max limits)
-            matching_cap = granted_capabilities[0]
             constraints = matching_cap.constraints or {}
             resource_scope = matching_cap.resource_scope or {}
 
@@ -634,11 +811,13 @@ class ActionGovernorService:
             ).where(
                 ActionContract.tenant_id == auth.tenant_id,
                 ActionContract.created_at >= window_start,
-                ActionContract.state.in_([
-                    ActionState.AUTHORIZED.value,
-                    ActionState.EXECUTING.value,
-                    ActionState.COMPLETED.value,
-                ]),
+                ActionContract.state.in_(
+                    [
+                        ActionState.AUTHORIZED.value,
+                        ActionState.EXECUTING.value,
+                        ActionState.COMPLETED.value,
+                    ]
+                ),
             )
             blast_res = await session.execute(blast_stmt)
             blast_row = blast_res.one()
@@ -649,11 +828,13 @@ class ActionGovernorService:
             cost_contracts_stmt = select(ActionContract.blast_radius).where(
                 ActionContract.tenant_id == auth.tenant_id,
                 ActionContract.created_at >= window_start,
-                ActionContract.state.in_([
-                    ActionState.AUTHORIZED.value,
-                    ActionState.EXECUTING.value,
-                    ActionState.COMPLETED.value,
-                ]),
+                ActionContract.state.in_(
+                    [
+                        ActionState.AUTHORIZED.value,
+                        ActionState.EXECUTING.value,
+                        ActionState.COMPLETED.value,
+                    ]
+                ),
             )
             cost_contracts_res = await session.execute(cost_contracts_stmt)
             all_radii = cost_contracts_res.scalars().all()
@@ -675,6 +856,29 @@ class ActionGovernorService:
                 or is_salami_violation
                 or (autonomy_level > matching_cap.max_autonomy_level)
             )
+
+            if delegation is not None:
+                del_autonomy_check = await delegation_service.validate_delegation_for_operation(
+                    auth=auth,
+                    delegation_id=delegation.id,
+                    capability_type=tool.required_capability,
+                    resource={"target_resource": req.target_resource, **normalized_params},
+                    requested_autonomy_level=autonomy_level,
+                    session=session,
+                )
+                if del_autonomy_check.decision == Decision.DENY:
+                    return ActionAuthorizationDecision(
+                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                        decision=Decision.DENY,
+                        state=ActionState.BLOCKED,
+                        reason=f"Delegation policy denial: {del_autonomy_check.reason}",
+                        risk_score=single_action_risk,
+                        autonomy_level=autonomy_level,
+                        normalized_parameters=normalized_params,
+                        parameters_hash=params_hash,
+                    )
+                elif del_autonomy_check.decision == Decision.REQUIRE_APPROVAL:
+                    requires_human_approval = True
 
             # Phase 6: Outcome Assurance Contract Validation
             requires_outcome_assurance = bool(
@@ -750,8 +954,7 @@ class ActionGovernorService:
                             decision=Decision.BLOCK,
                             state=ActionState.BLOCKED,
                             reason=(
-                                "Outcome Assurance contract violation: "
-                                "verification_deadline_seconds must be positive."
+                                "Outcome Assurance contract violation: verification_deadline_seconds must be positive."
                             ),
                             risk_score=single_action_risk,
                             autonomy_level=autonomy_level,
@@ -768,7 +971,9 @@ class ActionGovernorService:
                     "risk_sensitive_verification_policy": (
                         req.outcome_contract.risk_sensitive_verification_policy.value
                         if req.outcome_contract
-                        else "STRICT_DIRECT_ONLY" if single_action_risk >= 60 else "DEFAULT"
+                        else "STRICT_DIRECT_ONLY"
+                        if single_action_risk >= 60
+                        else "DEFAULT"
                     ),
                     "on_partial": req.outcome_contract.on_partial.value if req.outcome_contract else "HOLD_FOR_REVIEW",
                     "on_uncertain": req.outcome_contract.on_uncertain.value if req.outcome_contract else "ESCALATE",
@@ -954,16 +1159,19 @@ class ActionGovernorService:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=(
-                    "Agents cannot self-grant approvals. L4 approvals require human "
-                    "administrator/operator credentials."
+                    "Agents cannot self-grant approvals. L4 approvals require human administrator/operator credentials."
                 ),
             )
 
         async with db_session.get_tenant_session(auth.tenant_id) as session:
-            stmt = select(ActionApproval).where(
-                ActionApproval.tenant_id == auth.tenant_id,
-                ActionApproval.id == approval_id,
-            ).with_for_update()
+            stmt = (
+                select(ActionApproval)
+                .where(
+                    ActionApproval.tenant_id == auth.tenant_id,
+                    ActionApproval.id == approval_id,
+                )
+                .with_for_update()
+            )
             res = await session.execute(stmt)
             approval = res.scalar_one_or_none()
             if not approval:
@@ -974,8 +1182,7 @@ class ActionGovernorService:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
                     detail=(
-                        "Agent/Requester cannot approve their own action proposal. "
-                        "Distinct human sign-off required."
+                        "Agent/Requester cannot approve their own action proposal. Distinct human sign-off required."
                     ),
                 )
 
@@ -992,10 +1199,14 @@ class ActionGovernorService:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Approval request has expired")
 
             # Transition action contract to AUTHORIZED with row lock
-            act_stmt = select(ActionContract).where(
-                ActionContract.tenant_id == auth.tenant_id,
-                ActionContract.id == approval.action_id,
-            ).with_for_update()
+            act_stmt = (
+                select(ActionContract)
+                .where(
+                    ActionContract.tenant_id == auth.tenant_id,
+                    ActionContract.id == approval.action_id,
+                )
+                .with_for_update()
+            )
             act_res = await session.execute(act_stmt)
             contract = act_res.scalar_one_or_none()
             if not contract:
@@ -1073,10 +1284,14 @@ class ActionGovernorService:
             )
 
         async with db_session.get_tenant_session(auth.tenant_id) as session:
-            stmt = select(ActionApproval).where(
-                ActionApproval.tenant_id == auth.tenant_id,
-                ActionApproval.id == approval_id,
-            ).with_for_update()
+            stmt = (
+                select(ActionApproval)
+                .where(
+                    ActionApproval.tenant_id == auth.tenant_id,
+                    ActionApproval.id == approval_id,
+                )
+                .with_for_update()
+            )
             res = await session.execute(stmt)
             approval = res.scalar_one_or_none()
             if not approval:
@@ -1089,10 +1304,14 @@ class ActionGovernorService:
             approval.decided_at = now
 
             # Transition action contract to BLOCKED with row lock
-            act_stmt = select(ActionContract).where(
-                ActionContract.tenant_id == auth.tenant_id,
-                ActionContract.id == approval.action_id,
-            ).with_for_update()
+            act_stmt = (
+                select(ActionContract)
+                .where(
+                    ActionContract.tenant_id == auth.tenant_id,
+                    ActionContract.id == approval.action_id,
+                )
+                .with_for_update()
+            )
             act_res = await session.execute(act_stmt)
             contract = act_res.scalar_one_or_none()
             if contract:
@@ -1163,14 +1382,28 @@ class ActionGovernorService:
     async def execute_action(self, auth: AuthContext, req: ActionExecutionRequest) -> ActionExecutionResult:
         """Execute an authorized action contract strictly through the Governed Tool Proxy."""
         async with db_session.get_tenant_session(auth.tenant_id) as session:
-            stmt = select(ActionContract).where(
-                ActionContract.tenant_id == auth.tenant_id,
-                ActionContract.id == req.action_id,
-            ).with_for_update()
+            stmt = (
+                select(ActionContract)
+                .where(
+                    ActionContract.tenant_id == auth.tenant_id,
+                    ActionContract.id == req.action_id,
+                )
+                .with_for_update()
+            )
             res = await session.execute(stmt)
             contract = res.scalar_one_or_none()
             if not contract:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action contract not found")
+
+            # Principal binding check: Prevent proposals authorized under one principal from being executed by another
+            if auth.role != Role.SUPER_ADMIN:
+                if auth.identity_id != contract.actor_identity_id and (
+                    not auth.agent_id or auth.agent_id != contract.agent_id
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Principal mismatch: action contract was authorized for a different actor or agent",
+                    )
 
             # Invariant: Action must not be in terminal or blocked states
             if contract.state == ActionState.BLOCKED.value:
@@ -1200,11 +1433,34 @@ class ActionGovernorService:
             transaction = txn_res.scalar_one_or_none()
             if not transaction:
                 raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Parent transaction not found")
-            if transaction.final_disposition in ("BLOCKED", "FAILED", "CANCELLED", "TIMEOUT"):
+            if transaction.state in (
+                "COMPLETED",
+                "FAILED",
+                "BLOCKED",
+                "CANCELLED",
+                "TIMEOUT",
+                "PARTIAL",
+            ) or transaction.final_disposition in ("BLOCKED", "FAILED", "CANCELLED", "TIMEOUT"):
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Parent transaction is in terminal/aborted state '{transaction.final_disposition}'",
+                    detail=(
+                        f"Parent transaction is in terminal/aborted state "
+                        f"(state='{transaction.state}', disposition='{transaction.final_disposition}')"
+                    ),
                 )
+
+            # Re-verify Initiating Agent Lifecycle State at Execution Boundary
+            if contract.agent_id:
+                is_eligible = await agent_governance_service.is_agent_eligible_for_transaction(
+                    session=session,
+                    tenant_id=auth.tenant_id,
+                    agent_id=contract.agent_id,
+                )
+                if not is_eligible:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Agent '{contract.agent_id}' is suspended, revoked, or inactive at execution time.",
+                    )
 
             # Re-verify Tool is still active in Registry
             tool_stmt = select(ToolDefinition).where(
@@ -1220,6 +1476,70 @@ class ActionGovernorService:
                 )
 
             now = datetime.now(UTC)
+
+            # Re-verify Delegation Grant at Execution Boundary for Child Transactions
+            delegation: AgentDelegation | None = None
+            if transaction.parent_transaction_id is not None:
+                del_stmt = (
+                    select(AgentDelegation)
+                    .where(
+                        AgentDelegation.tenant_id == auth.tenant_id,
+                        AgentDelegation.child_transaction_id == transaction.id,
+                    )
+                    .with_for_update()
+                )
+                del_res = await session.execute(del_stmt)
+                delegation = del_res.scalar_one_or_none()
+                if not delegation:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Execution blocked: Child transaction '{transaction.id}' has no bound delegation grant."
+                        ),
+                    )
+                if delegation.status != DelegationStatus.ACTIVE.value:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Execution blocked: Delegation grant '{delegation.id}' "
+                            f"is not ACTIVE (current: {delegation.status})."
+                        ),
+                    )
+                if delegation.expires_at <= now:
+                    delegation.status = DelegationStatus.EXPIRED.value
+                    await session.flush()
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Execution blocked: Delegation grant '{delegation.id}' has expired.",
+                    )
+                if delegation.revoked_at is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Execution blocked: Delegation grant '{delegation.id}' is revoked.",
+                    )
+                if delegation.child_agent_id != contract.agent_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Execution blocked: Delegation child agent '{delegation.child_agent_id}' "
+                            f"does not match contract agent '{contract.agent_id}'."
+                        ),
+                    )
+
+                # Execution-time delegation revalidation (ancestor chain, scope, constraints)
+                val_res = await delegation_service.validate_delegation_for_operation(
+                    auth=auth,
+                    delegation_id=delegation.id,
+                    capability_type=contract.required_capability,
+                    resource={"target_resource": contract.target_resource, **(contract.normalized_parameters or {})},
+                    requested_autonomy_level=min(4, contract.risk_score // 20),
+                    session=session,
+                )
+                if val_res.decision != Decision.ALLOW:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Execution blocked by delegation revalidation: {val_res.reason}",
+                    )
 
             # Re-verify Actor still holds the required capability (Fail-closed on runtime revocation)
             cap_stmt = select(Capability).where(
@@ -1238,20 +1558,42 @@ class ActionGovernorService:
             cap_res = await session.execute(cap_stmt)
             active_caps = cap_res.scalars().all()
             if not active_caps:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
-                        f"Capability revoked or expired for required scope '{contract.required_capability}'. "
-                        "Execution blocked."
-                    ),
-                )
+                if delegation is not None:
+                    delegated_cap_dict = next(
+                        (
+                            c
+                            for c in delegation.delegated_capabilities
+                            if c.get("capability_type") == contract.required_capability
+                        ),
+                        None,
+                    )
+                    if not delegated_cap_dict:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail=(
+                                f"Capability revoked or expired for required scope '{contract.required_capability}'. "
+                                "Execution blocked."
+                            ),
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Capability revoked or expired for required scope '{contract.required_capability}'. "
+                            "Execution blocked."
+                        ),
+                    )
 
             # Approval Replay & Tamper Defense:
             if contract.approval_id:
-                appr_stmt = select(ActionApproval).where(
-                    ActionApproval.tenant_id == auth.tenant_id,
-                    ActionApproval.id == contract.approval_id,
-                ).with_for_update()
+                appr_stmt = (
+                    select(ActionApproval)
+                    .where(
+                        ActionApproval.tenant_id == auth.tenant_id,
+                        ActionApproval.id == contract.approval_id,
+                    )
+                    .with_for_update()
+                )
                 appr_res = await session.execute(appr_stmt)
                 approval = appr_res.scalar_one_or_none()
                 if not approval:
@@ -1404,16 +1746,18 @@ class ActionGovernorService:
             # Append Tool Observation Context Source to parent transaction
             if transaction:
                 sources = list(transaction.context_sources or [])
-                sources.append({
-                    "id": f"ctx_tool_{uuid.uuid4().hex[:12]}",
-                    "source_type": "TOOL_OBSERVATION",
-                    "tool_name": contract.tool_name,
-                    "target_resource": contract.target_resource,
-                    "content": json.dumps(observed_output, default=str),
-                    "trust_score": 0.6,
-                    "taints": [Taint.UNTRUSTED.value],
-                    "timestamp": datetime.now(UTC).isoformat(),
-                })
+                sources.append(
+                    {
+                        "id": f"ctx_tool_{uuid.uuid4().hex[:12]}",
+                        "source_type": "TOOL_OBSERVATION",
+                        "tool_name": contract.tool_name,
+                        "target_resource": contract.target_resource,
+                        "content": json.dumps(observed_output, default=str),
+                        "trust_score": 0.6,
+                        "taints": [Taint.UNTRUSTED.value],
+                        "timestamp": datetime.now(UTC).isoformat(),
+                    }
+                )
                 transaction.context_sources = sources
                 curr_taints = set(transaction.taint_flags or [])
                 curr_taints.add(Taint.UNTRUSTED.value)
@@ -1456,9 +1800,7 @@ class ActionGovernorService:
     # Helper Evaluators
     # -------------------------------------------------------------------------
 
-    def _evaluate_precondition(
-        self, precond: PreconditionRule, params: dict[str, Any], target_resource: str
-    ) -> bool:
+    def _evaluate_precondition(self, precond: PreconditionRule, params: dict[str, Any], target_resource: str) -> bool:
         """Deterministic evaluation of pre-execution state checks."""
         check = precond.check_type.upper()
         if check == "RESOURCE_EXISTS":
@@ -1479,9 +1821,7 @@ class ActionGovernorService:
             return bool(params.get(precond.target) == precond.expected_value)
         return True
 
-    def _evaluate_postcondition(
-        self, post: PostconditionRule, observed: dict[str, Any]
-    ) -> tuple[bool, dict[str, Any]]:
+    def _evaluate_postcondition(self, post: PostconditionRule, observed: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
         """Evaluate postconditions against observed tool outputs."""
         assertion = post.assertion.upper()
         evidence: dict[str, Any] = {

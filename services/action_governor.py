@@ -145,17 +145,26 @@ class GovernedToolProxy:
         # Increment verifiable invocation count for testing and live demonstration observation
         self.invocation_counts[tool_name] = self.invocation_counts.get(tool_name, 0) + 1
 
+        fencing_token = contract.fencing_token
+
         try:
             if tool_name == "calculator":
                 expr = str(params.get("expression", "0"))
                 val = _safe_eval_math(expr)
-                return {"status": "ok", "result": val, "expression": expr}, None
+                return {"status": "ok", "result": val, "expression": expr, "fencing_token": fencing_token}, None
 
             elif tool_name in ("db_query", "internal_sql_query"):
+                expected_token = params.get("expected_fencing_token")
+                if expected_token is not None and expected_token != fencing_token:
+                    raise ValueError(
+                        f"Target-side fencing check failed: expected token {expected_token} "
+                        f"!= active token {fencing_token}"
+                    )
                 return {
                     "status": "ok",
                     "rows_affected": 1,
                     "target": target_resource,
+                    "fencing_token": fencing_token,
                     "rows": [{"id": 1, "name": "Corporate Records", "balance": 15000}],
                 }, None
 
@@ -168,6 +177,7 @@ class GovernedToolProxy:
                     "recipient": recipient,
                     "subject": subject,
                     "message_id": f"msg_{uuid.uuid4().hex[:12]}",
+                    "fencing_token": fencing_token,
                 }, None
 
             elif tool_name == "customer_lookup":
@@ -177,6 +187,7 @@ class GovernedToolProxy:
                     "customer_id": cust_id,
                     "tier": "enterprise",
                     "status_code": "ACTIVE",
+                    "fencing_token": fencing_token,
                 }, None
 
             elif tool_name == "controlled_test_probe":
@@ -187,6 +198,7 @@ class GovernedToolProxy:
                     "invocations": self.invocation_counts[tool_name],
                     "target": target_resource,
                     "params": params,
+                    "fencing_token": fencing_token,
                 }, None
 
             else:
@@ -196,9 +208,10 @@ class GovernedToolProxy:
                     "tool": tool_name,
                     "target_resource": target_resource,
                     "params": params,
+                    "fencing_token": fencing_token,
                 }, None
         except Exception as exc:
-            return {"status": "error", "error": str(exc)}, str(exc)
+            return {"status": "error", "error": str(exc), "fencing_token": fencing_token}, str(exc)
 
 
 async def _record_action_audit_event(

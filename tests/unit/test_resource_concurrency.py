@@ -31,6 +31,7 @@ from shared.schemas.concurrency import (
     LeaseStatus,
     ResourceLeaseAcquireRequest,
     ResourceLeaseReleaseRequest,
+    ResourceLeaseRenewRequest,
 )
 from shared.schemas.control_plane import Decision
 
@@ -157,6 +158,37 @@ class TestUriCanonicalizationAndConflicts:
         sibling = "db://postgres/finance/ledger_archive"
         assert not are_resources_in_conflict(base, ConcurrencyMode.EXCLUSIVE, sibling, ConcurrencyMode.EXCLUSIVE)
         assert not are_resources_in_conflict(sibling, ConcurrencyMode.EXCLUSIVE, base, ConcurrencyMode.EXCLUSIVE)
+
+    def test_scheme_specific_case_sensitivity(self) -> None:
+        """Case-sensitive schemes (S3, HTTP, file) preserve path casing; DB schemes case-fold."""
+        # Database schemes case-fold
+        assert canonicalize_resource_uri("db://Host/Finance/Ledger") == "db://host/finance/ledger"
+        assert canonicalize_resource_uri("postgres://host/Schema/Table") == "postgres://host/schema/table"
+
+        # Object store and HTTP schemes preserve case
+        assert canonicalize_resource_uri("s3://My-Bucket/Assets/Doc.PDF") == "s3://my-bucket/Assets/Doc.PDF"
+        assert (
+            canonicalize_resource_uri("https://api.github.com/Repos/Org/Repo")
+            == "https://api.github.com/Repos/Org/Repo"
+        )
+
+        # Case-sensitive URIs do not conflict if case differs
+        s3_upper = "s3://bucket/Folder/Report.pdf"
+        s3_lower = "s3://bucket/folder/report.pdf"
+        assert not are_resources_in_conflict(s3_upper, ConcurrencyMode.EXCLUSIVE, s3_lower, ConcurrencyMode.EXCLUSIVE)
+
+    def test_hierarchical_prefix_with_query_params(self) -> None:
+        """Parent resource lock conflicts with child query subresource."""
+        parent = "https://api.example.com/v1/orders"
+        child = "https://api.example.com/v1/orders?tenant=1"
+        assert are_resources_in_conflict(parent, ConcurrencyMode.EXCLUSIVE, child, ConcurrencyMode.EXCLUSIVE)
+        assert are_resources_in_conflict(child, ConcurrencyMode.EXCLUSIVE, parent, ConcurrencyMode.EXCLUSIVE)
+
+    def test_distinct_query_params_do_not_conflict(self) -> None:
+        """Distinct query parameters on the same endpoint do not conflict."""
+        res_a = "https://api.example.com/v1/orders?id=1"
+        res_b = "https://api.example.com/v1/orders?id=2"
+        assert not are_resources_in_conflict(res_a, ConcurrencyMode.EXCLUSIVE, res_b, ConcurrencyMode.EXCLUSIVE)
 
 
 # ---------------------------------------------------------------------------
@@ -561,3 +593,112 @@ class TestConcurrencyServiceLifecycle:
         assert dec.decision == Decision.BLOCK
         assert "Resource conflict" in dec.reason
         assert "txn_other_locked" in dec.reason
+
+    @pytest.mark.asyncio
+    async def test_acquire_lease_rejects_unauthorized_agent_caller(
+        self, test_concurrency_service: ResourceConcurrencyService
+    ) -> None:
+        """Acquiring a lease on behalf of a different agent is strictly forbidden for non-admin callers."""
+        session = _build_mock_session()
+        txn = _sample_transaction(tenant_id="tenant_alpha", txn_id="txn_101")
+        session.execute.return_value.scalar_one_or_none.return_value = txn
+
+        auth = AuthContext(
+            tenant_id="tenant_alpha",
+            identity_id="usr_1",
+            role=Role.API_CLIENT,
+            agent_id="agent_intruder",
+        )
+        req = ResourceLeaseAcquireRequest(
+            transaction_id="txn_101",
+            agent_id="agent_worker_1",
+            resource_uri="db://postgres/finance/ledger",
+            concurrency_mode=ConcurrencyMode.EXCLUSIVE,
+            lease_duration_seconds=60,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await test_concurrency_service.acquire_lease(auth, req, session=session)
+        assert exc_info.value.status_code == 403
+        assert "not authorized to acquire lease on behalf of" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_release_lease_rejects_unauthorized_agent_caller(
+        self, test_concurrency_service: ResourceConcurrencyService
+    ) -> None:
+        """Releasing a lease on behalf of a different agent is strictly forbidden for non-admin callers."""
+        session = _build_mock_session()
+        now = datetime.now(UTC)
+        lease = ResourceLease(
+            id="lse_101",
+            tenant_id="tenant_alpha",
+            resource_uri="db://postgres/finance/ledger",
+            holder_agent_id="agent_worker_1",
+            holder_transaction_id="txn_101",
+            concurrency_mode=ConcurrencyMode.EXCLUSIVE.value,
+            fencing_token=1,
+            status=LeaseStatus.ACQUIRED.value,
+            expires_at=now + timedelta(minutes=5),
+            released_at=None,
+            created_at=now,
+            updated_at=now,
+        )
+        session.execute.return_value.scalar_one_or_none.return_value = lease
+
+        auth = AuthContext(
+            tenant_id="tenant_alpha",
+            identity_id="usr_1",
+            role=Role.API_CLIENT,
+            agent_id="agent_intruder",
+        )
+        req = ResourceLeaseReleaseRequest(
+            transaction_id="txn_101",
+            agent_id="agent_worker_1",
+            fencing_token=1,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await test_concurrency_service.release_lease(auth, "lse_101", req, session=session)
+        assert exc_info.value.status_code == 403
+        assert "not authorized to release lease on behalf of" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_renew_lease_rejects_unauthorized_agent_caller(
+        self, test_concurrency_service: ResourceConcurrencyService
+    ) -> None:
+        """Renewing a lease on behalf of a different agent is strictly forbidden for non-admin callers."""
+        session = _build_mock_session()
+        now = datetime.now(UTC)
+        lease = ResourceLease(
+            id="lse_101",
+            tenant_id="tenant_alpha",
+            resource_uri="db://postgres/finance/ledger",
+            holder_agent_id="agent_worker_1",
+            holder_transaction_id="txn_101",
+            concurrency_mode=ConcurrencyMode.EXCLUSIVE.value,
+            fencing_token=1,
+            status=LeaseStatus.ACQUIRED.value,
+            expires_at=now + timedelta(minutes=5),
+            released_at=None,
+            created_at=now,
+            updated_at=now,
+        )
+        session.execute.return_value.scalar_one_or_none.return_value = lease
+
+        auth = AuthContext(
+            tenant_id="tenant_alpha",
+            identity_id="usr_1",
+            role=Role.API_CLIENT,
+            agent_id="agent_intruder",
+        )
+        req = ResourceLeaseRenewRequest(
+            transaction_id="txn_101",
+            agent_id="agent_worker_1",
+            fencing_token=1,
+            extension_seconds=60,
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await test_concurrency_service.renew_lease(auth, "lse_101", req, session=session)
+        assert exc_info.value.status_code == 403
+        assert "not authorized to renew lease on behalf of" in exc_info.value.detail

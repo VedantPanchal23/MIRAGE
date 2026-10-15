@@ -458,8 +458,6 @@ async def get_current_auth(
     request.state.tenant_id = context.tenant_id
     request.state.role = context.role.value
     return context
-    request.state.role = context.role.value
-    return context
 
 
 async def get_current_tenant(auth: Annotated[AuthContext, Depends(get_current_auth)]) -> str:

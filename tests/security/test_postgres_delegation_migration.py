@@ -404,6 +404,65 @@ class TestPostgresDelegationMigration:
 
         app_engine.dispose()
 
+    def test_phase8_handoff_and_lease_tables_rls_and_isolation(self, sync_engine: Any) -> None:
+        """Inspects pg_class and proves RLS is enabled, forced, and enforced for handoffs and leases."""
+        with sync_engine.connect() as conn:
+            for tbl in ("agent_handoffs", "resource_leases"):
+                query = text(
+                    """
+                    SELECT relname, relrowsecurity, relforcerowsecurity
+                    FROM pg_class
+                    WHERE relname = :tbl;
+                    """
+                )
+                row = conn.execute(query, {"tbl": tbl}).mappings().one()
+                assert row["relrowsecurity"] is True, f"RLS must be enabled on {tbl}"
+                assert row["relforcerowsecurity"] is True, f"RLS must be forced on {tbl}"
+
+        sync_url = os.environ.get("DATABASE_SYNC_URL", "")
+        if "@" in sync_url:
+            prefix = sync_url.split("://")[0]
+            host_part = sync_url.split("@")[1]
+            app_sync_url = f"{prefix}://mirage_app:mirage_app_pw@{host_part}"
+        else:
+            app_sync_url = sync_url
+
+        app_engine = create_engine(app_sync_url)
+        now = datetime.now(UTC)
+        tenant_1 = f"t_hnd_1_{uuid.uuid4().hex[:6]}"
+        tenant_2 = f"t_hnd_2_{uuid.uuid4().hex[:6]}"
+
+        with sync_engine.connect() as conn:
+            for t in (tenant_1, tenant_2):
+                conn.execute(
+                    text("INSERT INTO tenants (id, name, api_key_hash, created_at) VALUES (:t, :n, :h, :now)"),
+                    {"t": t, "n": f"Tenant_{t}", "h": f"h_{t}", "now": now},
+                )
+            conn.commit()
+
+        # Connect with unprivileged mirage_app role set to tenant_1
+        with app_engine.connect() as app_conn:
+            app_conn.execute(text("SET LOCAL app.current_tenant = :t"), {"t": tenant_1})
+
+            # Attempting cross-tenant insert with tenant_2 must fail with RLS WITH CHECK violation
+            with pytest.raises(DBAPIError):
+                app_conn.execute(
+                    text(
+                        """
+                        INSERT INTO resource_leases (
+                            id, tenant_id, resource_uri, holder_agent_id, holder_transaction_id,
+                            concurrency_mode, fencing_token, status, expires_at, created_at, updated_at
+                        ) VALUES (
+                            'lse_cross', :t2, 'db://postgres/finance/ledger', 'agent_1', 'txn_1',
+                            'EXCLUSIVE', 1, 'ACQUIRED', :exp, :now, :now
+                        )
+                        """
+                    ),
+                    {"t2": tenant_2, "exp": now + timedelta(minutes=5), "now": now},
+                )
+
+        app_engine.dispose()
+
     def test_migration_downgrade_and_reupgrade_cycle(self, sync_engine: Any) -> None:
         """Verifies clean Alembic downgrade to 017 and re-upgrade to 018."""
         cfg = Config("alembic.ini")

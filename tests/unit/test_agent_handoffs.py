@@ -706,3 +706,133 @@ class TestAgentHandoffLifecycle:
                 await test_handoff_service.get_handoff(auth=auth_context, handoff_id="hnd_foreign_1")
 
         assert exc_info.value.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_create_handoff_rejects_unauthorized_agent_caller(
+        self, test_handoff_service: AgentHandoffService
+    ) -> None:
+        """Caller agent cannot create a handoff for a parent transaction owned by another agent."""
+        session = _build_mock_session()
+        parent_txn = AITransaction(
+            id="txn_parent_1",
+            tenant_id="tenant_alpha",
+            actor_identity_id="usr_1",
+            agent_id="agent_legit_parent",
+            state="ACTIVE",
+            max_turns=10,
+            turn_count=1,
+            taint_flags=[],
+            context_sources=[],
+            version=0,
+            created_at=datetime.now(UTC),
+            updated_at=datetime.now(UTC),
+        )
+        exec_idem = MagicMock()
+        exec_idem.scalar_one_or_none.return_value = None
+        exec_parent = MagicMock()
+        exec_parent.scalar_one_or_none.return_value = parent_txn
+        session.execute.side_effect = [exec_idem, exec_parent]
+
+        auth = AuthContext(
+            tenant_id="tenant_alpha",
+            identity_id="usr_1",
+            role=Role.API_CLIENT,
+            agent_id="agent_impostor",
+        )
+        req = AgentHandoffCreateRequest(
+            parent_transaction_id="txn_parent_1",
+            child_agent_id="agent_child_1",
+            delegation_id="del_grant_1",
+            purpose="Unauthorized handoff attempt",
+            idempotency_key="idem_unauth_hnd_1",
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await test_handoff_service.create_handoff(auth=auth, request=req, session=session)
+        assert exc_info.value.status_code == 403
+        assert "not authorized to create handoff for parent agent" in exc_info.value.detail
+
+    @pytest.mark.asyncio
+    async def test_accept_handoff_atomic_savepoint_rollback_on_failure(
+        self, test_handoff_service: AgentHandoffService
+    ) -> None:
+        """If database flush or audit fails during acceptance, the savepoint rolls back atomically."""
+        session = _build_mock_session()
+        now = datetime.now(UTC)
+
+        handoff = AgentHandoff(
+            id="hnd_pending_1",
+            tenant_id="tenant_alpha",
+            parent_transaction_id="txn_parent_1",
+            parent_agent_id="agent_parent_1",
+            child_agent_id="agent_child_1",
+            delegation_id="del_grant_1",
+            child_transaction_id=None,
+            status=HandoffStatus.PENDING.value,
+            purpose="Atomic rollback subtask",
+            idempotency_key="idem_hnd_atomic",
+            expires_at=now + timedelta(minutes=10),
+            created_at=now,
+            updated_at=now,
+        )
+        delegation = AgentDelegation(
+            id="del_grant_1",
+            tenant_id="tenant_alpha",
+            parent_agent_id="agent_parent_1",
+            parent_transaction_id="txn_parent_1",
+            child_agent_id="agent_child_1",
+            child_transaction_id=None,
+            delegated_capabilities=[{"capability_type": "tools:math"}],
+            resource_scope={},
+            max_autonomy_level=2,
+            delegation_depth=1,
+            max_turns=5,
+            status="ACTIVE",
+            purpose="Math",
+            idempotency_key="idem_del_1",
+            expires_at=now + timedelta(minutes=15),
+            created_at=now,
+            updated_at=now,
+        )
+        parent_txn = AITransaction(
+            id="txn_parent_1",
+            tenant_id="tenant_alpha",
+            actor_identity_id="usr_1",
+            agent_id="agent_parent_1",
+            state="ACTIVE",
+            max_turns=10,
+            turn_count=2,
+            taint_flags=[],
+            context_sources=[],
+            version=0,
+            created_at=now,
+            updated_at=now,
+        )
+
+        exec_mock = MagicMock()
+        exec_mock.scalar_one_or_none.side_effect = [handoff, delegation, parent_txn]
+        session.execute.return_value = exec_mock
+
+        # Make flush inside begin_nested fail with an operational error
+        session.flush.side_effect = RuntimeError("Database connection lost during child spawn")
+
+        auth = AuthContext(
+            tenant_id="tenant_alpha",
+            identity_id="usr_child",
+            role=Role.OPERATOR,
+            agent_id="agent_child_1",
+        )
+        req = AgentHandoffAcceptRequest(input_context={"task": "math"})
+
+        with patch(
+            "services.handoff_service.agent_governance_service.evaluate_agent_eligibility",
+            return_value=(True, "Eligible"),
+        ):
+            with pytest.raises(RuntimeError) as exc_info:
+                await test_handoff_service.accept_handoff(
+                    auth=auth, handoff_id="hnd_pending_1", request=req, session=session
+                )
+
+        assert "Database connection lost during child spawn" in str(exc_info.value)
+        # Verify nested savepoint was established to enable atomic rollback
+        assert session.begin_nested.called

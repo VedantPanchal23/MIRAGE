@@ -37,7 +37,7 @@ from db.models import (
 from shared.logging import get_logger
 from shared.schemas.agent import AgentStatus
 from shared.schemas.audit import compute_sha256
-from shared.schemas.auth import AuthContext
+from shared.schemas.auth import AuthContext, Role
 from shared.schemas.control_plane import (
     Decision,
     PolicyDecision,
@@ -454,6 +454,24 @@ class DelegationService:
                     detail="Parent transaction does not have an associated delegating agent",
                 )
             parent_agent_id = parent_txn.agent_id
+
+            if (
+                auth.agent_id
+                and auth.agent_id != parent_agent_id
+                and auth.role
+                not in {
+                    Role.SUPER_ADMIN,
+                    Role.TENANT_ADMIN,
+                    Role.OPERATOR,
+                }
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Caller agent '{auth.agent_id}' is not authorized to create delegation for "
+                        f"parent agent '{parent_agent_id}'"
+                    ),
+                )
 
             # 3. Verify parent and child agents
             parent_agent = await s.get(Agent, parent_agent_id)

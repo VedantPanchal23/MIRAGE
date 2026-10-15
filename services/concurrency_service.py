@@ -23,7 +23,7 @@ from db.session import get_tenant_session
 from services.agent_governance import agent_governance_service
 from shared.logging import get_logger
 from shared.schemas.audit import compute_sha256
-from shared.schemas.auth import AuthContext
+from shared.schemas.auth import AuthContext, Role
 from shared.schemas.concurrency import (
     ConcurrencyMode,
     LeaseStatus,
@@ -36,14 +36,19 @@ from shared.schemas.control_plane import Decision, PolicyDecision
 
 logger = get_logger("concurrency_service")
 
+CASE_INSENSITIVE_PATH_SCHEMES = frozenset({"db", "postgres", "postgresql", "mysql", "sqlite", "sql"})
+
 
 def canonicalize_resource_uri(raw_uri: str) -> str:
     """Normalize a target resource string into a canonical, unambiguous URI.
 
     Handles scheme-less paths, duplicate slashes, query strings, and path casing.
+    Relational database schemes (db, postgres, mysql, etc.) are case-folded for SQL identifiers.
+    Case-sensitive schemes (http, https, s3, gcs, file, git, resource) preserve path segment casing.
     Example:
       'db://Finance/Ledger/' -> 'db://finance/ledger'
-      'http://api.service.com:8080/v1/orders/' -> 'http://api.service.com:8080/v1/orders'
+      's3://Bucket/Folder/Doc.PDF' -> 's3://bucket/Folder/Doc.PDF'
+      'http://api.service.com:8080/v1/Orders/' -> 'http://api.service.com:8080/v1/Orders'
     """
     stripped = raw_uri.strip()
     if not stripped:
@@ -56,8 +61,12 @@ def canonicalize_resource_uri(raw_uri: str) -> str:
     scheme = parsed.scheme.lower()
     netloc = parsed.netloc.lower()
 
-    # Normalize path segments (remove duplicate slashes and redundant trailing slashes, case-fold)
-    path_segments = [seg.lower() for seg in parsed.path.split("/") if seg and seg != "."]
+    # Normalize path segments (remove duplicate slashes and redundant trailing slashes)
+    raw_segments = [seg for seg in parsed.path.split("/") if seg and seg != "."]
+    if scheme in CASE_INSENSITIVE_PATH_SCHEMES:
+        path_segments = [seg.lower() for seg in raw_segments]
+    else:
+        path_segments = raw_segments
     normalized_path = "/" + "/".join(path_segments) if path_segments else ""
 
     query = f"?{parsed.query}" if parsed.query else ""
@@ -78,7 +87,8 @@ def are_resources_in_conflict(
        - The canonical URIs are identical.
        - Either resource is a hierarchical prefix parent of the other (e.g. 'db://fin/ledger'
          conflicts with 'db://fin/ledger/accounts').
-    3. Unrelated or non-overlapping sibling subpaths do not conflict.
+       - A parent resource lock conflicts with a parameterized subresource query.
+    3. Unrelated or non-overlapping sibling subpaths do not conflict (e.g. 'ledger' vs 'ledger_archive').
     """
     m_a = mode_a.value if isinstance(mode_a, ConcurrencyMode) else str(mode_a).upper()
     m_b = mode_b.value if isinstance(mode_b, ConcurrencyMode) else str(mode_b).upper()
@@ -92,10 +102,28 @@ def are_resources_in_conflict(
     if can_a == can_b:
         return True
 
-    # Hierarchical prefix overlap checking
-    # E.g. 'db://finance/ledger' and 'db://finance/ledger/tx123'
-    if can_b.startswith(f"{can_a}/") or can_a.startswith(f"{can_b}/"):
-        return True
+    parsed_a = urlparse(can_a)
+    parsed_b = urlparse(can_b)
+
+    # Must share scheme and netloc to be in hierarchical conflict
+    if parsed_a.scheme != parsed_b.scheme or parsed_a.netloc != parsed_b.netloc:
+        return False
+
+    segs_a = [s for s in parsed_a.path.split("/") if s]
+    segs_b = [s for s in parsed_b.path.split("/") if s]
+
+    # Check hierarchical path segment prefix:
+    if len(segs_a) < len(segs_b):
+        if segs_b[: len(segs_a)] == segs_a:
+            return True
+    elif len(segs_b) < len(segs_a):
+        if segs_a[: len(segs_b)] == segs_b:
+            return True
+    else:
+        # Same path segments, but can_a != can_b means queries differ.
+        # If one has no query, it represents the entire resource (parent of parameterized subresources).
+        if (not parsed_a.query and parsed_b.query) or (not parsed_b.query and parsed_a.query):
+            return True
 
     return False
 
@@ -132,7 +160,41 @@ class ResourceConcurrencyService:
                     detail=f"Transaction '{request.transaction_id}' is not active (state: {txn.state})",
                 )
 
-            # 2. Validate agent lifecycle eligibility
+            # 2. Validate agent lifecycle eligibility and caller authority binding
+            if (
+                auth.agent_id
+                and auth.agent_id != request.agent_id
+                and auth.role
+                not in {
+                    Role.SUPER_ADMIN,
+                    Role.TENANT_ADMIN,
+                    Role.OPERATOR,
+                }
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Caller '{auth.agent_id}' is not authorized to acquire lease on behalf of '{request.agent_id}'"
+                    ),
+                )
+
+            if (
+                txn.agent_id
+                and request.agent_id != txn.agent_id
+                and auth.role
+                not in {
+                    Role.SUPER_ADMIN,
+                    Role.TENANT_ADMIN,
+                    Role.OPERATOR,
+                }
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Request agent '{request.agent_id}' does not match transaction owning agent '{txn.agent_id}'"
+                    ),
+                )
+
             eligible, reason = await agent_governance_service.evaluate_agent_eligibility(
                 session=s,
                 tenant_id=auth.tenant_id,
@@ -286,7 +348,24 @@ class ResourceConcurrencyService:
                     detail=f"Resource lease '{lease_id}' not found in tenant '{auth.tenant_id}'",
                 )
 
-            # Ownership and fencing token validation
+            # Caller authorization and ownership validation
+            if (
+                auth.agent_id
+                and auth.agent_id != request.agent_id
+                and auth.role
+                not in {
+                    Role.SUPER_ADMIN,
+                    Role.TENANT_ADMIN,
+                    Role.OPERATOR,
+                }
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Caller '{auth.agent_id}' is not authorized to release lease on behalf of '{request.agent_id}'"
+                    ),
+                )
+
             if lease.holder_transaction_id != request.transaction_id or lease.holder_agent_id != request.agent_id:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -354,6 +433,24 @@ class ResourceConcurrencyService:
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail=f"Resource lease '{lease_id}' not found in tenant '{auth.tenant_id}'",
+                )
+
+            # Caller authorization and ownership validation
+            if (
+                auth.agent_id
+                and auth.agent_id != request.agent_id
+                and auth.role
+                not in {
+                    Role.SUPER_ADMIN,
+                    Role.TENANT_ADMIN,
+                    Role.OPERATOR,
+                }
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Caller '{auth.agent_id}' is not authorized to renew lease on behalf of '{request.agent_id}'"
+                    ),
                 )
 
             if lease.holder_transaction_id != request.transaction_id or lease.holder_agent_id != request.agent_id:

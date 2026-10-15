@@ -90,12 +90,30 @@ class AgentHandoffService:
                     detail=f"Parent transaction '{parent_txn.id}' is not in active state (state: {parent_txn.state})",
                 )
 
-            # Derive parent agent id
+            # Derive parent agent id and validate caller authority binding
             parent_agent_id = parent_txn.agent_id or auth.agent_id
             if not parent_agent_id:
                 raise HTTPException(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail="Parent transaction lacks an associated agent ID",
+                )
+
+            if (
+                auth.agent_id
+                and auth.agent_id != parent_agent_id
+                and auth.role
+                not in {
+                    Role.SUPER_ADMIN,
+                    Role.TENANT_ADMIN,
+                    Role.OPERATOR,
+                }
+            ):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Caller agent '{auth.agent_id}' is not authorized to create handoff for "
+                        f"parent agent '{parent_agent_id}'"
+                    ),
                 )
 
             if parent_agent_id == request.child_agent_id:
@@ -430,31 +448,32 @@ class AgentHandoffService:
                 created_at=now,
                 updated_at=now,
             )
-            s.add(child_txn)
+            async with s.begin_nested():
+                s.add(child_txn)
 
-            # 9. Update handoff and delegation records
-            handoff.status = HandoffStatus.ACCEPTED.value
-            handoff.child_transaction_id = child_txn_id
-            handoff.accepted_at = now
-            handoff.updated_at = now
+                # 9. Update handoff and delegation records
+                handoff.status = HandoffStatus.ACCEPTED.value
+                handoff.child_transaction_id = child_txn_id
+                handoff.accepted_at = now
+                handoff.updated_at = now
 
-            if delegation.child_transaction_id is None:
-                delegation.child_transaction_id = child_txn_id
-                delegation.updated_at = now
+                if delegation.child_transaction_id is None:
+                    delegation.child_transaction_id = child_txn_id
+                    delegation.updated_at = now
 
-            await s.flush()
+                await s.flush()
 
-            await self._emit_audit_event(
-                session=s,
-                tenant_id=auth.tenant_id,
-                action="AGENT_HANDOFF_ACCEPTED",
-                details={
-                    "handoff_id": handoff.id,
-                    "child_transaction_id": child_txn_id,
-                    "child_agent_id": handoff.child_agent_id,
-                    "allocated_turns": allocated_turns,
-                },
-            )
+                await self._emit_audit_event(
+                    session=s,
+                    tenant_id=auth.tenant_id,
+                    action="AGENT_HANDOFF_ACCEPTED",
+                    details={
+                        "handoff_id": handoff.id,
+                        "child_transaction_id": child_txn_id,
+                        "child_agent_id": handoff.child_agent_id,
+                        "allocated_turns": allocated_turns,
+                    },
+                )
 
             return AgentHandoffAcceptResponse(
                 handoff=self._map_to_response(handoff),

@@ -452,6 +452,48 @@ class TestDelegationGrantCreation:
         assert exc_info.value.status_code == 403
         assert "exceeds parent ceiling" in exc_info.value.detail
 
+    @pytest.mark.asyncio
+    async def test_create_delegation_grant_rejects_unauthorized_agent_caller(
+        self, delegation_service: DelegationService
+    ) -> None:
+        """Caller agent cannot create a delegation grant for a parent transaction owned by another agent."""
+        mock_session = _build_mock_session()
+        parent_txn = AITransaction(
+            id="txn_p_other",
+            tenant_id="tenant_alpha",
+            agent_id="agent_legit",
+            actor_identity_id="usr_1",
+            state=TransactionState.TURN_REASONING.value,
+            max_turns=10,
+            turn_count=1,
+        )
+
+        def mock_get(model: Any, key: Any = None, **_kwargs: Any) -> Any:
+            if model is AITransaction and key == "txn_p_other":
+                return parent_txn
+            return None
+
+        mock_session.get.side_effect = mock_get
+
+        auth = AuthContext(
+            tenant_id="tenant_alpha",
+            identity_id="usr_1",
+            role=Role.API_CLIENT,
+            agent_id="agent_intruder",
+        )
+        req = DelegationGrantRequest(
+            parent_transaction_id="txn_p_other",
+            delegatee_agent_id="agent_c",
+            delegated_capabilities=[AttenuatedCapabilitySpec(capability_type="tools:math")],
+            idempotency_key="idem_unauth_del",
+            purpose="Unauthorized delegation attempt",
+        )
+
+        with pytest.raises(HTTPException) as exc_info:
+            await delegation_service.create_delegation_grant(auth, req, session=mock_session)
+        assert exc_info.value.status_code == 403
+        assert "not authorized to create delegation for parent agent" in exc_info.value.detail
+
 
 # ---------------------------------------------------------------------------
 # Idempotency & Conflict Tests

@@ -20,9 +20,11 @@ from db.models import (
     AuditLogRecord,
     Capability,
     OutcomeVerificationRecord,
+    ResourceLease,
     ToolDefinition,
 )
 from services.agent_governance import agent_governance_service
+from services.concurrency_service import canonicalize_resource_uri, concurrency_service
 from services.delegation_service import delegation_service
 from shared.schemas.action import (
     ActionAuthorizationDecision,
@@ -48,6 +50,7 @@ from shared.schemas.action import (
 )
 from shared.schemas.audit import compute_sha256
 from shared.schemas.auth import AuthContext, Role
+from shared.schemas.concurrency import LeaseStatus
 from shared.schemas.control_plane import (
     Decision,
     Taint,
@@ -621,6 +624,25 @@ class ActionGovernorService:
                         parameters_hash=params_hash,
                     )
 
+            # 4b. Shared-Resource Concurrency & Lease Conflict Validation
+            lease_check = await concurrency_service.validate_lease_for_action(
+                tenant_id=auth.tenant_id,
+                transaction_id=req.transaction_id,
+                target_resource=req.target_resource,
+                session=session,
+            )
+            if lease_check.decision != Decision.ALLOW:
+                return ActionAuthorizationDecision(
+                    action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+                    decision=Decision.BLOCK,
+                    state=ActionState.BLOCKED,
+                    reason=f"Resource concurrency denial: {lease_check.reason}",
+                    risk_score=90,
+                    autonomy_level=4,
+                    normalized_parameters=normalized_params,
+                    parameters_hash=params_hash,
+                )
+
             # 5. Capability Authorization
             now = datetime.now(UTC)
             cap_stmt = select(Capability).where(
@@ -1013,6 +1035,22 @@ class ActionGovernorService:
                 final_state = ActionState.AUTHORIZED
                 decision_reason = "Action authorized: capabilities verified, preconditions passed, risk within budget."
 
+            # Resolve active fencing token if lease is held by current transaction
+            active_fencing_token: int | None = None
+            try:
+                canonical_target = canonicalize_resource_uri(req.target_resource)
+                lease_stmt = select(ResourceLease.fencing_token).where(
+                    ResourceLease.tenant_id == auth.tenant_id,
+                    ResourceLease.holder_transaction_id == req.transaction_id,
+                    ResourceLease.resource_uri == canonical_target,
+                    ResourceLease.status == LeaseStatus.ACQUIRED.value,
+                    ResourceLease.expires_at > now,
+                )
+                lease_res = await session.execute(lease_stmt)
+                active_fencing_token = lease_res.scalar_one_or_none()
+            except Exception:
+                active_fencing_token = None
+
             # Create Action Contract Record first (breaking circular FK with action_approvals)
             action_contract = ActionContract(
                 id=action_id,
@@ -1033,6 +1071,7 @@ class ActionGovernorService:
                 blast_radius=blast_radius_dict,
                 state=final_state.value,
                 idempotency_key=req.idempotency_key,
+                fencing_token=active_fencing_token,
                 preconditions=[p.model_dump() for p in req.preconditions],
                 postconditions=[p.model_dump() for p in req.postconditions],
                 requires_outcome_assurance=requires_outcome_assurance,
@@ -1658,6 +1697,20 @@ class ActionGovernorService:
 
                 # Transition approval to CONSUMED (single-use defense)
                 approval.status = ApprovalStatus.CONSUMED.value
+
+            # Concurrency & Fencing Token Execution Boundary Revalidation
+            lease_val = await concurrency_service.validate_lease_for_action(
+                tenant_id=auth.tenant_id,
+                transaction_id=contract.transaction_id,
+                target_resource=contract.target_resource,
+                fencing_token=contract.fencing_token,
+                session=session,
+            )
+            if lease_val.decision != Decision.ALLOW:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Execution blocked by concurrency fencing revalidation: {lease_val.reason}",
+                )
 
             contract.state = ActionState.EXECUTING.value
             contract.executed_at = now

@@ -49,6 +49,14 @@ from shared.schemas.claims import (
     EvidenceChunk,
     VerificationStatus,
 )
+from shared.schemas.concurrency import (
+    ConcurrencyMode,
+    LeaseStatus,
+    ResourceLeaseAcquireRequest,
+    ResourceLeaseReleaseRequest,
+    ResourceLeaseRenewRequest,
+    ResourceLeaseResponse,
+)
 from shared.schemas.delegation import (
     AttenuatedCapabilitySpec,
     DelegationActivationRequest,
@@ -59,6 +67,16 @@ from shared.schemas.delegation import (
     DelegationStatus,
 )
 from shared.schemas.error import ErrorDetail, ErrorEnvelope
+from shared.schemas.handoff import (
+    AgentHandoffAcceptRequest,
+    AgentHandoffAcceptResponse,
+    AgentHandoffCancelRequest,
+    AgentHandoffCreateRequest,
+    AgentHandoffResponse,
+    HandoffStatus,
+    is_terminal_handoff_status,
+    is_valid_handoff_transition,
+)
 from shared.schemas.hrs import (
     ConformalInterval,
     HRSResult,
@@ -216,4 +234,18 @@ __all__ = [
     "AgentListResponse",
     "is_agent_transition_allowed",
     "is_terminal_agent_status",
+    "HandoffStatus",
+    "AgentHandoffCreateRequest",
+    "AgentHandoffResponse",
+    "AgentHandoffAcceptRequest",
+    "AgentHandoffAcceptResponse",
+    "AgentHandoffCancelRequest",
+    "is_terminal_handoff_status",
+    "is_valid_handoff_transition",
+    "ConcurrencyMode",
+    "LeaseStatus",
+    "ResourceLeaseAcquireRequest",
+    "ResourceLeaseResponse",
+    "ResourceLeaseReleaseRequest",
+    "ResourceLeaseRenewRequest",
 ]

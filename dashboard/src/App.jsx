@@ -21,6 +21,7 @@ import { OutputAssuranceView } from "./views/OutputAssuranceView";
 import { OutcomeAssuranceView } from "./views/OutcomeAssuranceView";
 import { MultiAgentGovernanceView } from "./views/MultiAgentGovernanceView";
 import { TenantsView } from "./views/TenantsView";
+import { MCPServersView } from "./views/MCPServersView";
 
 /**
  * Dashboard application shell managing navigation state, header actions, and view routing.
@@ -155,6 +156,9 @@ export function DashboardShell() {
             onDataLoaded={handleDataLoaded}
           />
         );
+
+      case "mcp":
+        return <MCPServersView />;
 
       default:
         return null;

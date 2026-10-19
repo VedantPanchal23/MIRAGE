@@ -20,6 +20,7 @@ from db.models import (
     AITransaction,
     AuditLogRecord,
     Capability,
+    MCPServer,
     OutcomeVerificationRecord,
     ResourceLease,
     ToolDefinition,
@@ -27,6 +28,7 @@ from db.models import (
 from services.agent_governance import agent_governance_service
 from services.concurrency_service import canonicalize_resource_uri, concurrency_service
 from services.delegation_service import delegation_service
+from services.mcp_client import GovernedMCPClient, MCPExecutionUncertainError
 from shared.schemas.action import (
     ActionAuthorizationDecision,
     ActionBatchProposal,
@@ -121,8 +123,9 @@ def _safe_eval_math(expr: str) -> float | int:
 class GovernedToolProxy:
     """Authoritative sandboxed Tool Proxy executing actions strictly for authorized ActionContracts."""
 
-    def __init__(self) -> None:
+    def __init__(self, mcp_client: Any | None = None) -> None:
         self.invocation_counts: dict[str, int] = {}
+        self.mcp_client = mcp_client
 
     def get_invocation_count(self, tool_name: str) -> int:
         return self.invocation_counts.get(tool_name, 0)
@@ -154,6 +157,40 @@ class GovernedToolProxy:
         fencing_token = contract.fencing_token
 
         try:
+            # Check if this action is an external MCP tool
+            if ":" in tool_name or (contract.tool_id and contract.tool_id.startswith("tool_")):
+                async with db_session.get_tenant_session(auth.tenant_id) as s:
+                    tool_stmt = select(ToolDefinition).where(
+                        ToolDefinition.tenant_id == auth.tenant_id,
+                        ToolDefinition.id == contract.tool_id,
+                    )
+                    tool_def = (await s.execute(tool_stmt)).scalar_one_or_none()
+                    if tool_def and tool_def.tool_type == "MCP" and tool_def.mcp_server_id:
+                        server_stmt = select(MCPServer).where(
+                            MCPServer.tenant_id == auth.tenant_id,
+                            MCPServer.id == tool_def.mcp_server_id,
+                        )
+                        server = (await s.execute(server_stmt)).scalar_one_or_none()
+                        if not server:
+                            raise ToolProxyBypassError(
+                                f"Bound MCP server '{tool_def.mcp_server_id}' not found for tool '{tool_name}'"
+                            )
+                        if server.trust_status != "TRUSTED":
+                            raise ToolProxyBypassError(
+                                f"Bound MCP server '{server.id}' trust status is '{server.trust_status}', "
+                                f"must be 'TRUSTED' (fail-closed)"
+                            )
+
+                        client = self.mcp_client or GovernedMCPClient()
+                        raw_name = (tool_def.config or {}).get("raw_tool_name") or tool_name.split(":", 1)[-1]
+                        mcp_res = await client.call_tool(
+                            server=server,
+                            raw_tool_name=raw_name,
+                            arguments=params,
+                        )
+                        mcp_res["fencing_token"] = fencing_token
+                        return mcp_res, None
+
             if tool_name == "calculator":
                 expr = str(params.get("expression", "0"))
                 val = _safe_eval_math(expr)
@@ -216,6 +253,8 @@ class GovernedToolProxy:
                     "params": params,
                     "fencing_token": fencing_token,
                 }, None
+        except MCPExecutionUncertainError:
+            raise
         except Exception as exc:
             return {"status": "error", "error": str(exc), "fencing_token": fencing_token}, str(exc)
 
@@ -1908,10 +1947,47 @@ class ActionGovernorService:
         # ---------------------------------------------------------------------
         # Phase 2: Dispatch strictly via Governed Tool Proxy
         # ---------------------------------------------------------------------
-        observed_output, error_msg = await self.tool_proxy.dispatch(
-            contract=contract,
-            auth=auth,
-        )
+        try:
+            observed_output, error_msg = await self.tool_proxy.dispatch(
+                contract=contract,
+                auth=auth,
+            )
+        except MCPExecutionUncertainError as uncert_err:
+            logger.warning("Remote MCP tool dispatch execution uncertain for action %s: %s", req.action_id, uncert_err)
+            async with db_session.get_tenant_session(auth.tenant_id) as u_session:
+                u_stmt = (
+                    select(ActionContract)
+                    .where(
+                        ActionContract.tenant_id == auth.tenant_id,
+                        ActionContract.id == req.action_id,
+                    )
+                    .with_for_update()
+                )
+                u_contract = (await u_session.execute(u_stmt)).scalar_one_or_none()
+                if u_contract:
+                    u_contract.state = ActionState.EXECUTION_UNCERTAIN.value
+                    u_contract.error_message = str(uncert_err)
+                    u_contract.completed_at = datetime.now(UTC)
+                await _record_action_audit_event(
+                    session=u_session,
+                    tenant_id=auth.tenant_id,
+                    event_type="ACTION_EXECUTION_UNCERTAIN",
+                    actor_identity_id=auth.identity_id,
+                    transaction_id=contract.transaction_id,
+                    decision="EXECUTION_UNCERTAIN",
+                    reason=f"Remote MCP tool dispatch uncertain: {uncert_err}",
+                    payload={"action_id": req.action_id, "error": str(uncert_err)},
+                )
+                await u_session.commit()
+            return ActionExecutionResult(
+                action_id=contract.id,
+                transaction_id=contract.transaction_id,
+                state=ActionState.EXECUTION_UNCERTAIN,
+                observed_output={"status": "uncertain", "error": str(uncert_err)},
+                taints={Taint.UNTRUSTED},
+                postconditions_satisfied=False,
+                error_message=str(uncert_err),
+            )
 
         # ---------------------------------------------------------------------
         # Phase 3: Post-dispatch outcome persistence & state finalization

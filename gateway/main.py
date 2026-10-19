@@ -31,6 +31,7 @@ from gateway.routes.delegations import router as delegations_router
 from gateway.routes.handoffs import router as handoffs_router
 from gateway.routes.health import router as health_router
 from gateway.routes.knowledge_base import router as knowledge_base_router
+from gateway.routes.mcp import router as mcp_router
 from gateway.routes.models import router as models_router
 from gateway.routes.outcomes import router as outcomes_router
 from gateway.routes.output import router as output_router
@@ -160,6 +161,7 @@ def create_app() -> FastAPI:
     app.include_router(reports_router)
     app.include_router(models_router)
     app.include_router(budgets_router)
+    app.include_router(mcp_router)
 
     # 7. Global Error Handlers
     @app.exception_handler(StarletteHTTPException)

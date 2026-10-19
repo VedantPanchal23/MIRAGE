@@ -52,6 +52,9 @@ class Tenant(Base):
     alerts: Mapped[list["OperatorAlert"]] = relationship("OperatorAlert", back_populates="tenant")
     reports: Mapped[list["AuditReport"]] = relationship("AuditReport", back_populates="tenant")
     kb_documents: Mapped[list["KBDocumentRecord"]] = relationship("KBDocumentRecord", back_populates="tenant")
+    mcp_servers: Mapped[list["MCPServer"]] = relationship(
+        "MCPServer", back_populates="tenant", cascade="all, delete-orphan"
+    )
 
 
 class User(Base):
@@ -563,6 +566,43 @@ class GovernedMemory(Base):
     )
 
 
+class MCPServer(Base):
+    """Governed external MCP server registration with trust status and egress boundaries."""
+
+    __tablename__ = "mcp_servers"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    tenant_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, default="", nullable=False)
+    transport_type: Mapped[str] = mapped_column(String(32), default="STDIO", nullable=False)
+    connection_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
+    trust_status: Mapped[str] = mapped_column(
+        String(32), default="PENDING_APPROVAL", nullable=False, index=True
+    )
+    permitted_capabilities: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    egress_allowlist: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    timeout_seconds: Mapped[int] = mapped_column(Integer, default=30, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+
+    __table_args__ = (
+        UniqueConstraint("tenant_id", "name", name="uq_mcp_servers_tenant_name"),
+        Index("ix_mcp_servers_tenant_status", "tenant_id", "trust_status"),
+    )
+
+    tenant: Mapped["Tenant"] = relationship("Tenant", back_populates="mcp_servers")
+    tools: Mapped[list["ToolDefinition"]] = relationship(
+        "ToolDefinition", back_populates="mcp_server", cascade="all, delete-orphan"
+    )
+
+
 class ToolDefinition(Base):
     """Governed tool registration with egress classification and capability requirements."""
 
@@ -571,6 +611,9 @@ class ToolDefinition(Base):
     id: Mapped[str] = mapped_column(String(64), primary_key=True)
     tenant_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    mcp_server_id: Mapped[str | None] = mapped_column(
+        String(64), ForeignKey("mcp_servers.id", ondelete="CASCADE"), nullable=True, index=True
     )
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
@@ -589,6 +632,8 @@ class ToolDefinition(Base):
     )
 
     __table_args__ = (UniqueConstraint("tenant_id", "name", name="uq_tool_registry_tenant_name"),)
+
+    mcp_server: Mapped["MCPServer | None"] = relationship("MCPServer", back_populates="tools")
 
 
 class ActionContract(Base):

@@ -15,7 +15,10 @@ class ApiKeyCreateRequest(BaseModel):
         default=None,
         description="Target tenant ID (Super Admin only; derived from auth for others)",
     )
-    scopes: list[str] = Field(default_factory=lambda: ["*"], description="Authorized permission scopes for this key")
+    scopes: list[str] = Field(
+        default_factory=lambda: ["verify:read"],
+        description="Authorized permission scopes for this key (defaults to least-privilege 'verify:read')",
+    )
     expires_in_days: int | None = Field(default=None, ge=1, le=365, description="Optional validity duration in days")
 
 

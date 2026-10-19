@@ -116,6 +116,14 @@ export {
   revokeApiKey,
 } from "./apikeys";
 
+export {
+  listMCPServers,
+  registerMCPServer,
+  getMCPServer,
+  updateMCPServerTrust,
+  discoverMCPTools,
+} from "./mcp";
+
 import * as dashboard from "./dashboard";
 import * as alerts from "./alerts";
 import * as stream from "./stream";
@@ -128,6 +136,7 @@ import * as output from "./output";
 import * as multiagent from "./multiagent";
 import * as tenants from "./tenants";
 import * as apikeys from "./apikeys";
+import * as mcp from "./mcp";
 import { apiFetch, setApiToken, getApiToken, onUnauthorized, ApiError } from "./client";
 
 export const api = {
@@ -148,6 +157,7 @@ export const api = {
   multiagent,
   tenants,
   apikeys,
+  mcp,
 };
 
 export default api;

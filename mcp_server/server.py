@@ -166,11 +166,29 @@ class MirageMCPServer:
             "reason": reason,
         }
 
-    async def handle_rpc_request(self, request: dict[str, Any]) -> dict[str, Any]:
-        """Handle JSON-RPC 2.0 protocol messages."""
+    async def handle_rpc_request(
+        self,
+        request: dict[str, Any],
+        auth: Any | None = None,
+    ) -> dict[str, Any]:
+        """Handle JSON-RPC 2.0 protocol messages with authentication, input bounding, and tenant isolation."""
         method = request.get("method")
         msg_id = request.get("id")
         params = request.get("params", {})
+
+        if method == "initialize":
+            return {
+                "jsonrpc": "2.0",
+                "id": msg_id,
+                "result": {
+                    "protocolVersion": "2024-11-05",
+                    "capabilities": {"tools": {}},
+                    "serverInfo": {"name": "mirage-mcp-server", "version": "3.0.0"},
+                },
+            }
+
+        if method == "notifications/initialized":
+            return {"jsonrpc": "2.0", "result": None}
 
         if method == "tools/list":
             return {
@@ -183,48 +201,107 @@ class MirageMCPServer:
             tool_name = params.get("name")
             arguments = params.get("arguments", {})
 
-            if tool_name == "verify_factual_consistency":
-                result = await self.verify_factual_consistency(
-                    text=arguments.get("text", ""),
-                    prompt=arguments.get("prompt", ""),
-                    tenant_id=arguments.get("tenant_id", "mcp_client"),
-                    knowledge_base_id=arguments.get("knowledge_base_id", "default_kb"),
-                )
+            # Resolve effective tenant strictly from authenticated context if provided
+            effective_tenant = getattr(auth, "tenant_id", None) if auth else None
+            req_tenant = arguments.get("tenant_id")
+
+            # Check cross-tenant snooping
+            if effective_tenant is not None and req_tenant and req_tenant != effective_tenant:
                 return {
                     "jsonrpc": "2.0",
                     "id": msg_id,
-                    "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]},
+                    "error": {
+                        "code": -32003,
+                        "message": (
+                            f"Access denied: Caller belonging to tenant '{effective_tenant}' "
+                            f"cannot access resources belonging to tenant '{req_tenant}'"
+                        ),
+                    },
                 }
 
-            if tool_name == "check_hallucination":
-                result = await self.check_hallucination(
-                    text=arguments.get("text", ""),
-                    prompt=arguments.get("prompt", ""),
-                )
+            tenant_to_use = effective_tenant or req_tenant or "mcp_client"
+
+            try:
+                if tool_name == "verify_factual_consistency":
+                    text_input = arguments.get("text", "")
+                    if len(text_input) > 50_000:
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Text parameter exceeds maximum allowed limit of 50,000 characters",
+                            },
+                        }
+                    result = await self.verify_factual_consistency(
+                        text=text_input,
+                        prompt=arguments.get("prompt", ""),
+                        tenant_id=tenant_to_use,
+                        knowledge_base_id=arguments.get("knowledge_base_id", "default_kb"),
+                    )
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]},
+                    }
+
+                if tool_name == "check_hallucination":
+                    text_input = arguments.get("text", "")
+                    if len(text_input) > 50_000:
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Text parameter exceeds maximum allowed limit of 50,000 characters",
+                            },
+                        }
+                    result = await self.check_hallucination(
+                        text=text_input,
+                        prompt=arguments.get("prompt", ""),
+                    )
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]},
+                    }
+
+                if tool_name == "query_audit_logs":
+                    query_input = arguments.get("query", "")
+                    if len(query_input) > 1_000:
+                        return {
+                            "jsonrpc": "2.0",
+                            "id": msg_id,
+                            "error": {
+                                "code": -32602,
+                                "message": "Query parameter exceeds maximum allowed limit of 1,000 characters",
+                            },
+                        }
+
+                    from analytics.audit_service import AuditService
+
+                    matches = AuditService.natural_language_query(
+                        query=query_input,
+                        tenant_id=tenant_to_use,
+                    )
+                    return {
+                        "jsonrpc": "2.0",
+                        "id": msg_id,
+                        "result": {"content": [{"type": "text", "text": json.dumps({"matches": matches}, indent=2)}]},
+                    }
+
                 return {
                     "jsonrpc": "2.0",
                     "id": msg_id,
-                    "result": {"content": [{"type": "text", "text": json.dumps(result, indent=2)}]},
+                    "error": {"code": -32601, "message": f"Tool '{tool_name}' not found"},
                 }
-
-            if tool_name == "query_audit_logs":
-                from analytics.audit_service import AuditService
-
-                matches = AuditService.natural_language_query(
-                    query=arguments.get("query", ""),
-                    tenant_id=arguments.get("tenant_id", "default_tenant"),
-                )
+            except Exception as exc:
+                logger.error("Error executing MCP tool '%s': %s", tool_name, exc)
                 return {
                     "jsonrpc": "2.0",
                     "id": msg_id,
-                    "result": {"content": [{"type": "text", "text": json.dumps({"matches": matches}, indent=2)}]},
+                    "error": {"code": -32603, "message": f"Internal execution error for tool '{tool_name}'"},
                 }
-
-            return {
-                "jsonrpc": "2.0",
-                "id": msg_id,
-                "error": {"code": -32601, "message": f"Tool '{tool_name}' not found"},
-            }
 
         return {
             "jsonrpc": "2.0",

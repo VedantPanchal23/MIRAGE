@@ -149,6 +149,40 @@ Manages the end-to-end AI workload.
 - **Description:** Revoke a tool's availability.
 - **Required Capability:** `tool:revoke`
 
+### 4.7.1 Governed MCP Server Management API
+**`POST /v1/mcp/servers`**
+- **Description:** Register an external MCP server in `PENDING_APPROVAL` trust status. Egress policy validates endpoints against SSRF (RFC 1918, link-local, loopback, cloud metadata) for HTTP streams, or disallows shell metacharacters and directory traversal for STDIO subprocesses.
+- **Request Fields:** `name`, `description`, `transport_type` (`STDIO` | `HTTP_STREAM`), `connection_config` (`{"url": "..."}` or `{"command": "...", "args": [...], "env": {...}}`), `permitted_capabilities`, `egress_allowlist`, `timeout_seconds`.
+- **Response Fields:** `id`, `tenant_id`, `name`, `transport_type`, `trust_status`, `permitted_capabilities`, `egress_allowlist`, `tool_count`, `created_at`.
+- **Required Role:** `SUPER_ADMIN` or `TENANT_ADMIN` (with `config:write` scope).
+
+**`GET /v1/mcp/servers`**
+- **Description:** List registered MCP servers for the caller's tenant with active tool counts.
+- **Query Parameters:** `limit` (default 50), `offset` (default 0).
+- **Response Fields:** `items` (array of `MCPServerResponse`), `total`.
+- **Required Role:** Authenticated caller (`verify:read` or `config:write`).
+
+**`GET /v1/mcp/servers/{server_id}`**
+- **Description:** Retrieve MCP server details with sensitive authentication tokens or credentials redacted.
+- **Response Fields:** `MCPServerResponse`.
+- **Required Role:** Authenticated caller.
+
+**`POST /v1/mcp/servers/{server_id}/trust-status`**
+- **Description:** Transition server trust status (`PENDING_APPROVAL` $\leftrightarrow$ `TRUSTED`, `SUSPENDED`, `REVOKED`). Transition to `SUSPENDED` or `REVOKED` immediately deactivates all registered child tools under fail-closed governance.
+- **Request Fields:** `trust_status` (`TRUSTED` | `SUSPENDED` | `REVOKED`), `reason`.
+- **Response Fields:** Updated `MCPServerResponse`.
+- **Required Role:** `SUPER_ADMIN` or `TENANT_ADMIN`.
+
+**`POST /v1/mcp/servers/{server_id}/discover`**
+- **Description:** Connect to an external server in `TRUSTED` status, query `tools/list`, compute SHA-256 schema fingerprints, and register tools into `tool_registry` with `{server_id}:{tool_name}` namespacing.
+- **Response Fields:** `server_id`, `server_name`, `tools_discovered`, `tools_registered`.
+- **Required Role:** `SUPER_ADMIN` or `TENANT_ADMIN`.
+
+**`DELETE /v1/mcp/servers/{server_id}`**
+- **Description:** Permanently revoke and remove an MCP server. Cascades deletion to all registered tool definitions in `tool_registry`.
+- **Response Fields:** HTTP 204 No Content.
+- **Required Role:** `SUPER_ADMIN` or `TENANT_ADMIN`.
+
 ### 4.8 Memory API
 **`POST /v1/memory`**
 - **Description:** Write a new memory item with provenance.

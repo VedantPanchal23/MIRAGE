@@ -11,6 +11,7 @@ import {
   Eye,
   Network,
   Building,
+  Server,
 } from "lucide-react";
 import { PERMISSIONS } from "../context/AuthContext";
 
@@ -27,6 +28,7 @@ import { PERMISSIONS } from "../context/AuthContext";
  * - actions: DASHBOARD_READ (backend Gate 3 Action Assurance & Tool Governance)
  * - multiagent: DASHBOARD_READ (backend Phase 8 Agent Governance, Delegations, Handoffs, Leases)
  * - tenants: CONFIG_WRITE (backend SaaS Control Plane & API Credentials)
+ * - mcp: CONFIG_WRITE (backend Governed MCP Registry & Tools)
  */
 export const SECTION_PERMISSIONS = Object.freeze({
   overview: [PERMISSIONS.DASHBOARD_READ],
@@ -40,6 +42,7 @@ export const SECTION_PERMISSIONS = Object.freeze({
   outcomes: [PERMISSIONS.DASHBOARD_READ],
   multiagent: [PERMISSIONS.DASHBOARD_READ],
   tenants: [PERMISSIONS.CONFIG_WRITE],
+  mcp: [PERMISSIONS.CONFIG_WRITE],
 });
 
 export const NAV_ITEMS = [
@@ -108,6 +111,12 @@ export const NAV_ITEMS = [
     label: "Tenants & Keys",
     icon: Building,
     requiredPermissions: SECTION_PERMISSIONS.tenants,
+  },
+  {
+    id: "mcp",
+    label: "MCP Registry",
+    icon: Server,
+    requiredPermissions: SECTION_PERMISSIONS.mcp,
   },
 ];
 

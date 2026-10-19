@@ -16,9 +16,11 @@ from shared.schemas.action import (
     ActionExecutionRequest,
     ActionExecutionResult,
     ActionProposal,
+    ActionReconciliationRequest,
     ApprovalDecisionRequest,
     ApprovalResponse,
     BatchAuthorizationDecision,
+    StrandedActionInfo,
     ToolRegistrationRequest,
     ToolResponse,
 )
@@ -35,6 +37,7 @@ governor_service = ActionGovernorService()
 # -----------------------------------------------------------------------------
 # Tool Registry Endpoints
 # -----------------------------------------------------------------------------
+
 
 @router.post("/tools", response_model=ToolResponse, status_code=201)
 async def register_tool_endpoint(
@@ -56,6 +59,7 @@ async def list_tools_endpoint(
 # -----------------------------------------------------------------------------
 # Gate 3 Action Assurance & Proposal Endpoints
 # -----------------------------------------------------------------------------
+
 
 @router.post("/actions/propose", response_model=ActionAuthorizationDecision)
 async def propose_action_endpoint(
@@ -122,6 +126,7 @@ async def get_action_contract_endpoint(
 # Tool Proxy Execution Endpoints
 # -----------------------------------------------------------------------------
 
+
 @router.post("/actions/execute", response_model=ActionExecutionResult)
 async def execute_action_endpoint(
     req: ActionExecutionRequest, auth: Annotated[AuthContext, Depends(get_current_auth)]
@@ -130,13 +135,38 @@ async def execute_action_endpoint(
     return await governor_service.execute_action(auth, req)
 
 
+@router.get("/actions/stranded", response_model=list[StrandedActionInfo])
+async def list_stranded_actions_endpoint(
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    older_than_seconds: int = Query(default=60, ge=0),
+) -> list[StrandedActionInfo]:
+    """Find actions stranded in EXECUTING or EXECUTION_UNCERTAIN state after worker crash/restart."""
+    return await governor_service.list_stranded_actions(auth, older_than_seconds=older_than_seconds)
+
+
+@router.post("/actions/{action_id}/reconcile", response_model=ActionExecutionResult)
+async def reconcile_action_endpoint(
+    action_id: str,
+    req: ActionReconciliationRequest,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> ActionExecutionResult:
+    """Idempotently reconcile a stranded EXECUTING or EXECUTION_UNCERTAIN action with an audit trail."""
+    if req.action_id != action_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Action ID mismatch: path '{action_id}' does not match body '{req.action_id}'",
+        )
+    return await governor_service.reconcile_stranded_action(auth, req)
+
+
 # -----------------------------------------------------------------------------
 # Human Approval (L4) Endpoints
 # -----------------------------------------------------------------------------
 
+
 @router.get("/approvals/pending", response_model=list[ApprovalResponse])
 async def list_pending_approvals_endpoint(
-    auth: Annotated[AuthContext, Depends(get_current_auth)]
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
 ) -> list[ApprovalResponse]:
     """List pending L4 human approvals for the authorized tenant."""
     return await governor_service.list_pending_approvals(auth)
@@ -165,6 +195,7 @@ async def deny_approval_endpoint(
 # -----------------------------------------------------------------------------
 # Gate 5 Outcome Assurance Endpoint Aliases
 # -----------------------------------------------------------------------------
+
 
 @router.get("/actions/{action_id}/outcome", response_model=OutcomeVerificationContract)
 async def get_action_outcome_endpoint(

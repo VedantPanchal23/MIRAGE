@@ -450,3 +450,38 @@ class ApprovalResponse(BaseModel):
     decision_reason: str | None
     expires_at: str
     created_at: str
+
+
+class ActionReconciliationResolution(StrEnum):
+    """Allowed deterministic resolution values for operator reconciliation."""
+
+    MARK_FAILED = "MARK_FAILED"
+    MARK_COMPLETED = "MARK_COMPLETED"
+    MARK_UNCERTAIN = "MARK_UNCERTAIN"
+
+
+class ActionReconciliationRequest(BaseModel):
+    """Request by authorized operator to reconcile a stranded EXECUTING or EXECUTION_UNCERTAIN action."""
+
+    action_id: str = Field(min_length=1, max_length=64)
+    resolution: ActionReconciliationResolution
+    notes: str = Field(min_length=1, max_length=2000, description="Audit justification for operator reconciliation")
+    observed_evidence: dict[str, Any] | None = Field(
+        default=None,
+        description="Independently verified target-state evidence payload when resolving as MARK_COMPLETED",
+    )
+
+
+class StrandedActionInfo(BaseModel):
+    """Summary of a stranded action requiring reconciliation."""
+
+    action_id: str
+    transaction_id: str
+    agent_id: str | None
+    tool_name: str
+    target_resource: str
+    state: ActionState
+    executed_at: str | None
+    error_message: str | None
+    requires_outcome_assurance: bool
+    fencing_token: int | None

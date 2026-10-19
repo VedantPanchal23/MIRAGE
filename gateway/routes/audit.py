@@ -21,9 +21,13 @@ from db import session as db_session
 from db.models import AuditCheckpointRecord, AuditLogRecord
 from gateway.middleware.auth import get_current_auth
 from gateway.middleware.rbac import Permission, require_permission
+from services.audit_ledger import AuditLedgerService
 from services.reality_verifier import reality_verifier_service
 from shared.logging import get_logger
 from shared.schemas.audit import (
+    AuditEvidenceBundle,
+    AuditIntegrityReport,
+    AuditIntegrityStatus,
     CheckpointModel,
     TrustAssuranceLevel,
     compute_checkpoint_canonical_string,
@@ -31,6 +35,10 @@ from shared.schemas.audit import (
     verify_checkpoint_signature,
 )
 from shared.schemas.auth import AuthContext, Role
+from shared.telemetry.metrics import (
+    record_anchor_status,
+    record_audit_integrity_check,
+)
 
 router = APIRouter(prefix="/v1/audit", tags=["Audit & Compliance"])
 logger = get_logger("audit_routes")
@@ -467,3 +475,129 @@ async def list_audit_checkpoints(
             }
             for r in rows
         ]
+
+
+class AuditExportBundleRequest(BaseModel):
+    """Payload for requesting an authoritative compliance evidence bundle export."""
+
+    start_time: datetime | None = None
+    end_time: datetime | None = None
+    transaction_id: str | None = None
+    session_id: str | None = None
+    limit: int = Field(default=500, ge=1, le=1000)
+
+
+class CreateAnchorRequest(BaseModel):
+    """Payload for committing current audit ledger head to external anchor storage."""
+
+    signer_identity: str = Field(default="notary:system_primary", description="Notary signer identity")
+    ledger_identity: str = Field(default="audit_logs", description="Target ledger identity")
+
+
+@router.get("/events", summary="Query tenant audit events with pagination and filters")
+async def get_audit_events(
+    start_time: datetime | None = None,
+    end_time: datetime | None = None,
+    event_type: str | None = None,
+    action_id: str | None = None,
+    transaction_id: str | None = None,
+    session_id: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    auth: AuthContext = Depends(get_current_auth),
+) -> dict[str, Any]:
+    """Query paginated audit log events with strict tenant isolation."""
+    if not auth.has_permission(Permission.AUDIT_READ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied: missing AUDIT_READ scope",
+        )
+    async with db_session.get_tenant_session(auth.tenant_id) as session:
+        return await AuditLedgerService.query_events(
+            session=session,
+            tenant_id=auth.tenant_id,
+            start_time=start_time,
+            end_time=end_time,
+            event_type=event_type,
+            action_id=action_id,
+            transaction_id=transaction_id,
+            session_id=session_id,
+            limit=limit,
+            offset=offset,
+        )
+
+
+@router.get("/integrity", summary="Verify audit log hash chain and external anchor status")
+async def get_audit_integrity(
+    auth: AuthContext = Depends(get_current_auth),
+) -> AuditIntegrityReport:
+    """Verify cryptographic hash chain integrity and external anchor consistency for tenant."""
+    if not auth.has_permission(Permission.AUDIT_READ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied: missing AUDIT_READ scope",
+        )
+    async with db_session.get_tenant_session(auth.tenant_id) as session:
+        report = await AuditLedgerService.verify_with_anchor(session, auth.tenant_id)
+        record_audit_integrity_check(report.status.value.lower())
+        if report.status in (AuditIntegrityStatus.ANCHORED, AuditIntegrityStatus.ANCHOR_STALE):
+            record_anchor_status("anchored" if report.status == AuditIntegrityStatus.ANCHORED else "stale")
+        elif report.status == AuditIntegrityStatus.ANCHOR_UNAVAILABLE:
+            record_anchor_status("unavailable")
+        elif report.status == AuditIntegrityStatus.INTEGRITY_FAILURE:
+            record_anchor_status("invalid")
+        return report
+
+
+@router.post("/export-bundle", summary="Export cryptographically sealed compliance evidence bundle")
+async def export_audit_evidence_bundle(
+    request: AuditExportBundleRequest,
+    auth: AuthContext = Depends(get_current_auth),
+) -> AuditEvidenceBundle:
+    """Export self-contained, digest-verified compliance bundle covering events and anchor verification."""
+    if not auth.has_permission(Permission.AUDIT_EXPORT):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Permission denied: missing AUDIT_EXPORT scope",
+        )
+    async with db_session.get_tenant_session(auth.tenant_id) as session:
+        return await AuditLedgerService.export_evidence_bundle(
+            session=session,
+            tenant_id=auth.tenant_id,
+            start_time=request.start_time,
+            end_time=request.end_time,
+            transaction_id=request.transaction_id,
+            session_id=request.session_id,
+            limit=request.limit,
+        )
+
+
+@router.post("/anchor", summary="Commit current audit ledger head to external anchor backend")
+async def create_audit_anchor(
+    request: CreateAnchorRequest,
+    auth: AuthContext = Depends(get_current_auth),
+) -> dict[str, Any]:
+    """Create a signed checkpoint and commit an external anchor outside mutable DB rows."""
+    if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Control plane violation: only administrators can commit audit anchors",
+        )
+    async with db_session.get_tenant_session(auth.tenant_id) as session:
+        try:
+            cp, proof = await AuditLedgerService.create_checkpoint_and_anchor(
+                session=session,
+                tenant_id=auth.tenant_id,
+                signer_identity=request.signer_identity,
+                ledger_identity=request.ledger_identity,
+            )
+            record_anchor_status("anchored")
+            return {
+                "status": "ANCHORED",
+                "tenant_id": auth.tenant_id,
+                "checkpoint": cp.model_dump(mode="json"),
+                "anchor": proof.model_dump(mode="json"),
+            }
+        except ValueError as exc:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+

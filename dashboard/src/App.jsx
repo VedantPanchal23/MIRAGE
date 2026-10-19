@@ -22,6 +22,7 @@ import { OutcomeAssuranceView } from "./views/OutcomeAssuranceView";
 import { MultiAgentGovernanceView } from "./views/MultiAgentGovernanceView";
 import { TenantsView } from "./views/TenantsView";
 import { MCPServersView } from "./views/MCPServersView";
+import { AuditIntegrityView } from "./views/AuditIntegrityView";
 
 /**
  * Dashboard application shell managing navigation state, header actions, and view routing.
@@ -159,6 +160,14 @@ export function DashboardShell() {
 
       case "mcp":
         return <MCPServersView />;
+
+      case "audit":
+        return (
+          <AuditIntegrityView
+            isRefreshing={isRefreshing}
+            onDataLoaded={handleDataLoaded}
+          />
+        );
 
       default:
         return null;

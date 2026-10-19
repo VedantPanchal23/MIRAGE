@@ -86,7 +86,8 @@ describe("Navigation Component & Section Permissions", () => {
       expect(screen.getByRole("tab", { name: /alerts/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /tenants/i })).toBeInTheDocument();
       expect(screen.getByRole("tab", { name: /mcp/i })).toBeInTheDocument();
-      expect(NAV_ITEMS.length).toBe(12);
+      expect(screen.getByRole("tab", { name: /audit/i })).toBeInTheDocument();
+      expect(NAV_ITEMS.length).toBe(13);
     });
 
     it("marks active tab with aria-selected='true'", () => {

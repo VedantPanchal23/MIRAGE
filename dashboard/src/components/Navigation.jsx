@@ -12,6 +12,7 @@ import {
   Network,
   Building,
   Server,
+  FileCheck,
 } from "lucide-react";
 import { PERMISSIONS } from "../context/AuthContext";
 
@@ -29,6 +30,7 @@ import { PERMISSIONS } from "../context/AuthContext";
  * - multiagent: DASHBOARD_READ (backend Phase 8 Agent Governance, Delegations, Handoffs, Leases)
  * - tenants: CONFIG_WRITE (backend SaaS Control Plane & API Credentials)
  * - mcp: CONFIG_WRITE (backend Governed MCP Registry & Tools)
+ * - audit: AUDIT_READ (backend Governed Audit Ledger, Hash Chain, & External Anchors)
  */
 export const SECTION_PERMISSIONS = Object.freeze({
   overview: [PERMISSIONS.DASHBOARD_READ],
@@ -43,6 +45,7 @@ export const SECTION_PERMISSIONS = Object.freeze({
   multiagent: [PERMISSIONS.DASHBOARD_READ],
   tenants: [PERMISSIONS.CONFIG_WRITE],
   mcp: [PERMISSIONS.CONFIG_WRITE],
+  audit: [PERMISSIONS.AUDIT_READ],
 });
 
 export const NAV_ITEMS = [
@@ -117,6 +120,12 @@ export const NAV_ITEMS = [
     label: "MCP Registry",
     icon: Server,
     requiredPermissions: SECTION_PERMISSIONS.mcp,
+  },
+  {
+    id: "audit",
+    label: "Audit Ledger",
+    icon: FileCheck,
+    requiredPermissions: SECTION_PERMISSIONS.audit,
   },
 ];
 

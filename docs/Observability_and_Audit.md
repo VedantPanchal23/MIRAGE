@@ -120,46 +120,67 @@ Every transaction calculates its total cost:
 ### 9.2 Assurance Level Logging
 Each gate outputs an independent assurance score. The final transaction log records the overall assurance score and the disposition (Allowed, Blocked, Escalated, Remediated).
 
-## 10. Audit Chain
+## 10. Audit Chain and External Cryptographic Anchoring
 
-MIRAGE preserves the cryptographic audit chain from MIRAGE 2.x for tamper-evident compliance.
+MIRAGE enforces an immutable, tamper-evident audit ledger across all five assurance gates.
 
-### 10.1 Mechanism
-- Every transaction produces a final canonical JSON summary.
-- The summary is hashed using SHA-256.
-- Each hash includes the hash of the preceding transaction within the tenant, forming a continuous chain.
-- The chain is stored in PostgreSQL and asynchronously archived.
+### 10.1 Deterministic Hash Chain Construction
+- Every audit record computes a canonical SHA-256 chain hash linking directly to the authoritative predecessor (`prev_hash`).
+- The canonical representation sorts and serializes all fields (`entry_id`, `sequence_number`, `tenant_id`, `event_type`, `session_id`, `trace_id`, `transaction_id`, `actor_identity_id`, `decision`, `prompt_hash`, `response_hash`, `hrs_score`, `payload_digest`, `timestamp`) into compact JSON without whitespace before hashing.
+- Sequence numbers are strictly monotonic integers (1, 2, 3...) scoped per tenant.
+- Appends in PostgreSQL serialize under an explicit row lock (`SELECT ... FOR UPDATE` on `tenant_audit_ledgers`), preventing sequence gaps, concurrency forks, or race conditions.
 
-## 11. Audit Queries
+### 10.2 External Notary Anchoring (`AuditAnchorBackend`)
+To prevent retroactive revision even by privileged database administrators with superuser permissions, MIRAGE commits signed checkpoints outside mutable PostgreSQL rows:
+- **Pluggable Architecture:** `AuditAnchorBackend` provides an abstract interface for persisting signed checkpoints.
+- **Append-Only File Backend (`FileAuditAnchorBackend`):** Persists HMAC-SHA256 signed checkpoints with fsync durability on isolated filesystem storage outside database tables.
+- **Truncation Detection:** If database rows are truncated or rolled back (e.g., records deleted by an intruder), the database head sequence will be less than the externally anchored sequence. MIRAGE immediately detects this discrepancy and flags `INTEGRITY_FAILURE (TRUNCATION_DETECTED)`.
 
-The observability system MUST be capable of answering the following questions for any given transaction:
-1. **Why was this action allowed?** (Resolved via Policy Decision and Risk Decision logs)
-2. **What did the AI know?** (Resolved via Context logs and Provenance tracking)
-3. **Where did that information come from?** (Resolved via Provenance attributes)
-4. **Which model made the decision?** (Resolved via Model Decision logs)
-5. **Which tools were called?** (Resolved via Tool Call logs)
-6. **Which policies applied?** (Resolved via Policy Decision logs)
-7. **What risk was calculated?** (Resolved via Risk Decision logs)
-8. **What did MIRAGE verify?** (Resolved via Gate 1-4 logs)
-9. **What actually happened?** (Resolved via Gate 5 Outcome logs)
-10. **What did the transaction cost?** (Resolved via Cost logs)
+### 10.3 Verification Status Hierarchy
+The audit integrity endpoint evaluates both the database hash chain and external anchor synchronization:
+- `ANCHORED`: Database hash chain is unbroken and matches the latest external anchor at the head sequence.
+- `ANCHOR_STALE`: Database hash chain is unbroken and valid, but new events have been appended since the last committed anchor.
+- `CHAIN_VALID`: Database hash chain is unbroken, but no external anchor proof has been registered yet.
+- `ANCHOR_UNAVAILABLE`: External anchor backend is temporarily unreachable; verification cannot assert remote anchoring.
+- `INTEGRITY_FAILURE`: Tampering detected (hash mismatch, broken prev_hash link, sequence gap, reordering, or database truncation).
 
-## 12. Retention Policies
+## 11. Audit Queries & Export
+
+The observability system exposes tenant-isolated endpoints:
+1. `GET /v1/audit/events`: Paginated, filterable audit event queries with monotonic ordering.
+2. `GET /v1/audit/integrity`: Evaluates database hash chain integrity and cross-references external anchor proof.
+3. `POST /v1/audit/export-bundle`: Generates a self-contained, cryptographically signed compliance bundle with a SHA-256 bundle digest for regulatory archival.
+4. `POST /v1/audit/anchor`: Administrative endpoint committing current ledger head to external anchor storage.
+
+## 12. Five-Gate Telemetry Metrics
+
+Prometheus metrics are collected across the five assurance gates with strictly bounded cardinality:
+- `mirage_gate_decisions_total{gate, decision}`: Counter tracking gate evaluations.
+- `mirage_gate_latency_seconds{gate}`: Histogram measuring execution latency per gate.
+- `mirage_action_lifecycle_total{action_type, state}`: Transitions in Gate 3 and Action Governor.
+- `mirage_tool_dispatch_failures_total{transport, failure_category}`: Failures in tool and MCP execution.
+- `mirage_outcome_verification_total{observability_class, outcome_status}`: Gate 5 independent reality verifications.
+- `mirage_audit_integrity_checks_total{status}`: Cryptographic hash chain verification outcomes.
+- `mirage_security_denials_total{reason}`: Auth, API key, and tenant boundary rejections.
+- `mirage_audit_anchor_status{status}`: Gauge reflecting external anchor synchronization state.
+
+## 13. Retention Policies
 
 - **Metrics:** 13 months (downsampled after 30 days).
-- **Logs:** 30 days hot storage, 7 years cold archive (depending on tenant compliance needs).
+- **Logs:** 30 days hot storage, 7 years cold archive.
 - **Traces (Detailed):** 7 days hot storage.
 - **Audit Ledger (Cryptographic):** Permanent retention (never deleted).
 
-## 13. Export Formats
+## 14. Export Formats
 
 - **JSONL:** Bulk export format for logs and events, partitioned by tenant and date.
 - **Compliance PDFs:** Generated reports summarizing transaction assurance and policy violations over a time period, digitally signed.
+- **Sealed Compliance Evidence Bundles:** JSON-structured evidence bundles containing events, chain verification proofs, anchor signatures, and canonical SHA-256 bundle digests.
 
-## 14. Dashboard Integration
+## 15. Dashboard Integration
 
-The React/JSX frontend consumes the observability data to display:
-- Live transaction flows.
-- Assurance gate funnel metrics (e.g., % of requests blocked at Gate 1).
-- Cost attribution per agent/model.
-- Risk heatmaps.
+The React 18 / JSX frontend (`AuditIntegrityView.jsx`) provides operators with:
+- Live status badges reflecting audit chain integrity (`ANCHORED`, `ANCHOR_STALE`, `CHAIN_VALID`, `INTEGRITY_FAILURE`).
+- Comprehensive defect lists on tamper or truncation detection.
+- Interactive external anchor commitment and sealed evidence bundle exports.
+- Paginated, filterable event browsers with sequence numbers, actor attribution, decisions, and SHA-256 hashes.

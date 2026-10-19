@@ -204,16 +204,35 @@ Manages the end-to-end AI workload.
 
 ### 4.9 Audit API
 **`GET /v1/audit/events`**
-- **Description:** Query audit ledger.
-- **Required Capability:** `audit:read`
+- **Description:** Paginated, tenant-isolated audit log query with deterministic monotonic ordering and filters.
+- **Query Parameters:** `start_time` (ISO datetime), `end_time` (ISO datetime), `event_type` (string), `action_id` (string), `transaction_id` (string), `session_id` (string), `limit` (int 1-100, default 50), `offset` (int, default 0).
+- **Response Fields:** `tenant_id`, `total_count`, `limit`, `offset`, `next_offset`, `events` (list of audit records with `sequence_number`, `entry_id`, `chain_hash`, `prev_hash`, `hrs_score`, `decision`, etc.).
+- **Required Permission:** `AUDIT_READ`
 
-**`GET /v1/audit/transactions/{id}`**
-- **Description:** Complete audit trail for a transaction.
-- **Required Capability:** `audit:read`
+**`GET /v1/audit/integrity`**
+- **Description:** Cryptographic verification of the PostgreSQL hash chain and synchronization status against external notary anchors. Detects tampering, gaps, reordering, and tail truncation.
+- **Response Fields:** `tenant_id`, `status` (`ANCHORED` | `ANCHOR_STALE` | `CHAIN_VALID` | `ANCHOR_UNAVAILABLE` | `INTEGRITY_FAILURE`), `chain_valid` (bool), `total_records`, `head_sequence`, `head_chain_hash`, `latest_anchor` (object or null), `defects` (list of detected anomaly descriptions).
+- **Required Permission:** `AUDIT_READ`
 
-**`POST /v1/audit/reports`**
-- **Description:** Generate compliance report.
-- **Required Capability:** `audit:report`
+**`POST /v1/audit/export-bundle`**
+- **Description:** Export self-contained, digest-verified compliance evidence bundle containing events, chain verification proofs, and external anchor signatures.
+- **Request Fields:** `start_time`, `end_time`, `transaction_id`, `session_id`, `limit` (default 500).
+- **Response Fields:** `bundle_id`, `tenant_id`, `exported_at`, `time_range`, `event_count`, `events`, `chain_verification`, `latest_anchor`, `bundle_digest` (canonical SHA-256 hash).
+- **Required Permission:** `AUDIT_EXPORT`
+
+**`POST /v1/audit/anchor`**
+- **Description:** Generate a signed checkpoint of current ledger head and commit an immutable external anchor outside mutable database rows.
+- **Request Fields:** `signer_identity` (default `"notary:system_primary"`), `ledger_identity` (default `"audit_logs"`).
+- **Response Fields:** `status` (`ANCHORED`), `tenant_id`, `checkpoint` (CheckpointModel), `anchor` (AnchorProof).
+- **Required Role:** `SUPER_ADMIN` or `TENANT_ADMIN`
+
+**`POST /v1/audit/verify-chain`**
+- **Description:** Authoritative database hash chain verification for backward compatibility.
+- **Required Permission:** `AUDIT_READ`
+
+**`GET /v1/audit/report/{session_id}`**
+- **Description:** Generate single-session compliance verification certificate.
+- **Required Permission:** `AUDIT_READ`
 
 ### 4.10 Telemetry API
 **`GET /v1/health`**

@@ -1,12 +1,26 @@
-"""Security headers and trace ID injection middleware."""
+"""Security headers, trace/correlation ID injection, and header sanitization middleware."""
 
+import re
 import uuid
 from collections.abc import Awaitable, Callable
 
+import structlog
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
 from starlette.types import ASGIApp, Receive, Scope, Send
+
+_HEADER_ID_REGEX = re.compile(r"^[a-zA-Z0-9_\-\.]{8,64}$")
+
+
+def _sanitize_header_id(raw_val: str | None, default_generator: Callable[[], str]) -> str:
+    """Validate and sanitize external tracing identifiers to prevent log and header injection attacks."""
+    if not raw_val or not isinstance(raw_val, str):
+        return default_generator()
+    cleaned = raw_val.strip()
+    if not _HEADER_ID_REGEX.match(cleaned):
+        return default_generator()
+    return cleaned
 
 
 class HeaderSanitizationMiddleware:
@@ -29,15 +43,28 @@ class HeaderSanitizationMiddleware:
 
 
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
-    """Injects enterprise-grade security headers and X-Trace-ID into all responses."""
+    """Injects enterprise-grade security headers, X-Trace-ID, and X-Correlation-ID into all responses."""
 
     async def dispatch(self, request: Request, call_next: Callable[[Request], Awaitable[Response]]) -> Response:
-        trace_id = request.headers.get("X-Trace-ID", uuid.uuid4().hex)
-        request.state.trace_id = trace_id
+        trace_id = _sanitize_header_id(request.headers.get("X-Trace-ID"), lambda: uuid.uuid4().hex)
+        correlation_id = _sanitize_header_id(request.headers.get("X-Correlation-ID"), lambda: trace_id)
 
-        response = await call_next(request)
+        request.state.trace_id = trace_id
+        request.state.correlation_id = correlation_id
+
+        # Bind tracing context to structlog contextvars for correlated logging across all modules
+        structlog.contextvars.bind_contextvars(
+            trace_id=trace_id,
+            correlation_id=correlation_id,
+        )
+
+        try:
+            response = await call_next(request)
+        finally:
+            structlog.contextvars.clear_contextvars()
 
         response.headers["X-Trace-ID"] = trace_id
+        response.headers["X-Correlation-ID"] = correlation_id
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["X-Frame-Options"] = "DENY"
         response.headers["X-XSS-Protection"] = "1; mode=block"

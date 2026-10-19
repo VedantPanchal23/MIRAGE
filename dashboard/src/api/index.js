@@ -124,6 +124,13 @@ export {
   discoverMCPTools,
 } from "./mcp";
 
+export {
+  getAuditEvents,
+  getAuditIntegrity,
+  exportEvidenceBundle,
+  commitAuditAnchor,
+} from "./audit";
+
 import * as dashboard from "./dashboard";
 import * as alerts from "./alerts";
 import * as stream from "./stream";
@@ -137,6 +144,7 @@ import * as multiagent from "./multiagent";
 import * as tenants from "./tenants";
 import * as apikeys from "./apikeys";
 import * as mcp from "./mcp";
+import * as audit from "./audit";
 import { apiFetch, setApiToken, getApiToken, onUnauthorized, ApiError } from "./client";
 
 export const api = {
@@ -158,6 +166,7 @@ export const api = {
   tenants,
   apikeys,
   mcp,
+  audit,
 };
 
 export default api;

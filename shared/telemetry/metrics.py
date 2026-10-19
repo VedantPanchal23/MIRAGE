@@ -102,6 +102,59 @@ CLIP_PREFILTER_PASS_RATE = Gauge(
     ["tenant_id"],
 )
 
+# =============================================================================
+# Five-Gate Observability & Assurance Metrics
+# =============================================================================
+
+GATE_DECISIONS_TOTAL = Counter(
+    "mirage_gate_decisions_total",
+    "Total decisions evaluated across MIRAGE's five assurance gates.",
+    ["gate", "decision"],  # gate: gate1..5, decision: allow, deny, require_approval, uncertain, error
+)
+
+GATE_LATENCY_SECONDS = Histogram(
+    "mirage_gate_latency_seconds",
+    "Execution latency observed per assurance gate in seconds.",
+    ["gate"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0),
+)
+
+ACTION_LIFECYCLE_TOTAL = Counter(
+    "mirage_action_lifecycle_total",
+    "Action lifecycle state transitions in Gate 3 and Action Governor.",
+    ["action_type", "state"],  # state: proposed, authorized, executing, executed, execution_uncertain, failed
+)
+
+TOOL_DISPATCH_FAILURES_TOTAL = Counter(
+    "mirage_tool_dispatch_failures_total",
+    "Tool execution and MCP transport failures.",
+    ["transport", "failure_category"],  # transport: local, stdio, http_stream; category: timeout, ssrf_blocked, etc.
+)
+
+OUTCOME_VERIFICATION_TOTAL = Counter(
+    "mirage_outcome_verification_total",
+    "Gate 5 reality verification outcomes by epistemic observability class.",
+    ["observability_class", "outcome_status"],
+)
+
+AUDIT_INTEGRITY_CHECKS_TOTAL = Counter(
+    "mirage_audit_integrity_checks_total",
+    "Results of audit ledger cryptographic hash chain and anchor integrity evaluations.",
+    ["status"],  # status: valid, tampered, empty, truncation_detected
+)
+
+SECURITY_DENIALS_TOTAL = Counter(
+    "mirage_security_denials_total",
+    "Security, authentication, authorization, and rate-limiting enforcement denials.",
+    ["reason"],  # reason: unauthenticated, invalid_key, key_revoked, scope_insufficient, role_forbidden, rate_limited
+)
+
+AUDIT_ANCHOR_STATUS = Gauge(
+    "mirage_audit_anchor_status",
+    "Status of external audit anchor synchronization (1 for active state).",
+    ["status"],  # status: anchored, stale, unavailable, invalid
+)
+
 
 def record_request_metric(tenant_id: str, status_code: int, endpoint: str) -> None:
     """Increment the HTTP request counter for a given tenant, status code, and endpoint."""
@@ -149,6 +202,51 @@ def record_verification_metrics(
 def record_circuit_breaker_state(dependency: str, is_open: bool) -> None:
     """Update circuit breaker gauge (1 for OPEN, 0 for CLOSED)."""
     CIRCUIT_BREAKER_STATE.labels(dependency=dependency).set(1.0 if is_open else 0.0)
+
+
+def record_gate_decision(gate: str, decision: str, latency_seconds: float | None = None) -> None:
+    """Record gate decision count and optional execution latency."""
+    GATE_DECISIONS_TOTAL.labels(gate=gate.lower(), decision=decision.lower()).inc()
+    if latency_seconds is not None:
+        GATE_LATENCY_SECONDS.labels(gate=gate.lower()).observe(max(0.0, latency_seconds))
+
+
+def record_action_transition(action_type: str, state: str) -> None:
+    """Record an action state lifecycle transition."""
+    ACTION_LIFECYCLE_TOTAL.labels(action_type=action_type.lower(), state=state.lower()).inc()
+
+
+def record_tool_dispatch_failure(transport: str, failure_category: str) -> None:
+    """Record a tool execution or MCP transport failure."""
+    TOOL_DISPATCH_FAILURES_TOTAL.labels(
+        transport=transport.lower(),
+        failure_category=failure_category.lower(),
+    ).inc()
+
+
+def record_outcome_verification(observability_class: str, outcome_status: str) -> None:
+    """Record an independent Gate 5 outcome verification result."""
+    OUTCOME_VERIFICATION_TOTAL.labels(
+        observability_class=observability_class.lower(),
+        outcome_status=outcome_status.lower(),
+    ).inc()
+
+
+def record_audit_integrity_check(status: str) -> None:
+    """Record an audit integrity evaluation result."""
+    AUDIT_INTEGRITY_CHECKS_TOTAL.labels(status=status.lower()).inc()
+
+
+def record_security_denial(reason: str) -> None:
+    """Record a security, auth, or tenant lifecycle denial."""
+    SECURITY_DENIALS_TOTAL.labels(reason=reason.lower()).inc()
+
+
+def record_anchor_status(status: str) -> None:
+    """Update active status of external audit anchor synchronization."""
+    valid_statuses = ("anchored", "stale", "unavailable", "invalid")
+    for s in valid_statuses:
+        AUDIT_ANCHOR_STATUS.labels(status=s).set(1.0 if s == status.lower() else 0.0)
 
 
 @contextmanager

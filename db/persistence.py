@@ -512,58 +512,10 @@ class PostgresPersistenceService:
 
     async def verify_audit_hash_chain(self, tenant_id: str) -> dict[str, Any]:
         """Verify the cryptographic SHA-256 hash chain from PostgreSQL records."""
+        from services.audit_ledger import AuditLedgerService
+
         async with db_session.get_tenant_session(tenant_id) as session:
-            stmt = (
-                select(AuditLogRecord)
-                .where(AuditLogRecord.tenant_id == tenant_id)
-                .order_by(AuditLogRecord.created_at.asc(), AuditLogRecord.entry_id.asc())
-            )
-            records = (await session.execute(stmt)).scalars().all()
-
-            if not records:
-                return {
-                    "valid": False,
-                    "tenant_id": tenant_id,
-                    "total_records_verified": 0,
-                    "chain_status": "EMPTY",
-                    "message": "No audit records found in database for tenant; ledger is empty.",
-                }
-
-            prev_hash = "0" * 64
-            for idx, rec in enumerate(records):
-                if rec.prev_hash != prev_hash:
-                    return {
-                        "valid": False,
-                        "tenant_id": tenant_id,
-                        "chain_status": "TAMPERED",
-                        "tampered_at_index": idx,
-                        "session_id": rec.session_id,
-                        "error": "Broken hash link to previous audit block",
-                    }
-
-                now_iso = rec.created_at.isoformat()
-                block_data = f"{rec.prev_hash}:{rec.session_id}:{rec.hrs_score:.4f}:{now_iso}"
-                expected_hash = compute_sha256(block_data)
-
-                if rec.chain_hash != expected_hash:
-                    return {
-                        "valid": False,
-                        "tenant_id": tenant_id,
-                        "chain_status": "TAMPERED",
-                        "tampered_at_index": idx,
-                        "session_id": rec.session_id,
-                        "error": "Cryptographic payload hash mismatch (tamper detected)",
-                    }
-                prev_hash = rec.chain_hash
-
-            return {
-                "valid": True,
-                "tenant_id": tenant_id,
-                "total_records_verified": len(records),
-                "chain_status": "VERIFIED_UNBROKEN",
-                "chain_head": prev_hash,
-                "message": f"Successfully verified {len(records)} PostgreSQL audit records with 0 defects.",
-            }
+            return await AuditLedgerService.verify_chain(session=session, tenant_id=tenant_id)
 
     async def export_tenant_data_jsonl(self, tenant_id: str) -> list[str]:
         """Export tenant sessions in JSONL format directly from PostgreSQL."""

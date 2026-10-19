@@ -32,9 +32,70 @@ class TrustAssuranceLevel(StrEnum):
     EXTERNALLY_ANCHORED = "EXTERNALLY_ANCHORED"
 
 
+class AuditIntegrityStatus(StrEnum):
+    """Precise audit integrity verification status model.
+
+    Distinguishes internal chain validity from external anchoring and outage states:
+    - CHAIN_VALID: Hash chain from genesis to head is unbroken and valid, but no anchor exists.
+    - ANCHORED: Chain is unbroken and head exactly matches the latest verified external anchor.
+    - ANCHOR_STALE: Chain is valid and ahead of latest verified anchor by an unanchored delta.
+    - ANCHOR_UNAVAILABLE: External anchor backend is unreachable (unanchored events are never claimed anchored).
+    - INTEGRITY_FAILURE: Tampering, sequence gap/fork, broken prev_hash, hash mismatch, or truncation detected.
+    """
+
+    CHAIN_VALID = "CHAIN_VALID"
+    ANCHORED = "ANCHORED"
+    ANCHOR_STALE = "ANCHOR_STALE"
+    ANCHOR_UNAVAILABLE = "ANCHOR_UNAVAILABLE"
+    INTEGRITY_FAILURE = "INTEGRITY_FAILURE"
+
+
 def compute_sha256(text: str) -> str:
     """Compute SHA-256 hex digest for arbitrary input string."""
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def compute_canonical_audit_hash(
+    *,
+    prev_hash: str,
+    tenant_id: str,
+    sequence_number: int,
+    entry_id: str,
+    timestamp_iso: str,
+    event_type: str | None = None,
+    session_id: str | None = None,
+    trace_id: str | None = None,
+    actor_identity_id: str | None = None,
+    transaction_id: str | None = None,
+    decision: str | None = None,
+    prompt_hash: str | None = None,
+    response_hash: str | None = None,
+    hrs_score: float | None = None,
+    payload_digest: str | None = None,
+) -> str:
+    """Compute deterministic SHA-256 hash across canonical JSON serialization of audit entry.
+
+    Invariant: Serialization is key-sorted, compact, and independent of Python dict ordering.
+    """
+    payload = {
+        "actor_identity_id": (actor_identity_id or "").strip(),
+        "decision": (decision or "").strip(),
+        "entry_id": entry_id.strip(),
+        "event_type": (event_type or "").strip(),
+        "hrs_score": round(float(hrs_score), 4) if hrs_score is not None else 0.0,
+        "payload_digest": (payload_digest or "").strip(),
+        "prev_hash": prev_hash.strip().lower(),
+        "prompt_hash": (prompt_hash or ("0" * 64)).strip().lower(),
+        "response_hash": (response_hash or ("0" * 64)).strip().lower(),
+        "sequence_number": int(sequence_number),
+        "session_id": (session_id or "").strip(),
+        "tenant_id": tenant_id.strip(),
+        "timestamp": timestamp_iso.strip(),
+        "trace_id": (trace_id or "").strip(),
+        "transaction_id": (transaction_id or "").strip(),
+    }
+    serialized = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(serialized).hexdigest()
 
 
 def is_valid_sha256_hex(val: Any) -> bool:
@@ -88,6 +149,53 @@ class CheckpointModel(BaseModel):
     revocation_reason: str | None = Field(default=None, description="Documented reason for revocation")
     issued_at: datetime = Field(description="Issuance timestamp of checkpoint")
     expires_at: datetime | None = Field(default=None, description="Expiration timestamp (fails closed if expired)")
+
+
+class AnchorProof(BaseModel):
+    """External cryptographic anchor proof stored outside mutable database rows."""
+
+    anchor_id: str = Field(description="Unique anchor identifier (e.g. anc_...)")
+    tenant_id: str = Field(description="Tenant boundary bound to this anchor")
+    checkpoint_hash: str = Field(description="SHA-256 chain hash committed by the anchor")
+    sequence_number: int = Field(ge=0, description="Ledger sequence number anchored")
+    ledger_identity: str = Field(default="audit_logs", description="Target ledger identifier")
+    signer_identity: str = Field(description="Identifier of authorized notary signer")
+    signature: str = Field(description="Cryptographic signature over canonical checkpoint string")
+    trust_tier: TrustAssuranceLevel = Field(default=TrustAssuranceLevel.LOCAL_UNANCHORED)
+    issued_at: datetime = Field(
+        default_factory=lambda: datetime.now(UTC),
+        description="Issuance timestamp of checkpoint",
+    )
+    anchored_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    anchor_digest: str = Field(description="SHA-256 digest over anchor record")
+
+
+class AuditIntegrityReport(BaseModel):
+    """Authoritative audit integrity verification report."""
+
+    tenant_id: str
+    status: AuditIntegrityStatus
+    chain_valid: bool
+    total_records: int
+    head_sequence: int
+    head_chain_hash: str
+    latest_anchor: AnchorProof | CheckpointModel | None = None
+    verified_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    defects: list[str] = Field(default_factory=list)
+
+
+class AuditEvidenceBundle(BaseModel):
+    """Self-contained, cryptographically signed compliance evidence bundle."""
+
+    bundle_id: str
+    tenant_id: str
+    exported_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    time_range: dict[str, str | None]
+    event_count: int
+    events: list[dict[str, Any]]
+    chain_verification: dict[str, Any]
+    latest_anchor: dict[str, Any] | None = None
+    bundle_digest: str = Field(description="SHA-256 digest over canonical bundle payload")
 
 
 class NotaryKeyRegistry:

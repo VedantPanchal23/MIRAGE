@@ -56,24 +56,23 @@ def require_permission(required_perm: Permission) -> Callable[..., Coroutine[Any
         request: Request,
         auth: Annotated[AuthContext, Depends(get_current_auth)],
     ) -> str:
-        # Derive role ONLY from cryptographically verified auth context
-        role = auth.role
-        allowed_permissions = ROLE_PERMISSIONS.get(role, set())
-
-        if required_perm not in allowed_permissions:
+        # Enforce role boundary and scope attenuation
+        if not auth.has_permission(required_perm):
             logger.warning(
                 "RBAC permission denied",
                 tenant_id=auth.tenant_id,
-                role=role.value,
+                role=auth.role.value,
                 required_permission=required_perm.value,
+                token_type=auth.token_type,
+                capabilities=list(auth.capabilities),
                 client_sent_x_role=request.headers.get("X-Role"),
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied: Role '{role.value}' lacks permission '{required_perm.value}'",
+                detail=f"Access denied: Credential lacks required permission '{required_perm.value}'",
             )
 
-        request.state.role = role.value
+        request.state.role = auth.role.value
         request.state.tenant_id = auth.tenant_id
         return auth.tenant_id
 

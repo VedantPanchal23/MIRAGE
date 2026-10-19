@@ -447,17 +447,24 @@ def create_agent_access_token(
     )
 
 
-def register_api_key(api_key: str, tenant_id: str, role: Role = Role.API_CLIENT) -> str:
+def register_api_key(
+    api_key: str,
+    tenant_id: str,
+    role: Role = Role.API_CLIENT,
+    scopes: list[str] | None = None,
+) -> str:
     """Register an isolated test fixture credential, never a runtime API key."""
     if settings.environment != EnvironmentType.TEST:
         raise RuntimeError("API keys must be provisioned by the control plane")
     key_hash = compute_sha256(api_key)
+    caps = frozenset(scopes if scopes is not None else ["*"])
     _TEST_API_KEY_REGISTRY[key_hash] = AuthContext(
         tenant_id=tenant_id,
         role=role,
         user_id=f"test_key_{key_hash[:12]}",
         identity_id=f"test_identity_{key_hash[:12]}",
         principal_type="test_fixture",
+        capabilities=caps,
         is_authenticated=True,
         token_type="api_key",
     )

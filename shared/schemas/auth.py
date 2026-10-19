@@ -85,3 +85,33 @@ class AuthContext(BaseModel):
     capabilities: frozenset[str] = Field(default_factory=frozenset)
     is_authenticated: bool = Field(default=True, description="Whether authentication was cryptographically verified")
     token_type: Literal["jwt", "api_key"] = Field(default="jwt", description="Credential type used for authentication")
+
+    def has_permission(self, permission: Permission | str) -> bool:
+        """Evaluate if the identity possesses a required permission under role and scope attenuation."""
+        try:
+            perm = permission if isinstance(permission, Permission) else Permission(str(permission))
+        except ValueError:
+            # Unknown or invalid permission strings fail closed
+            return False
+
+        # 1. Base Role Boundary Check: Role must possess the permission in the canonical access matrix
+        role_permissions = ROLE_PERMISSIONS.get(self.role, set())
+        if perm not in role_permissions:
+            return False
+
+        # 2. Scope Attenuation for API keys:
+        if self.token_type == "api_key":
+            if not self.capabilities:
+                # An API key without scopes has no permissions
+                return False
+            if "*" in self.capabilities:
+                # Wildcard cannot exceed role permissions (already satisfied above)
+                return True
+            # Specific scopes: string value of permission must be explicitly present in capabilities
+            return perm.value in self.capabilities
+
+        # 3. Scope Attenuation for JWT tokens when capabilities are explicitly provided:
+        if self.capabilities and "*" not in self.capabilities:
+            return perm.value in self.capabilities
+
+        return True

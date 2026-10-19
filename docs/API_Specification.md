@@ -22,9 +22,13 @@ The MIRAGE 3.0 API adheres to the following core principles:
 MIRAGE 3.0 supports multiple authentication flows tailored to different integration models. All requests require authentication via the `Authorization` header.
 
 ### 2.1 API Key Flow (Machine-to-Machine)
-The primary method for server-side SDKs and backend integrations.
+The primary method for server-side SDKs, autonomous agents, and backend integrations.
 - **Format:** `Authorization: Bearer <API_KEY>`
-- **Scope:** API Keys are bound to specific Tenants and Roles.
+- **Storage & Security:** Plaintext secrets (`mirage_live_...`) are returned only once upon creation. The database stores only the SHA-256 hash.
+- **Scope Attenuation & Role Ceiling:** API keys are bound to a tenant, an identity role, and a list of authorized `scopes`. The effective permissions for any API key are computed as the strict intersection between its role permissions ceiling and its declared scopes:
+  $$\text{Effective Permissions} = \text{Role Ceiling} \cap \text{Key Scopes}$$
+  If an API key is assigned `scopes: ["verify:read"]`, it is strictly forbidden from executing mutating operations (such as `POST /v1/verify` which requires `verify:write`), even if its bound role is `TENANT_ADMIN`.
+- **Revocation:** Inactive, expired, or revoked API keys are rejected immediately with HTTP 401 Unauthorized.
 
 ### 2.2 JWT Flow (Short-Lived Tokens)
 For ephemeral access, particularly in governed workflows where specific microservices need temporary, scoped access.
@@ -38,8 +42,9 @@ Used for dashboard interactions or integrations requiring human context.
 
 ## 3. Authorization
 
-All API endpoints evaluate the caller's Capabilities via the Policy Engine.
-- **ABAC (Attribute-Based Access Control):** Access is determined by attributes of the caller (Identity, Role), the resource (Tenant, Sensitivity), and the context (Network, Time).
+All API endpoints evaluate the caller's Capabilities and Permissions via route-level guards (`has_permission`).
+- **ABAC (Attribute-Based Access Control):** Access is determined by attributes of the caller (Identity, Role, Scopes), the resource (Tenant, Sensitivity), and the context (Network, Time).
+- **Scope Attenuation:** Mutating and sensitive routes enforce explicit permission checks (e.g. `verify:write`, `action:write`, `session:write`, `mcp:write`, `tenant:admin`). Requests lacking the required permission fail closed with HTTP 403 Forbidden.
 - **Capability Model:** A specific, bounded permission is required to perform any action. E.g., `policy:write`, `transaction:initiate`.
 
 ## 4. Endpoint Groups

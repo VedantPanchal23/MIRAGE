@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from gateway.middleware.auth import get_current_auth
 from gateway.middleware.rate_limiter import rate_limiter
 from shared.logging import get_logger
-from shared.schemas.auth import ROLE_PERMISSIONS, AuthContext, Permission
+from shared.schemas.auth import AuthContext, Permission
 from shared.schemas.verification import VerificationRequest, VerificationResponse
 from workers.orchestrator import VerificationOrchestrator
 
@@ -31,17 +31,18 @@ async def verify_completion(
     auth: Annotated[AuthContext, Depends(get_current_auth)],
 ) -> VerificationResponse:
     """Verify factual consistency and hallucination risk of a generated completion."""
-    # 1. RBAC Check: Ensure caller possesses VERIFY_WRITE permission
-    allowed_permissions = ROLE_PERMISSIONS.get(auth.role, set())
-    if Permission.VERIFY_WRITE not in allowed_permissions:
+    # 1. RBAC & Scope Check: Ensure caller possesses VERIFY_WRITE permission
+    if not auth.has_permission(Permission.VERIFY_WRITE):
         logger.warning(
-            "Access denied: role lacks verify:write",
+            "Access denied: credential lacks verify:write permission",
             tenant_id=auth.tenant_id,
             role=auth.role.value,
+            token_type=auth.token_type,
+            capabilities=list(auth.capabilities),
         )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Access denied: Role '{auth.role.value}' lacks permission '{Permission.VERIFY_WRITE.value}'",
+            detail=f"Access denied: Credential lacks permission '{Permission.VERIFY_WRITE.value}'",
         )
 
     # 2. Strict Tenant Binding: Authenticated tenant is strictly authoritative

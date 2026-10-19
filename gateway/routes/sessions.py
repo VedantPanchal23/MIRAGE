@@ -30,13 +30,10 @@ async def get_session_by_id(
 ) -> dict[str, Any]:
     """Retrieve complete verification session details, claim assertions, and deep trace."""
     # Check permissions (VERIFY_READ, AUDIT_READ, or SUPER_ADMIN)
-    from shared.schemas.auth import ROLE_PERMISSIONS
-
-    allowed_perms = ROLE_PERMISSIONS.get(auth.role, set())
     if (
         auth.role != Role.SUPER_ADMIN
-        and Permission.VERIFY_READ not in allowed_perms
-        and Permission.AUDIT_READ not in allowed_perms
+        and not auth.has_permission(Permission.VERIFY_READ)
+        and not auth.has_permission(Permission.AUDIT_READ)
     ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,

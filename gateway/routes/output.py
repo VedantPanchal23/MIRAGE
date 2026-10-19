@@ -60,11 +60,10 @@ async def get_output_assurance_endpoint(
     auth: Annotated[AuthContext, Depends(get_current_auth)],
 ) -> dict[str, Any]:
     """Retrieve persisted Gate 4 Output Assurance record by ID with strict tenant scoping."""
-    allowed_permissions = ROLE_PERMISSIONS.get(auth.role, set())
-    if Permission.VERIFY_READ not in allowed_permissions:
+    if not auth.has_permission(Permission.VERIFY_READ):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail=f"Access denied: Role '{auth.role.value}' lacks permission '{Permission.VERIFY_READ.value}'",
+            detail=f"Access denied: Credential lacks permission '{Permission.VERIFY_READ.value}'",
         )
 
     record = await output_assurance_service.get_output_assurance_record(output_id, auth)

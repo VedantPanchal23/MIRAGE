@@ -10,6 +10,7 @@ Adheres to MIRAGE Phase 8 architecture:
 """
 
 import hashlib
+import struct
 import uuid
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -23,6 +24,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from db.models import AgentHandoff, AITransaction, AuditLogRecord, ResourceLease
 from db.session import get_tenant_session
 from services.agent_governance import agent_governance_service
+from shared.config import EnvironmentType, get_settings
 from shared.logging import get_logger
 from shared.schemas.audit import compute_sha256
 from shared.schemas.auth import AuthContext, Role
@@ -43,6 +45,44 @@ DEFAULT_PORTS: dict[str, int] = {
     "http": 80,
     "https": 443,
 }
+
+
+def _is_postgresql_session(session: AsyncSession) -> bool:
+    """Detect whether session is executing against a live PostgreSQL database."""
+    sync_session = getattr(session, "sync_session", None)
+    sync_bind = getattr(sync_session, "bind", None) if sync_session is not None else None
+    if sync_bind is not None and hasattr(sync_bind, "dialect"):
+        return getattr(sync_bind.dialect, "name", None) == "postgresql"
+    bind = getattr(session, "bind", None)
+    if bind is not None and hasattr(bind, "dialect"):
+        return getattr(bind.dialect, "name", None) == "postgresql"
+    return False
+
+
+def derive_resource_advisory_lock_key(tenant_id: str, canonical_uri: str) -> int:
+    """Derive a deterministic 64-bit signed integer for PostgreSQL advisory locks.
+
+    Uses SHA-256 over '{tenant_id}:{canonical_uri}', ensuring stable, reproducible
+    lock keys across independent Python processes, worker hosts, and application restarts.
+    This guarantees that concurrent processes locking the same canonical resource map to the
+    exact same PostgreSQL lock key (unlike Python's process-randomized hash()).
+
+    Collision Handling:
+    pg_advisory_xact_lock operates on a 64-bit signed integer (-2^63 to 2^63 - 1).
+    With a 64-bit key space, the birthday bound for collision is ~2^32 resources.
+    If two distinct resources map to the same advisory lock key, the only effect is
+    temporary false serialization during the acquisition phase; correctness is fully
+    preserved because actual lease validity and exclusivity are verified against
+    the database rows and enforced by database unique constraints.
+
+    Transaction Scope:
+    PostgreSQL transaction-level advisory locks (pg_advisory_xact_lock) are strictly bound
+    to the current database transaction. They are automatically and unconditionally released
+    by the PostgreSQL engine upon COMMIT or ROLLBACK. A failed operation, unhandled exception,
+    or process termination can never leave stale application-level advisory locks behind.
+    """
+    digest = hashlib.sha256(f"{tenant_id}:{canonical_uri}".encode()).digest()
+    return struct.unpack(">q", digest[:8])[0]
 
 
 def _safe_unquote_segment(seg: str) -> str:
@@ -275,12 +315,16 @@ class ResourceConcurrencyService:
                     )
 
             # 4. Serialize lease acquisition on canonical resource & check active leases
-            if s.bind and getattr(s.bind.dialect, "name", "") == "postgresql":
-                lock_key = int.from_bytes(
-                    hashlib.sha256(f"{auth.tenant_id}:{canonical_uri}".encode()).digest()[:8],
-                    byteorder="big",
-                    signed=True,
+            is_postgres = _is_postgresql_session(s)
+            settings = get_settings()
+            if settings.environment == EnvironmentType.PRODUCTION and not is_postgres:
+                raise RuntimeError(
+                    f"Production invariant violation: concurrency advisory lock for '{canonical_uri}' "
+                    "requires PostgreSQL dialect"
                 )
+
+            if is_postgres:
+                lock_key = derive_resource_advisory_lock_key(auth.tenant_id, canonical_uri)
                 await s.execute(text("SELECT pg_advisory_xact_lock(:lock_key)"), {"lock_key": lock_key})
 
             active_leases_stmt = (

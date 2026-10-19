@@ -98,6 +98,24 @@ export {
   getTransactionHierarchy,
 } from "./multiagent";
 
+export {
+  listTenants,
+  createTenant,
+  getTenant,
+  updateTenant,
+  suspendTenant,
+  reactivateTenant,
+  offboardTenant,
+} from "./tenants";
+
+export {
+  listApiKeys,
+  createApiKey,
+  getApiKey,
+  rotateApiKey,
+  revokeApiKey,
+} from "./apikeys";
+
 import * as dashboard from "./dashboard";
 import * as alerts from "./alerts";
 import * as stream from "./stream";
@@ -108,6 +126,8 @@ import * as context from "./context";
 import * as actions from "./actions";
 import * as output from "./output";
 import * as multiagent from "./multiagent";
+import * as tenants from "./tenants";
+import * as apikeys from "./apikeys";
 import { apiFetch, setApiToken, getApiToken, onUnauthorized, ApiError } from "./client";
 
 export const api = {
@@ -126,7 +146,10 @@ export const api = {
   actions,
   output,
   multiagent,
+  tenants,
+  apikeys,
 };
 
 export default api;
+
 

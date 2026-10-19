@@ -1,6 +1,7 @@
 """Unit tests for Phase 6 Outcome Contracts and Execution Assurance lifecycle."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -22,6 +23,61 @@ from shared.schemas.outcome import (
     OutcomeStatus,
     RiskSensitiveVerificationPolicy,
 )
+
+
+def _build_behavioral_mock_session(
+    txn: AITransaction | None = None,
+    contract: ActionContract | None = None,
+    tool: ToolDefinition | None = None,
+    caps: list[Any] | None = None,
+    leases: list[Any] | None = None,
+    audit_chain: tuple[str, int] = ("0" * 64, 0),
+    blast_radius: tuple[int, int] = (0, 0),
+    costs: list[Any] | None = None,
+    approvals: Any | None = None,
+) -> AsyncMock:
+    """Build a behavior-oriented fake session for outcome contract testing.
+
+    Avoids brittle sequential call-count coupling while guaranteeing fail-closed
+    and exact entity resolution for all Phase 6-8 governance queries.
+    """
+    mock_session = AsyncMock()
+
+    async def _execute_fake(statement: Any, *args: Any, **kwargs: Any) -> MagicMock:
+        stmt_str = str(statement)
+        res = MagicMock()
+        res.scalar_one_or_none.return_value = None
+        res.scalars.return_value.all.return_value = []
+        res.scalars.return_value.first.return_value = None
+        res.all.return_value = []
+        res.first.return_value = None
+        res.one.return_value = blast_radius
+        res.scalar_one.return_value = None
+        res.scalar.return_value = None
+
+        if "ai_transactions" in stmt_str or "AITransaction" in stmt_str:
+            res.scalar_one_or_none.return_value = txn
+        elif "action_contracts" in stmt_str or "ActionContract" in stmt_str:
+            res.scalar_one_or_none.return_value = contract
+        elif "tool_registry" in stmt_str or "ToolDefinition" in stmt_str or "tools" in stmt_str:
+            res.scalar_one_or_none.return_value = tool
+        elif "resource_leases" in stmt_str or "ResourceLease" in stmt_str:
+            res.scalars.return_value.all.return_value = leases or []
+            res.all.return_value = leases or []
+        elif "capabilities" in stmt_str or "AgentCapability" in stmt_str:
+            res.scalars.return_value.all.return_value = caps or []
+            res.all.return_value = caps or []
+        elif "action_approvals" in stmt_str or "ActionApproval" in stmt_str:
+            res.scalar_one_or_none.return_value = approvals
+        elif "budgets" in stmt_str or "Budget" in stmt_str:
+            res.scalars.return_value.all.return_value = costs or []
+        elif "audit_events" in stmt_str or "AuditEvent" in stmt_str:
+            res.first.return_value = audit_chain
+            res.scalar_one_or_none.return_value = None
+        return res
+
+    mock_session.execute.side_effect = _execute_fake
+    return mock_session
 
 
 @pytest.fixture
@@ -96,42 +152,24 @@ async def test_action_proposal_blocks_mutating_action_without_postconditions(
     txn = _mock_ai_transaction("txn_p6_001", auth_context.tenant_id)
     tool = _mock_tool_definition("write_file", auth_context.tenant_id)
 
+    now = datetime.now(UTC)
     mock_cap = MagicMock()
     mock_cap.active = True
-    mock_cap.expires_at = None
+    mock_cap.expires_at = now + timedelta(hours=1)
     mock_cap.constraints = {}
     mock_cap.resource_scope = {}
     mock_cap.max_autonomy_level = 4
 
+    mock_session = _build_behavioral_mock_session(
+        txn=txn,
+        tool=tool,
+        caps=[mock_cap],
+        leases=[],
+        blast_radius=(0, 0),
+        costs=[],
+    )
+
     with patch("services.action_governor.db_session.get_tenant_session") as mock_db:
-        mock_session = AsyncMock()
-
-        mock_res_txn = MagicMock()
-        mock_res_txn.scalar_one_or_none.return_value = txn
-
-        mock_res_act = MagicMock()
-        mock_res_act.scalar_one_or_none.return_value = None
-
-        mock_res_tool = MagicMock()
-        mock_res_tool.scalar_one_or_none.return_value = tool
-
-        mock_res_cap = MagicMock()
-        mock_res_cap.scalars.return_value.all.return_value = [mock_cap]
-
-        mock_res_blast = MagicMock()
-        mock_res_blast.one.return_value = (0, 0)
-
-        mock_res_cost = MagicMock()
-        mock_res_cost.scalars.return_value.all.return_value = []
-
-        mock_session.execute.side_effect = [
-            mock_res_txn,
-            mock_res_act,
-            mock_res_tool,
-            mock_res_cap,
-            mock_res_blast,
-            mock_res_cost,
-        ]
         mock_db.return_value.__aenter__.return_value = mock_session
 
         decision = await governor_service.propose_and_authorize_action(auth_context, proposal)
@@ -181,46 +219,25 @@ async def test_action_proposal_authorizes_valid_outcome_contract(
     txn = _mock_ai_transaction("txn_p6_002", auth_context.tenant_id)
     tool = _mock_tool_definition("update_user", auth_context.tenant_id)
 
+    now = datetime.now(UTC)
     mock_cap = MagicMock()
     mock_cap.active = True
-    mock_cap.expires_at = None
+    mock_cap.expires_at = now + timedelta(hours=1)
     mock_cap.constraints = {}
     mock_cap.resource_scope = {}
     mock_cap.max_autonomy_level = 4
 
+    mock_session = _build_behavioral_mock_session(
+        txn=txn,
+        tool=tool,
+        caps=[mock_cap],
+        leases=[],
+        blast_radius=(0, 0),
+        costs=[],
+        audit_chain=("0" * 64, 0),
+    )
+
     with patch("services.action_governor.db_session.get_tenant_session") as mock_db:
-        mock_session = AsyncMock()
-
-        mock_res_txn = MagicMock()
-        mock_res_txn.scalar_one_or_none.return_value = txn
-
-        mock_res_act = MagicMock()
-        mock_res_act.scalar_one_or_none.return_value = None
-
-        mock_res_tool = MagicMock()
-        mock_res_tool.scalar_one_or_none.return_value = tool
-
-        mock_res_cap = MagicMock()
-        mock_res_cap.scalars.return_value.all.return_value = [mock_cap]
-
-        mock_res_blast = MagicMock()
-        mock_res_blast.one.return_value = (0, 0)
-
-        mock_res_cost = MagicMock()
-        mock_res_cost.scalars.return_value.all.return_value = []
-
-        mock_res_audit = MagicMock()
-        mock_res_audit.first.return_value = ("0" * 64, 0)
-
-        mock_session.execute.side_effect = [
-            mock_res_txn,
-            mock_res_act,
-            mock_res_tool,
-            mock_res_cap,
-            mock_res_blast,
-            mock_res_cost,
-            mock_res_audit,
-        ]
         mock_db.return_value.__aenter__.return_value = mock_session
 
         decision = await governor_service.propose_and_authorize_action(auth_context, proposal)
@@ -277,36 +294,21 @@ async def test_execution_creates_pending_verification_record(
 
     mock_cap = MagicMock()
     mock_cap.active = True
-    mock_cap.expires_at = None
+    mock_cap.expires_at = now + timedelta(hours=1)
     mock_cap.capability_type = mock_contract.required_capability
+
+    mock_session = _build_behavioral_mock_session(
+        txn=mock_txn,
+        contract=mock_contract,
+        tool=tool,
+        caps=[mock_cap],
+        leases=[],
+        audit_chain=("0" * 64, 0),
+    )
 
     with patch("services.action_governor.db_session.get_tenant_session") as mock_db, \
          patch.object(governor_service.tool_proxy, "dispatch", new_callable=AsyncMock) as mock_dispatch:
 
-        mock_session = AsyncMock()
-
-        mock_res_contract = MagicMock()
-        mock_res_contract.scalar_one_or_none.return_value = mock_contract
-
-        mock_res_txn = MagicMock()
-        mock_res_txn.scalar_one_or_none.return_value = mock_txn
-
-        mock_res_tool = MagicMock()
-        mock_res_tool.scalar_one_or_none.return_value = tool
-
-        mock_res_cap = MagicMock()
-        mock_res_cap.scalars.return_value.all.return_value = [mock_cap]
-
-        mock_res_audit = MagicMock()
-        mock_res_audit.first.return_value = ("0" * 64, 0)
-
-        mock_session.execute.side_effect = [
-            mock_res_contract,
-            mock_res_txn,
-            mock_res_tool,
-            mock_res_cap,
-            mock_res_audit,
-        ]
         mock_db.return_value.__aenter__.return_value = mock_session
 
         # Tool returns successful transport ACK
@@ -374,36 +376,21 @@ async def test_read_only_action_completes_without_gate5_pending(
 
     mock_cap = MagicMock()
     mock_cap.active = True
-    mock_cap.expires_at = None
+    mock_cap.expires_at = now + timedelta(hours=1)
     mock_cap.capability_type = mock_contract.required_capability
+
+    mock_session = _build_behavioral_mock_session(
+        txn=mock_txn,
+        contract=mock_contract,
+        tool=tool,
+        caps=[mock_cap],
+        leases=[],
+        audit_chain=("0" * 64, 0),
+    )
 
     with patch("services.action_governor.db_session.get_tenant_session") as mock_db, \
          patch.object(governor_service.tool_proxy, "dispatch", new_callable=AsyncMock) as mock_dispatch:
 
-        mock_session = AsyncMock()
-
-        mock_res_contract = MagicMock()
-        mock_res_contract.scalar_one_or_none.return_value = mock_contract
-
-        mock_res_txn = MagicMock()
-        mock_res_txn.scalar_one_or_none.return_value = mock_txn
-
-        mock_res_tool = MagicMock()
-        mock_res_tool.scalar_one_or_none.return_value = tool
-
-        mock_res_cap = MagicMock()
-        mock_res_cap.scalars.return_value.all.return_value = [mock_cap]
-
-        mock_res_audit = MagicMock()
-        mock_res_audit.first.return_value = ("0" * 64, 0)
-
-        mock_session.execute.side_effect = [
-            mock_res_contract,
-            mock_res_txn,
-            mock_res_tool,
-            mock_res_cap,
-            mock_res_audit,
-        ]
         mock_db.return_value.__aenter__.return_value = mock_session
 
         mock_dispatch.return_value = ({"content": "Hello World", "bytes": 11}, None)
@@ -415,3 +402,53 @@ async def test_read_only_action_completes_without_gate5_pending(
         assert exec_res.requires_outcome_assurance is False
         assert exec_res.outcome_status is None
         assert exec_res.postconditions_satisfied is True
+
+
+# =============================================================================
+# Regression tests for lease expiration semantics & time-bounded invariants
+# =============================================================================
+
+def test_lease_expiry_semantics_valid_and_malformed() -> None:
+    """Verify production lease expiry semantics:
+
+    1. Active lease with future expiry -> active.
+    2. Active lease with past expiry -> inactive.
+    3. Active lease with None/missing expiry -> strictly rejected as inactive (never indefinitely valid).
+    4. Active lease with non-datetime expiry -> strictly rejected as inactive.
+    5. Inactive status -> inactive regardless of expiry.
+    """
+    from services.concurrency_service import is_lease_active
+    from shared.schemas.concurrency import LeaseStatus
+
+    now = datetime.now(UTC)
+
+    # 1. Valid future expiry
+    valid_lease = MagicMock()
+    valid_lease.status = LeaseStatus.ACQUIRED.value
+    valid_lease.expires_at = now + timedelta(minutes=10)
+    assert is_lease_active(valid_lease, now) is True
+
+    # 2. Expired past lease
+    expired_lease = MagicMock()
+    expired_lease.status = LeaseStatus.ACQUIRED.value
+    expired_lease.expires_at = now - timedelta(seconds=1)
+    assert is_lease_active(expired_lease, now) is False
+
+    # 3. None / missing expiry (MUST NOT be treated as indefinitely valid!)
+    none_lease = MagicMock()
+    none_lease.status = LeaseStatus.ACQUIRED.value
+    none_lease.expires_at = None
+    assert is_lease_active(none_lease, now) is False
+
+    # 4. Malformed non-datetime expiry
+    malformed_lease = MagicMock()
+    malformed_lease.status = LeaseStatus.ACQUIRED.value
+    malformed_lease.expires_at = "2099-01-01"
+    assert is_lease_active(malformed_lease, now) is False
+
+    # 5. Non-ACQUIRED status
+    released_lease = MagicMock()
+    released_lease.status = LeaseStatus.RELEASED.value
+    released_lease.expires_at = now + timedelta(minutes=10)
+    assert is_lease_active(released_lease, now) is False
+

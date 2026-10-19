@@ -20,6 +20,7 @@ import { ActionAssuranceView } from "./views/ActionAssuranceView";
 import { OutputAssuranceView } from "./views/OutputAssuranceView";
 import { OutcomeAssuranceView } from "./views/OutcomeAssuranceView";
 import { MultiAgentGovernanceView } from "./views/MultiAgentGovernanceView";
+import { TenantsView } from "./views/TenantsView";
 
 /**
  * Dashboard application shell managing navigation state, header actions, and view routing.
@@ -142,6 +143,14 @@ export function DashboardShell() {
       case "alerts":
         return (
           <AlertsView
+            isRefreshing={isRefreshing}
+            onDataLoaded={handleDataLoaded}
+          />
+        );
+
+      case "tenants":
+        return (
+          <TenantsView
             isRefreshing={isRefreshing}
             onDataLoaded={handleDataLoaded}
           />

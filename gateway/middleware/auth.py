@@ -15,7 +15,7 @@ from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import session as db_session
-from db.models import ActorIdentity, Agent
+from db.models import ActorIdentity, Agent, ApiCredential, Tenant
 from shared.config import EnvironmentType, get_settings
 from shared.logging import get_logger
 from shared.schemas.agent import AgentStatus
@@ -314,34 +314,80 @@ async def resolve_jwt_context(token: str, session: AsyncSession | None = None) -
 
 
 async def resolve_api_key_context(api_key: str) -> AuthContext:
-    """Resolve a hashed API key through PostgreSQL, including expiry and revocation."""
+    """Resolve a hashed API key through PostgreSQL, including tenant status, expiry, and revocation."""
+    key_hash = compute_sha256(api_key)
+
     if settings.environment == EnvironmentType.TEST:
-        context = _TEST_API_KEY_REGISTRY.get(compute_sha256(api_key))
-        if context is None:
+        context = _TEST_API_KEY_REGISTRY.get(key_hash)
+        if context is not None:
+            return context
+        # In test environment, if test registry doesn't have it, fall through to database if engine exists
+        if not getattr(db_session, "engine", None):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or revoked API key",
                 headers={"WWW-Authenticate": "Bearer"},
             )
-        return context
+
     try:
         async with db_session.AsyncSessionLocal() as session:
+            # Check tenant status first to provide clear failure semantics
             result = await session.execute(
                 text("SELECT * FROM mirage_resolve_api_credential(:key_hash)"),
-                {"key_hash": compute_sha256(api_key)},
+                {"key_hash": key_hash},
             )
             context = await _context_from_result(result, "api_key")
+
+            if context is None:
+                # Distinguish inactive tenant from invalid key if key exists
+                cred_res = await session.execute(
+                    select(
+                        ApiCredential.tenant_id,
+                        ApiCredential.revoked_at,
+                        ApiCredential.expires_at,
+                        ApiCredential.scopes,
+                    ).where(ApiCredential.key_hash == key_hash)
+                )
+                cred_row = cred_res.first()
+                if cred_row:
+                    t_res = await session.execute(select(Tenant.status).where(Tenant.id == cred_row[0]))
+                    t_status = t_res.scalar_one_or_none()
+                    if t_status and t_status != "ACTIVE":
+                        raise HTTPException(
+                            status_code=status.HTTP_401_UNAUTHORIZED,
+                            detail=f"Tenant '{cred_row[0]}' is {t_status.lower()}; authentication denied",
+                            headers={"WWW-Authenticate": "Bearer"},
+                        )
+
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Invalid or revoked API key",
+                    headers={"WWW-Authenticate": "Bearer"},
+                )
+
+            # Resolve scopes from ApiCredential and attach to capabilities
+            cred_scopes_res = await session.execute(
+                select(ApiCredential.scopes).where(ApiCredential.key_hash == key_hash)
+            )
+            scopes_val = cred_scopes_res.scalar_one_or_none()
+            if scopes_val and isinstance(scopes_val, list):
+                context.capabilities = frozenset(scopes_val)
+
+            # Touch last_used_at timestamp
+            now = datetime.now(UTC)
+            await session.execute(
+                text("UPDATE api_credentials SET last_used_at = :now WHERE key_hash = :key_hash"),
+                {"now": now, "key_hash": key_hash},
+            )
+            await session.commit()
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.error("Authoritative API credential lookup failed", error=str(exc))
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Identity authority unavailable"
         ) from exc
-    if context is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or revoked API key",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+
     return context
 
 

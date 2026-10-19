@@ -217,6 +217,22 @@ def are_resources_in_conflict(
     return False
 
 
+def is_lease_active(lease: ResourceLease, now: datetime) -> bool:
+    """Return True if lease has an authoritative status of ACQUIRED and a valid future expiry.
+
+    Time-bounded invariant: Leases missing expires_at or having non-datetime values
+    are invalid and strictly treated as non-active (never indefinitely valid).
+    """
+    if getattr(lease, "status", None) != LeaseStatus.ACQUIRED.value:
+        return False
+    expires_at = getattr(lease, "expires_at", None)
+    if expires_at is None or not isinstance(expires_at, datetime):
+        return False
+    exp = expires_at if expires_at.tzinfo is not None else expires_at.replace(tzinfo=UTC)
+    now_cmp = now if now.tzinfo is not None else now.replace(tzinfo=UTC)
+    return exp > now_cmp
+
+
 class ResourceConcurrencyService:
     """Authoritative management service for shared-resource concurrency and fencing tokens."""
 
@@ -339,7 +355,7 @@ class ResourceConcurrencyService:
             active_leases = active_res.scalars().all()
 
             for lease in active_leases:
-                if lease.expires_at <= now:
+                if not is_lease_active(lease, now):
                     lease.status = LeaseStatus.EXPIRED.value
                     lease.updated_at = now
                     continue
@@ -352,7 +368,13 @@ class ResourceConcurrencyService:
                 ):
                     if lease.holder_transaction_id == request.transaction_id:
                         # Re-entrant renewal by the same transaction
-                        lease.expires_at = max(lease.expires_at, now + timedelta(seconds=request.duration_seconds))
+                        exp_tz = (
+                            lease.expires_at
+                            if lease.expires_at.tzinfo is not None
+                            else lease.expires_at.replace(tzinfo=UTC)
+                        )
+                        target_exp = now + timedelta(seconds=request.duration_seconds)
+                        lease.expires_at = max(exp_tz, target_exp)
                         lease.updated_at = now
                         await self._emit_audit_event(
                             session=s,
@@ -591,7 +613,7 @@ class ResourceConcurrencyService:
                     detail="Cannot renew lease: supplied fencing token does not match active lease token",
                 )
 
-            if lease.status != LeaseStatus.ACQUIRED.value or lease.expires_at <= now:
+            if not is_lease_active(lease, now):
                 lease.status = LeaseStatus.EXPIRED.value
                 lease.updated_at = now
                 raise HTTPException(
@@ -736,7 +758,7 @@ class ResourceConcurrencyService:
 
             found_matching_lease = False
             for lease in active_leases:
-                if lease.expires_at <= now:
+                if not is_lease_active(lease, now):
                     continue
 
                 if are_resources_in_conflict(

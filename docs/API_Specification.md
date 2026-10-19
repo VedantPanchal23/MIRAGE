@@ -189,16 +189,72 @@ Manages the end-to-end AI workload.
 - **Description:** Prometheus-compatible metrics.
 - **Required Capability:** `telemetry:read`
 
-### 4.11 Admin API
+### 4.11 Admin API (Tenant Lifecycle Management)
 **`POST /v1/admin/tenants`**
-- **Description:** Create tenant.
-- **Required Capability:** Superadmin only.
+- **Description:** Transactionally provision a new tenant, initial administrative actor, audit ledger, and initial budget.
+- **Request Fields:** `name` (string), `tenant_id` (optional string), `tier` ("free" | "developer" | "enterprise"), `scs_enabled` (boolean), `pii_detection_enabled` (boolean), `admin_user_id` (optional string).
+- **Response Fields:** `id`, `name`, `tier`, `status` ("ACTIVE" | "SUSPENDED" | "OFFBOARDED"), `scs_enabled`, `pii_detection_enabled`, `created_at`, `updated_at`.
+- **Required Role:** `SUPER_ADMIN`
+
+**`GET /v1/admin/tenants`**
+- **Description:** List tenants within administrative boundary with cursor-based pagination.
+- **Query Parameters:** `limit` (integer 1-100, default 50), `cursor` (optional string).
+- **Response Fields:** `tenants` (array of tenant objects), `total` (integer), `next_cursor` (optional string).
+- **Required Role:** `SUPER_ADMIN` (sees all tenants) or `TENANT_ADMIN` (scoped strictly to own tenant).
 
 **`GET /v1/admin/tenants/{id}`**
-- **Description:** Get tenant info.
-- **Required Capability:** Superadmin only.
+- **Description:** Retrieve authoritative tenant status and configuration.
+- **Response Fields:** Tenant object.
+- **Required Role:** `SUPER_ADMIN` or caller's own tenant matching `TENANT_ADMIN`.
 
-### 4.12 Streaming API
+**`PATCH /v1/admin/tenants/{id}`**
+- **Description:** Update permitted tenant settings (name, SCS, PII detection, or subscription tier).
+- **Request Fields:** `name` (optional), `tier` (optional, restricted to `SUPER_ADMIN`), `scs_enabled` (optional), `pii_detection_enabled` (optional).
+- **Response Fields:** Updated tenant object.
+- **Required Role:** `SUPER_ADMIN` or caller's own `TENANT_ADMIN`.
+
+**`POST /v1/admin/tenants/{id}/suspend`**
+- **Description:** Immediately suspend tenant operations, cutting off authentication across API key and JWT lookup stored procedures.
+- **Request Fields:** `reason` (string, required).
+- **Response Fields:** Updated tenant object with status `SUSPENDED` and `suspension_reason`.
+- **Required Role:** `SUPER_ADMIN`
+
+**`POST /v1/admin/tenants/{id}/reactivate`**
+- **Description:** Reactivate a suspended tenant back to `ACTIVE` status.
+- **Response Fields:** Updated tenant object with status `ACTIVE`.
+- **Required Role:** `SUPER_ADMIN`
+
+**`POST /v1/admin/tenants/{id}/offboard`**
+- **Description:** Irreversibly soft-offboard a tenant, instantly revoking all active API credentials and locking the account.
+- **Request Fields:** `reason` (string, optional).
+- **Response Fields:** Updated tenant object with status `OFFBOARDED`.
+- **Required Role:** `SUPER_ADMIN`
+
+### 4.12 API Key Management API
+**`POST /v1/auth/api-keys`**
+- **Description:** Generate a cryptographically secure, high-entropy API key (`mirage_live_...`). Plaintext secret is returned **only once** upon creation and never persisted or retrievable again. The database stores only the SHA-256 hash.
+- **Request Fields:** `name` (string, default "Default API Key"), `scopes` (array of strings, default `["*"]`), `expires_in_days` (optional integer), `tenant_id` (optional string, `SUPER_ADMIN` only).
+- **Response Fields:** `id`, `tenant_id`, `name`, `key_prefix` (e.g. `mirage_live_a1b2`), `scopes`, `is_active`, `created_at`, `expires_at`, `key_secret` (plaintext secret, returned only in this response).
+- **Required Role:** `SUPER_ADMIN` or `TENANT_ADMIN`.
+
+**`GET /v1/auth/api-keys`**
+- **Description:** List API key metadata for a tenant (without plaintext secrets).
+- **Query Parameters:** `tenant_id` (optional string, required for `SUPER_ADMIN` targeting a specific tenant).
+- **Response Fields:** `keys` (array of API key metadata), `total` (integer).
+- **Required Role:** `SUPER_ADMIN` or `TENANT_ADMIN`.
+
+**`POST /v1/auth/api-keys/{id}/rotate`**
+- **Description:** Rotate an API key by generating a new active key and either immediately revoking the previous key or scheduling a grace period.
+- **Request Fields:** `immediate_revocation` (boolean, default false), `grace_period_seconds` (integer, default 86400 / 24h).
+- **Response Fields:** New API key metadata including `key_secret` for the replacement credential.
+- **Required Role:** `SUPER_ADMIN` or `TENANT_ADMIN`.
+
+**`DELETE /v1/auth/api-keys/{id}`**
+- **Description:** Instantly and permanently revoke an API key credential.
+- **Response Fields:** Updated metadata with `revoked_at` timestamp and `is_active: false`.
+- **Required Role:** `SUPER_ADMIN` or `TENANT_ADMIN`.
+
+### 4.13 Streaming API
 **`WebSocket /v1/stream/transactions`**
 - **Description:** Real-time bi-directional stream for a transaction.
 

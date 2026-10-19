@@ -34,9 +34,17 @@ class Tenant(Base):
     tier: Mapped[str] = mapped_column(String(32), default="free", nullable=False)
     scs_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     pii_detection_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="ACTIVE", nullable=False, index=True)
+    suspension_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         default=lambda: datetime.now(UTC),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(UTC),
+        onupdate=lambda: datetime.now(UTC),
         nullable=False,
     )
 
@@ -135,12 +143,27 @@ class ApiCredential(Base):
     identity_id: Mapped[str] = mapped_column(
         String(64), ForeignKey("actor_identities.id", ondelete="CASCADE"), nullable=False, index=True
     )
+    name: Mapped[str] = mapped_column(String(255), default="Default API Key", nullable=False)
+    key_prefix: Mapped[str] = mapped_column(String(16), default="mirage_live_", nullable=False, index=True)
+    scopes: Mapped[list[str]] = mapped_column(JSONB, default=lambda: ["*"], nullable=False)
     key_hash: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
+
+    @property
+    def is_active(self) -> bool:
+        if self.revoked_at is not None:
+            return False
+        if self.expires_at is not None:
+            now = datetime.now(UTC)
+            exp = self.expires_at if self.expires_at.tzinfo is not None else self.expires_at.replace(tzinfo=UTC)
+            if exp <= now:
+                return False
+        return True
 
 
 class Policy(Base):

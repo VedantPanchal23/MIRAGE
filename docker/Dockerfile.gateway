@@ -36,7 +36,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 
 COPY . /app
-RUN chown -R mirage:mirage /app
+RUN mkdir -p /app/data/audit_anchors && chown -R mirage:mirage /app
 
 USER 1000:1000
 

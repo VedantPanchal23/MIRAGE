@@ -167,6 +167,10 @@ class AnchorProof(BaseModel):
         description="Issuance timestamp of checkpoint",
     )
     anchored_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    prev_anchor_digest: str = Field(
+        default="0" * 64,
+        description="SHA-256 digest of immediately preceding anchor proof for immutable hash chaining",
+    )
     anchor_digest: str = Field(description="SHA-256 digest over anchor record")
 
 

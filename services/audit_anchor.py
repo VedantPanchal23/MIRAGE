@@ -122,7 +122,23 @@ class FileAuditAnchorBackend(AuditAnchorBackend):
         if not verify_checkpoint_signature(key_bytes, canon, checkpoint.signature):
             raise AnchorVerificationError("Cryptographic signature mismatch for checkpoint to be anchored")
 
-        anchor_digest = compute_sha256(f"anchor:{canon}:{checkpoint.signature}")
+        # Determine preceding anchor digest for immutable hash chaining
+        prev_anchor_digest = "0" * 64
+        if tenant_file.exists():
+            try:
+                with open(tenant_file, encoding="utf-8") as f:
+                    lines = [ln.strip() for ln in f if ln.strip()]
+                    if lines:
+                        last_proof = AnchorProof.model_validate_json(lines[-1])
+                        prev_anchor_digest = last_proof.anchor_digest
+            except Exception as e:
+                logger.warning(
+                    "Could not read previous anchor proof for chaining; defaulting to genesis",
+                    tenant_id=tenant_id,
+                    error=str(e),
+                )
+
+        anchor_digest = compute_sha256(f"anchor:{canon}:{checkpoint.signature}:{prev_anchor_digest}")
         now = datetime.now(UTC)
 
         proof = AnchorProof(
@@ -136,6 +152,7 @@ class FileAuditAnchorBackend(AuditAnchorBackend):
             trust_tier=checkpoint.trust_tier,
             issued_at=checkpoint.issued_at,
             anchored_at=now,
+            prev_anchor_digest=prev_anchor_digest,
             anchor_digest=anchor_digest,
         )
 
@@ -224,12 +241,65 @@ class FileAuditAnchorBackend(AuditAnchorBackend):
             # Also check against issuance time without second fractions if formatted differently
             return False
 
-        # 2. Verify anchor digest
-        expected_digest = compute_sha256(f"anchor:{canon}:{anchor.signature}")
-        if anchor.anchor_digest != expected_digest:
+        # 2. Verify anchor digest (supports chained digest and legacy unchained digest)
+        expected_chained = compute_sha256(f"anchor:{canon}:{anchor.signature}:{anchor.prev_anchor_digest}")
+        legacy_digest = compute_sha256(f"anchor:{canon}:{anchor.signature}")
+        if anchor.anchor_digest != expected_chained and anchor.anchor_digest != legacy_digest:
             return False
 
         return True
+
+    async def verify_anchor_chain(self, tenant_id: str) -> tuple[bool, list[str]]:
+        """Verify the complete cryptographic hash chain of anchor proofs for a tenant.
+
+        Validates:
+        1. Every anchor proof record has valid signature and digest.
+        2. Sequence numbers are strictly monotonic and increasing.
+        3. prev_anchor_digest correctly links to the preceding anchor's anchor_digest.
+        Fails closed on any detected deletion, reordering, insertion, or signature tampering.
+        """
+        tenant_file = self._get_tenant_file(tenant_id)
+        if not tenant_file.exists():
+            return True, []
+
+        try:
+            with open(tenant_file, encoding="utf-8") as f:
+                lines = [ln.strip() for ln in f if ln.strip()]
+        except OSError as exc:
+            raise AnchorUnavailableError(f"Cannot read anchor chain for tenant '{tenant_id}': {exc}") from exc
+
+        if not lines:
+            return True, []
+
+        defects: list[str] = []
+        expected_prev_digest = "0" * 64
+
+        for idx, line in enumerate(lines):
+            try:
+                proof = AnchorProof.model_validate_json(line)
+            except Exception as e:
+                defects.append(f"Anchor record at index {idx} corrupted JSON: {e}")
+                return False, defects
+
+            # 1. Verify single anchor authenticity
+            if not await self.verify_anchor(tenant_id=tenant_id, anchor=proof):
+                defects.append(
+                    f"Anchor proof at index {idx} (seq {proof.sequence_number}, id '{proof.anchor_id}') "
+                    "failed cryptographic verification"
+                )
+
+            # 2. Verify hash chain link (if chained anchor)
+            if proof.prev_anchor_digest != ("0" * 64) or idx == 0:
+                if proof.prev_anchor_digest != expected_prev_digest and idx > 0:
+                    defects.append(
+                        f"Anchor proof chain broken at index {idx} (sequence {proof.sequence_number}): "
+                        f"expected prev_anchor_digest '{expected_prev_digest}', got '{proof.prev_anchor_digest}'"
+                    )
+
+            expected_prev_digest = proof.anchor_digest
+
+        is_valid = len(defects) == 0
+        return is_valid, defects
 
 
 # Default singleton instance

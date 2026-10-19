@@ -47,6 +47,10 @@ class Settings(BaseSettings):
         default=None,
         description="Allow default dev notary key in non-production environments",
     )
+    audit_anchor_dir: str = Field(
+        default="data/audit_anchors",
+        description="Filesystem directory for immutable external audit anchor storage",
+    )
 
     # --------------------------------------------------------------------------
     # PostgreSQL Database
@@ -253,6 +257,51 @@ class Settings(BaseSettings):
     s3_region_name: str = Field(default="us-east-1")
     aws_access_key_id: str | None = Field(default=None)
     aws_secret_access_key: str | None = Field(default=None)
+
+    def validate_production_configuration(self) -> list[str]:
+        """Validate settings against production security hardening requirements.
+
+        Returns a list of violation messages (empty list if configuration is compliant).
+        Fails closed on any insecure development defaults or missing security credentials.
+        """
+        defects: list[str] = []
+
+        if self.environment != EnvironmentType.PRODUCTION:
+            return defects
+
+        # 1. JWT & HMAC Secret Hardening
+        if self.secret_key == "dev-insecure-secret-key-change-in-production-min32chars":
+            defects.append("SECRET_KEY is using the default insecure development secret")
+        elif len(self.secret_key) < 48:
+            defects.append(
+                f"SECRET_KEY length ({len(self.secret_key)}) is less than 48 characters required for production"
+            )
+
+        # 2. Celery & RabbitMQ TLS Enforcement
+        if not self.celery_broker_url.startswith("amqps://"):
+            defects.append("CELERY_BROKER_URL must use AMQPS (TLS 1.2+) in production")
+
+        # 3. Notary Keys for External Anchoring
+        if not self.notary_keys_json or not self.notary_keys_json.strip():
+            defects.append("NOTARY_KEYS_JSON must be configured with authorized notary signing keys in production")
+        if self.allow_dev_notary_keys is True:
+            defects.append("ALLOW_DEV_NOTARY_KEYS is strictly prohibited in production")
+
+        # 4. Authentication & Mock Providers
+        if self.demo_auth_enabled:
+            defects.append("DEMO_AUTH_ENABLED is strictly prohibited in production")
+        if self.allow_mock_providers is True:
+            defects.append("ALLOW_MOCK_PROVIDERS is strictly prohibited in production")
+
+        # 5. Database Credentials Hardening
+        if "mirage_dev_secret" in self.database_url or "mirage_dev_secret" in self.database_sync_url:
+            defects.append("DATABASE_URL / DATABASE_SYNC_URL contains default development password 'mirage_dev_secret'")
+
+        # 6. Redis Credentials Hardening
+        if "mirage_redis_secret" in self.redis_url or self.redis_password == "mirage_redis_secret":
+            defects.append("REDIS_URL / REDIS_PASSWORD contains default development password 'mirage_redis_secret'")
+
+        return defects
 
 
 @lru_cache

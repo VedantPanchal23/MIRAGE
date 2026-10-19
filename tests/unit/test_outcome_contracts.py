@@ -43,7 +43,7 @@ def _build_behavioral_mock_session(
     """
     mock_session = AsyncMock()
 
-    async def _execute_fake(statement: Any, *args: Any, **kwargs: Any) -> MagicMock:
+    async def _execute_fake(statement: Any, *_args: Any, **_kwargs: Any) -> MagicMock:
         stmt_str = str(statement)
         res = MagicMock()
         res.scalar_one_or_none.return_value = None

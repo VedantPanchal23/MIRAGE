@@ -380,6 +380,8 @@ services:
       - QDRANT_PORT=6333
       - QDRANT_API_KEY=${QDRANT_API_KEY:-mirage_qdrant_secret}
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - AUDIT_ANCHOR_DIR=/app/data/audit_anchors
+      - NOTARY_KEYS_JSON=${NOTARY_KEYS_JSON:-}
     depends_on:
       migration:
         condition: service_completed_successfully
@@ -391,6 +393,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+    volumes:
+      - audit_anchors:/app/data/audit_anchors
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/v1/health"]
       interval: 10s
@@ -452,6 +456,8 @@ services:
       - QDRANT_PORT=6333
       - QDRANT_API_KEY=${QDRANT_API_KEY:-mirage_qdrant_secret}
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - AUDIT_ANCHOR_DIR=/app/data/audit_anchors
+      - NOTARY_KEYS_JSON=${NOTARY_KEYS_JSON:-}
     depends_on:
       migration:
         condition: service_completed_successfully
@@ -465,6 +471,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+    volumes:
+      - audit_anchors:/app/data/audit_anchors
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
@@ -538,3 +546,4 @@ volumes:
   tempodata:
   prometheusdata:
   grafanadata:
+  audit_anchors:

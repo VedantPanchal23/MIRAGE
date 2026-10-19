@@ -373,6 +373,7 @@ class ResourceConcurrencyService:
                     )
 
             # 5. Calculate strictly monotonically increasing fencing token for this canonical URI
+            # (including any overlapping hierarchical parent/child resources)
             token_stmt = select(func.coalesce(func.max(ResourceLease.fencing_token), 0)).where(
                 ResourceLease.tenant_id == auth.tenant_id,
                 ResourceLease.resource_uri == canonical_uri,
@@ -700,20 +701,20 @@ class ResourceConcurrencyService:
                         ResourceLease.resource_uri, ResourceLease.concurrency_mode, ResourceLease.fencing_token
                     ).where(ResourceLease.tenant_id == tenant_id)
                     hier_res = await s.execute(hier_stmt)
-                    if hasattr(hier_res, "all"):
-                        raw_all = hier_res.all()
-                        if isinstance(raw_all, (list, tuple)):
-                            for row in raw_all:
-                                if isinstance(row, (list, tuple)) and len(row) >= 3:
-                                    r_uri, r_mode, r_token = row[0], row[1], row[2]
-                                    if are_resources_in_conflict(
-                                        canonical_uri,
-                                        ConcurrencyMode.EXCLUSIVE,
-                                        r_uri,
-                                        r_mode,
-                                    ):
-                                        if isinstance(r_token, int) and r_token > max_token:
-                                            max_token = r_token
+                    raw_all = hier_res.all() if hasattr(hier_res, "all") else hier_res
+                    for row in raw_all:
+                        try:
+                            r_uri, r_mode, r_token = row[0], row[1], row[2]
+                        except (IndexError, TypeError, KeyError):
+                            continue
+                        if are_resources_in_conflict(
+                            canonical_uri,
+                            ConcurrencyMode.EXCLUSIVE,
+                            r_uri,
+                            r_mode,
+                        ):
+                            if isinstance(r_token, int) and r_token > max_token:
+                                max_token = r_token
                 except Exception:
                     pass
 

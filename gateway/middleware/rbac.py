@@ -69,7 +69,7 @@ def require_permission(required_perm: Permission) -> Callable[..., Coroutine[Any
             )
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Access denied: Credential lacks required permission '{required_perm.value}'",
+                detail=f"Access denied: Role '{auth.role.value}' credential lacks permission '{required_perm.value}'",
             )
 
         request.state.role = auth.role.value

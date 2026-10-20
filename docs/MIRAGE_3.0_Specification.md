@@ -1,6 +1,6 @@
 # MIRAGE 3.0 — Canonical Specification
 
-> **Status:** Authoritative | **Version:** 3.0.0-draft | **Date:** 2026-10-05
+> **Status:** Authoritative — Project Closed | **Version:** 3.0.0 | **Date:** 2026-10-20
 >
 > This document is the highest-level conceptual source of truth for MIRAGE 3.0.
 > All other specification documents derive their authority from this document.
@@ -503,18 +503,24 @@ These require human/product decisions before implementation:
 - LangGraph correction agent
 - Container hardening and network segmentation
 
-### 12.6 Next Implementation Phase
-Implementation should proceed in this order:
-1. **Phase 1:** Core Control Plane — Identity, Policy, Tenant, Capability services; extended Gateway with Gate 1
-2. **Phase 2:** Transaction Model — AI Transaction lifecycle, state management, correlation
-3. **Phase 3:** Risk + Action Governance — Risk Engine, Action Governor, Gate 3, approval workflow
-4. **Phase 4:** Context + Output Assurance — Context Assembler with Gate 2; Verification Engine integration with Gate 4
-5. **Phase 5:** Model Routing + Cost — Model Router, Budget Manager, cost attribution
-6. **Phase 6:** Outcome Assurance — Reality Verifier, Gate 5, postcondition checking
-7. **Phase 7:** Memory Governance — Governed memory system with provenance and access control
-8. **Phase 8:** Tool Governance — Tool Proxy, MCP governance, tool identity
-9. **Phase 9:** Observability + Audit — Enhanced tracing, provenance tracking, audit reporting
-10. **Phase 10:** Dashboard + SDK — React 18/JSX management console, Python SDK, documentation
+### 12.6 Implementation Roadmap
+Implementation proceeded across the foundational assurance phases (Phases 0–7) and the consolidated final phase workstreams:
+- **Package 1:** Tenant administration, API-key lifecycle, and database RLS hardening.
+- **Package 2:** Governed MCP server integration, remote tool proxy, and egress security.
+- **Package 3:** Python SDK (`mirage-sdk`), scope attenuation, and contract verification.
+- **Package 4:** Distributed observability, audit integrity verification, and external anchoring.
+- **Package 5:** Production deployment hardening, non-root containers, and operational runbooks.
+- **Package 6:** Whole-platform authorization matrix, end-to-end 5-Gate integration, adversarial verification, and project closure.
+
+### 12.7 Final Project Closure Disposition
+The MIRAGE 3.0 platform has completed full vertical integration and verification across all Five Assurance Gates. The definitive project disposition is:
+
+**`MIRAGE PROJECT CLOSED — ACCEPTED WITH DOCUMENTED LIMITATIONS`**
+
+#### Documented Operational Limitations:
+1. **Target-Side Fencing Boundaries:** Internal SQL adapters enforce conditional mutations with fencing tokens. For external systems without native conditional write support (e.g., SMTP or generic third-party webhooks), execution is mediated at Gate 3; universal target-side fencing across arbitrary external protocols is physically bounded.
+2. **Audit Storage Architecture:** Cryptographic audit hash chains are serialized under PostgreSQL row locks and cross-checked against filesystem/HMAC-SHA256 notary anchor proofs. Full external WORM (Write Once Read Many) cloud object storage or public blockchain notarization requires provisioned external enterprise infrastructure.
+3. **Cryptographic Memory Shredding:** Governed memory deletion performs cryptographic tombstoning and multi-store cache/vector eviction. True physical hardware key destruction requires integration with external dedicated HSM / KMS hardware.
 
 ---
 

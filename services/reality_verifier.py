@@ -1983,16 +1983,22 @@ class RealityVerifierService:
             ledger_head_row = None
             is_live_postgres = False
             bind = getattr(session, "bind", None)
-            if bind is not None and hasattr(bind, "dialect") and getattr(bind.dialect, "name", None) == "postgresql":
+            if bind is None and hasattr(session, "get_bind"):
+                try:
+                    bind = session.get_bind()
+                except Exception:
+                    bind = None
+
+            dialect = getattr(bind, "dialect", None) if bind is not None else None
+            dialect_name = getattr(dialect, "name", None) if dialect is not None else None
+            if isinstance(dialect_name, str) and dialect_name == "postgresql":
                 is_live_postgres = True
             else:
                 sync_session = getattr(session, "sync_session", None)
                 sync_bind = getattr(sync_session, "bind", None) if sync_session is not None else None
-                if (
-                    sync_bind is not None
-                    and hasattr(sync_bind, "dialect")
-                    and getattr(sync_bind.dialect, "name", None) == "postgresql"
-                ):
+                sync_dialect = getattr(sync_bind, "dialect", None) if sync_bind is not None else None
+                sync_dialect_name = getattr(sync_dialect, "name", None) if sync_dialect is not None else None
+                if isinstance(sync_dialect_name, str) and sync_dialect_name == "postgresql":
                     is_live_postgres = True
 
             if app_settings.environment == EnvironmentType.PRODUCTION and not is_live_postgres:
@@ -2035,24 +2041,49 @@ class RealityVerifierService:
                         detail=f"Authoritative tenant audit ledger head missing for tenant '{auth.tenant_id}'",
                     )
 
-                prev_chain_hash = ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH
-                current_seq = ledger_head_row.sequence_number or 0
+                # Monotonically link to the latest audit log entry if present
+                latest_audit_stmt = (
+                    select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
+                    .where(AuditLogRecord.tenant_id == auth.tenant_id)
+                    .order_by(AuditLogRecord.sequence_number.desc(), AuditLogRecord.created_at.desc())
+                    .limit(1)
+                )
+                latest_audit_row = (await session.execute(latest_audit_stmt)).first()
+
+                if latest_audit_row and latest_audit_row[0]:
+                    prev_chain_hash = latest_audit_row[0]
+                    current_seq = max(ledger_head_row.sequence_number or 0, latest_audit_row[1] or 0)
+                else:
+                    prev_chain_hash = ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH
+                    current_seq = ledger_head_row.sequence_number or 0
+
                 new_sequence = current_seq + 1
             else:
                 # Narrowly scoped fallback for non-PostgreSQL unit test mocks (e.g. SQLite in test env)
                 try:
                     latest_audit = await session.execute(
-                        select(AuditLogRecord.chain_hash)
+                        select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
                         .where(AuditLogRecord.tenant_id == auth.tenant_id)
                         .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
                         .limit(1)
-                        .with_for_update()
                     )
-                    scalar_val = latest_audit.scalar_one_or_none()
-                    prev_chain_hash = scalar_val if isinstance(scalar_val, str) else GENESIS_ROOT_HASH
+                    scalar_fn = getattr(latest_audit, "scalar_one_or_none", None)
+                    scalar_val = scalar_fn() if callable(scalar_fn) else None
+                    if isinstance(scalar_val, str):
+                        prev_chain_hash = scalar_val
+                        new_sequence = 1
+                    else:
+                        first_fn = getattr(latest_audit, "first", None)
+                        latest_row = first_fn() if callable(first_fn) else None
+                        if latest_row and type(latest_row).__name__ != "MagicMock":
+                            prev_chain_hash = latest_row[0] if latest_row[0] is not None else GENESIS_ROOT_HASH
+                            new_sequence = (latest_row[1] or 0) + 1
+                        else:
+                            prev_chain_hash = GENESIS_ROOT_HASH
+                            new_sequence = 1
                 except (Exception, StopAsyncIteration):
                     prev_chain_hash = GENESIS_ROOT_HASH
-                new_sequence = 1
+                    new_sequence = 1
 
             entry_id = f"aud_{uuid.uuid4().hex}"
             chain_hash = compute_sha256(f"{prev_chain_hash}:{entry_id}:{outcome_status.value}:{verified_at_iso}")

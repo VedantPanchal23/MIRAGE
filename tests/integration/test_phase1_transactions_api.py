@@ -404,16 +404,27 @@ async def test_complete_phase1_governed_react_lifecycle(phase1_setup: dict[str, 
             await session.execute(
                 select(AuditLogRecord)
                 .where(AuditLogRecord.tenant_id == tenant_id)
-                .order_by(AuditLogRecord.created_at.asc(), AuditLogRecord.entry_id.asc())
+                .order_by(AuditLogRecord.sequence_number.asc())
             )
         ).scalars().all()
 
         assert len(audit_records) >= 10
         prev = "0" * 64
-        for record in audit_records:
-            assert record.prev_hash == prev
-            expected_hash = compute_sha256(
-                f"{record.prev_hash}:{record.entry_id}:{record.decision}:{record.created_at.isoformat()}"
+        for i, record in enumerate(audit_records):
+            assert record.prev_hash == prev, f"PREV MISMATCH at {i}: got {record.prev_hash} expected {prev}"
+            if record.event_type == "HIERARCHICAL_OUTCOME_EVALUATED":
+                expected_hash = compute_sha256(
+                    f"{record.prev_hash}:{record.entry_id}:{record.event_type}:{record.created_at.isoformat()}:{record.tenant_id}"
+                )
+            elif record.event_type in ("LEASE_ACQUIRED", "LEASE_RELEASED"):
+                expected_hash = compute_sha256(
+                    f"{record.prev_hash}:{record.entry_id}:{record.decision}:{record.created_at.isoformat()}:{record.tenant_id}"
+                )
+            else:
+                expected_hash = compute_sha256(
+                    f"{record.prev_hash}:{record.entry_id}:{record.decision}:{record.created_at.isoformat()}"
+                )
+            assert record.chain_hash == expected_hash, (
+                f"CHAIN MISMATCH at {i}: seq={record.sequence_number} type={record.event_type}"
             )
-            assert record.chain_hash == expected_hash
             prev = record.chain_hash

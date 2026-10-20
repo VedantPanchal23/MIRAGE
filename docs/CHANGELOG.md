@@ -212,6 +212,26 @@ MIRAGE has evolved from a hallucination detection platform (2.x) to a comprehens
 - **12 Operational Runbooks:** Created comprehensive, executable runbooks in `docs/runbooks/` covering initial deployment, configuration/secrets, migration execution, health/readiness troubleshooting, database backup/restore, audit-anchor recovery, signing key rotation, credential compromise/tenant suspension, MCP revocation, uncertain action investigation, failed deployment recovery, and incident evidence preservation.
 - **Documentation Harmonization:** Fully updated `docs/Deployment_and_Operations.md` with container hardening profiles, storage architecture, health check contracts, runbook index, and explicit operational trust boundaries.
 
+#### Final Phase — Package 6: Whole-Platform Integration, Adversarial Verification, and Definitive Project Closure
+- **Whole-Platform Role Permission Matrix:** Validated RBAC and ABAC ceiling hierarchies across all roles (`VIEWER`, `OPERATOR`, `API_CLIENT`, `TENANT_ADMIN`, `SUPER_ADMIN`). Proved that wildcard `["*"]` scopes are attenuated to the role permission ceiling, unmapped or malformed scopes fail closed, and unprivileged identities cannot access administrative or audit-export mutations.
+- **Client Header Spoofing & Identity Hardening:** Verified that client-supplied `X-Tenant-ID`, `X-User-ID`, and `X-Role` headers are ignored and stripped by `AuthenticationMiddleware` in favor of server-authenticated cryptographic credentials.
+- **Credential & Tenant Lifecycle Enforcement:** Verified that revoked API keys, expired JWTs, and tampered JWT signatures fail closed with immediate authentication denial. Confirmed stored procedure enforcement cutoff for `SUSPENDED` and `OFFBOARDED` tenants.
+- **Cross-Tenant Data Isolation:** Verified PostgreSQL Row-Level Security (RLS) and API path boundary isolation across actions, outcomes, and MCP servers; unauthorized cross-tenant lookups strictly return 404 Not Found without leaking data presence.
+- **Secret Hygiene & Database Role Hardening:** Verified that API key secret material and password hashes are never exposed in REST API listings. Confirmed `docker/postgres-init.sql` explicitly enforces `NOBYPASSRLS` for runtime application role `mirage_app`.
+- **Reality Verifier Monotonic Sequence Repair:** Fixed defect in `services/reality_verifier.py` where SQLAlchemy 2.0 `session.get_bind()` was needed instead of `session.bind`, ensuring monotonic `max(ledger_seq, audit_log_seq) + 1` sequence calculation and cryptographic audit hash linkage.
+- **End-to-End Five Gates Pipeline Verification:** Implemented 4 comprehensive scenarios in `tests/integration/test_five_gates_e2e.py`:
+  1. *Scenario 1 (Governed Success):* Complete traversal through Input, Context, Action, Output, and Outcome gates under lease resulting in `SUCCESS_CONFIRMED` with confidence 1.0.
+  2. *Scenario 2 (Denied Workflow):* Unauthorized capability requests fail closed at Gate 3 with `Decision.BLOCK` and zero downstream execution.
+  3. *Scenario 3 (Approval-Required Workflow):* High blast-radius, irreversible actions transition to `Decision.REQUIRE_APPROVAL` and `ActionState.AWAITING_APPROVAL`.
+  4. *Scenario 4 (Ambiguous Execution Preservation):* External network timeouts transition to `EXECUTION_UNCERTAIN`. Gate 5 fails closed with HTTP 409 Conflict, mathematically preventing false outcome confirmation.
+- **Durable Execution & MCP Adversarial Suite:** Built comprehensive adversarial test suite in `tests/security/test_durable_execution_mcp_adversarial.py` (11/11 passing):
+  - Epistemic outcome independence: verified tool execution returns do not satisfy outcome assurance.
+  - Post-approval contract binding hash: verified tampering of target resources or action parameters is detected and rejected.
+  - Server revocation race: verified `REVOKED` and `SUSPENDED` MCP servers immediately block tool proxy dispatch.
+  - Advanced anti-SSRF: verified blocking of decimal IP (`http://2130706433/mcp`), decimal metadata (`http://2852039166`), hexadecimal IP (`http://0x7f000001/mcp`), IPv4-mapped IPv6 (`http://[::ffff:127.0.0.1]:8080/mcp`), and IPv6 unspecified (`http://[::]:8080/mcp`).
+  - Idempotency key reuse: verified that reusing an idempotency key with differing semantics is strictly rejected.
+- **Definitive Project Closure:** Closed final roadmap phase with documented operational limitations.
+
 ### Deprecated
 - Streamlit dashboard deprecated in favor of React 18/JSX frontend.
 

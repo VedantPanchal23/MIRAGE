@@ -14,7 +14,7 @@ Executes the four mandatory scenarios:
 2. Scenario 2 (Denied Workflow): Unauthorized capability fails closed at Gate 3 with zero downstream dispatch.
 3. Scenario 3 (Approval-Required Workflow): High blast-radius action requires administrative approval before execution.
 4. Scenario 4 (Ambiguous External Execution): Network timeout during dispatch transitions to EXECUTION_UNCERTAIN
-   without blind redispatch or false outcome confirmation (HTTP 409 Conflict blocks premature verification).
+   without blind redispatch (HTTP 409 Conflict); independent reality verification resolves to COMPLETED.
 """
 
 from __future__ import annotations
@@ -44,6 +44,7 @@ from shared.schemas.action import (
     ToolType,
 )
 from shared.schemas.auth import Role
+from shared.schemas.outcome import compute_evidence_digest
 from tests.auth_factory import AuthTestFactory
 
 app = create_app()
@@ -395,20 +396,57 @@ async def test_scenario_4_ambiguous_execution_uncertain_preservation(e2e_setup: 
     assert get_data["state"] == "EXECUTION_UNCERTAIN"
     assert "timeout" in get_data["error_message"].lower()
 
-    # 2. Gate 5 Reality verification probe: Since state is uncertain and action is not COMPLETED,
-    # Gate 5 reality verifier must FAIL CLOSED with HTTP 409 Conflict, strictly prohibiting
-    # unconfirmed execution from masquerading as verified reality!
-    verify_payload = {
+    # 2. Redispatch Rejection: Retrying an EXECUTION_UNCERTAIN action must FAIL CLOSED with 409 Conflict
+    # to prevent duplicate mutations against external systems.
+    retry_resp = client.post("/v1/actions/execute", json={"action_id": act_id}, headers=headers)
+    assert retry_resp.status_code == 409
+    assert "EXECUTION_UNCERTAIN" in retry_resp.json()["detail"]
+
+    # 3. Transport-Inferred Resolution Rejection: Attempting to verify EXECUTION_UNCERTAIN action using
+    # OBS_INFERRED (transport acknowledgment only) must FAIL CLOSED with HTTP 400 Bad Request.
+    inferred_payload = {
         "transaction_id": txn_id,
         "action_id": act_id,
-        "observability_class": "OBS_DIRECT",
-        "verifier_type": "DATABASE",
+        "observability_class": "OBS_INFERRED",
+        "verifier_type": "HTTP_RESOURCE",
         "expected_postconditions": {"balance": 650.0},
         "adapter_config": {},
     }
+    inferred_resp = client.post("/v1/outcomes/verify", json=inferred_payload, headers=headers)
+    assert inferred_resp.status_code == 400
+    detail_str = inferred_resp.json()["detail"].lower()
+    assert "cannot resolve execution_uncertain action using transport acknowledgment" in detail_str
 
-    outcome_resp = client.post("/v1/outcomes/verify", json=verify_payload, headers=headers)
-    assert outcome_resp.status_code == 409
-    error_detail = outcome_resp.json()["detail"]
-    assert "cannot verify unexecuted action" in error_detail.lower()
-    assert "execution_uncertain" in error_detail.lower()
+    # 4. Authoritative Independent Reality Verification: Independent probe / observer confirms postconditions
+    # directly against target system reality.
+    obs_state = {"balance": 650.0}
+    direct_verify_payload = {
+        "transaction_id": txn_id,
+        "action_id": act_id,
+        "observability_class": "OBS_DIRECT",
+        "verifier_type": "INDEPENDENT_OBSERVER",
+        "expected_postconditions": {"balance": 650.0},
+        "observation": {
+            "observation_id": f"obs_unc_{suffix}",
+            "target_resource": "db://accounts/101",
+            "observed_at": datetime.now(UTC).isoformat(),
+            "observed_state": obs_state,
+            "evidence_digest": compute_evidence_digest(obs_state),
+            "epistemic_confidence": 1.0,
+            "source_id": "core-banking-system",
+        },
+        "adapter_config": {},
+    }
+    outcome_resp = client.post("/v1/outcomes/verify", json=direct_verify_payload, headers=headers)
+    assert outcome_resp.status_code == 200
+    outcome_data = outcome_resp.json()
+    assert outcome_data["outcome_status"] in ("VERIFIED_SUCCESS", "SUCCESS_CONFIRMED")
+    assert outcome_data["epistemic_confidence"] == 1.0
+
+    # 5. Action Contract Transitions to COMPLETED: With postconditions independently verified,
+    # the ActionContract state is now safely marked COMPLETED.
+    get_resp2 = client.get(f"/v1/actions/{act_id}", headers=headers)
+    assert get_resp2.status_code == 200
+    get_data2 = get_resp2.json()
+    assert get_data2["state"] == "COMPLETED"
+    assert get_data2["outcome_status"] in ("VERIFIED_SUCCESS", "SUCCESS_CONFIRMED")

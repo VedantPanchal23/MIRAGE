@@ -116,6 +116,7 @@ async def get_action_contract_endpoint(
             "approval_id": contract.approval_id,
             "observed_result": contract.observed_result,
             "error_message": contract.error_message,
+            "outcome_status": contract.outcome_status,
             "created_at": contract.created_at.isoformat(),
             "authorized_at": contract.authorized_at.isoformat() if contract.authorized_at else None,
             "completed_at": contract.completed_at.isoformat() if contract.completed_at else None,

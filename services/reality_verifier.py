@@ -1569,15 +1569,29 @@ class RealityVerifierService:
                 )
 
             # 3. Action Execution State Invariant:
-            # Action MUST be COMPLETED or EXECUTED. In-flight or proposed actions CANNOT be verified.
-            if action.state not in (ActionState.COMPLETED.value, "EXECUTED"):
+            # Action MUST be COMPLETED, EXECUTED, or EXECUTION_UNCERTAIN.
+            # In-flight, proposed, or blocked actions CANNOT be verified.
+            if action.state not in (ActionState.COMPLETED.value, "EXECUTED", ActionState.EXECUTION_UNCERTAIN.value):
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
                         f"Cannot verify unexecuted action: ActionContract '{action.id}' is in state '{action.state}'. "
-                        f"Only COMPLETED or EXECUTED actions may be verified."
+                        f"Only COMPLETED, EXECUTED, or EXECUTION_UNCERTAIN actions may be verified."
                     ),
                 )
+
+            # Epistemic Outcome Independence: An EXECUTION_UNCERTAIN action CANNOT be resolved
+            # via transport-inferred acknowledgment (OBS_INFERRED) because transport was never confirmed.
+            # Authoritative direct observation or independent probe is mandatory.
+            if action.state == ActionState.EXECUTION_UNCERTAIN.value:
+                if request.observability_class == ObservabilityClass.OBS_INFERRED:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=(
+                            "Cannot resolve EXECUTION_UNCERTAIN action using transport acknowledgment "
+                            "(OBS_INFERRED); independent direct observation or probe is required."
+                        ),
+                    )
 
             # 4. Check for existing outcome record for idempotency and monotonic state transitions
             existing_stmt = (

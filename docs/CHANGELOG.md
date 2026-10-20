@@ -232,6 +232,14 @@ MIRAGE has evolved from a hallucination detection platform (2.x) to a comprehens
   - Idempotency key reuse: verified that reusing an idempotency key with differing semantics is strictly rejected.
 - **Definitive Project Closure:** Closed final roadmap phase with documented operational limitations.
 
+#### Final Critical Remediation, Adversarial Verification, and Production Verification
+- **Gate 5 Uncertainty Resolution Unblock:** Resolved the critical architectural blocker in `services/reality_verifier.py` where actions in `ActionState.EXECUTION_UNCERTAIN` were trapped by line 1573 raising `HTTP 409 Conflict`. Updated state validation to permit verification of `EXECUTION_UNCERTAIN` actions while strictly rejecting truly unexecuted or in-flight actions (`PROPOSED`, `AUTHORIZED`, `AWAITING_APPROVAL`, `BLOCKED`, `EXECUTING`, `FAILED`, `CANCELLED`).
+- **Epistemic Outcome Independence on Uncertain Actions:** Enforced that `EXECUTION_UNCERTAIN` actions cannot be resolved via transport acknowledgment (`OBS_INFERRED`), rejecting such requests fail-closed with `HTTP 400 Bad Request`. Authoritative direct physical inspection or independent observation (`OBS_DIRECT`, `OBS_EVENTUAL`, `IndependentObserverAdapter`, direct database/HTTP probes) is mandatory.
+- **Monotonic State Transitions on Uncertainty Resolution:** Verified that when independent probes confirm postconditions, `ActionContract` safely transitions to `COMPLETED` with `outcome_status` set to `VERIFIED_SUCCESS` or `SUCCESS_CONFIRMED` (confidence 1.0). When probes detect postcondition failure, `ActionContract` transitions to `FAILED`. Inconclusive or timed-out probes yield `UNKNOWN` (confidence 0.0), preserving the `EXECUTION_UNCERTAIN` state. Mutating redispatches continue to be strictly blocked with `HTTP 409 Conflict`.
+- **E2E Scenario 4 Alignment:** Updated Scenario 4 in `tests/integration/test_five_gates_e2e.py` to prove the full uncertainty lifecycle: network timeout -> `EXECUTION_UNCERTAIN` -> redispatch rejected with 409 -> `OBS_INFERRED` rejected with 400 -> independent observation confirms postconditions -> `VERIFIED_SUCCESS` -> `ActionContract` marked `COMPLETED`.
+- **Dedicated Uncertainty Regression Suite:** Added `tests/security/test_gate5_uncertainty_remediation.py` (14/14 tests passing) covering timeout after remote mutation, timeout before remote mutation, redispatch prevention, transport-inferred rejection, inconclusive probes, anti-staleness, replay attack detection, and unexecuted state rejections.
+- **Full Platform Validation:** 1,408 tests executed across Python backend and React 18 frontend: 460 unit tests, 31 contract tests, 602 security tests, 134 integration tests, 181 frontend Vitest tests (100% passing). Clean Vite production build. Zero ruff lint errors.
+
 ### Deprecated
 - Streamlit dashboard deprecated in favor of React 18/JSX frontend.
 

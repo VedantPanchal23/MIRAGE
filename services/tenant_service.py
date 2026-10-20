@@ -194,6 +194,23 @@ class TenantService:
             )
             s.add(budget)
 
+            # Create default tenant governance policy
+            from db.models import Policy
+            default_policy = Policy(
+                id=f"pol_{target_id}_default",
+                tenant_id=target_id,
+                name="default_governance_policy",
+                version=1,
+                rules={
+                    "effect": "ALLOW",
+                    "max_risk": 75,
+                    "deny_indicators": ["prompt_injection", "secret_credential"],
+                },
+                status="active",
+                created_at=now,
+            )
+            s.add(default_policy)
+
             await s.flush()
 
             # Record audit event

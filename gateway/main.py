@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, Request, Response, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -195,12 +196,16 @@ def create_app() -> FastAPI:
     @app.exception_handler(RequestValidationError)
     async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
         trace_id = getattr(request.state, "trace_id", "unknown")
+        safe_errors = jsonable_encoder(
+            exc.errors(),
+            custom_encoder={bytes: lambda b: b.decode("utf-8", errors="replace")},
+        )
         content: dict[str, Any] = {
-            "detail": exc.errors(),
+            "detail": safe_errors,
             "error": {
                 "code": "VALIDATION_ERROR",
                 "message": "Invalid request schema or parameters",
-                "details": exc.errors(),
+                "details": safe_errors,
                 "trace_id": trace_id,
                 "timestamp": datetime.now(UTC).isoformat(),
             },

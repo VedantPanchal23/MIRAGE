@@ -140,7 +140,21 @@ def _transaction_response(record: AITransaction) -> TransactionResponse:
 async def evaluate_policy(tenant_id: str, policy_id: str | None, context: dict[str, Any]) -> PolicyDecision:
     """Evaluate a typed declarative policy schema deterministically."""
     if policy_id is None:
-        return PolicyDecision(decision=Decision.BLOCK, reason="No active policy explicitly permits this transaction")
+        async with db_session.get_tenant_session(tenant_id) as session:
+            stmt = (
+                select(Policy)
+                .where(Policy.tenant_id == tenant_id, Policy.status == "active")
+                .order_by(Policy.created_at.asc())
+                .limit(1)
+            )
+            default_pol = (await session.execute(stmt)).scalar_one_or_none()
+            if default_pol is not None:
+                policy_id = default_pol.id
+            else:
+                return PolicyDecision(
+                    decision=Decision.BLOCK,
+                    reason="No active policy explicitly permits this transaction",
+                )
     async with db_session.get_tenant_session(tenant_id) as session:
         policy = await session.get(Policy, policy_id)
         if policy is None or policy.tenant_id != tenant_id or policy.status != "active":

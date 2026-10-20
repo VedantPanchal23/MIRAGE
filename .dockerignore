@@ -16,6 +16,8 @@ htmlcov
 !.env.example
 dist
 build
+dashboard/node_modules
+.tools
 *.egg-info
 .vscode
 .idea

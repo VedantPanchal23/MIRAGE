@@ -26,7 +26,8 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "pydantic>=2.9.0",
     "pydantic-settings>=2.5.0",
-    "sqlalchemy>=2.0.35",
+    "sqlalchemy[asyncio]>=2.0.35",
+    "greenlet>=3.0.0",
     "asyncpg>=0.29.0",
     "psycopg2-binary>=2.9.9",
     "alembic>=1.13.3",
@@ -74,7 +75,7 @@ dev = [
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["shared*", "gateway*", "workers*", "models*", "hrs_engine*", "correction_agent*", "db*"]
+include = ["shared*", "gateway*", "services*", "workers*", "models*", "hrs_engine*", "correction_agent*", "analytics*", "db*", "sdk*", "mcp_server*"]
 
 [tool.ruff]
 line-length = 120

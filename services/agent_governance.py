@@ -166,6 +166,7 @@ class AgentGovernanceService:
                 updated_at=now,
             )
             s.add(agent)
+            await s.flush()
 
             # 3. Synchronize authoritative ActorIdentity for the agent
             actor_identity = ActorIdentity(

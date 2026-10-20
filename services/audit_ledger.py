@@ -302,11 +302,27 @@ class AuditLedgerService:
                     f"{rec.prev_hash}:{rec.entry_id}:{rec.event_type or ''}:{now_iso}:{rec.tenant_id}"
                 )
 
+                raw_action = (
+                    rec.event_type.removeprefix("AUTH_").removeprefix("ADMIN_")
+                    if rec.event_type
+                    else ""
+                )
+                legacy_api_key_data = f"{rec.prev_hash}:{rec.entry_id}:{raw_action}:{now_iso}"
+                legacy_agent_data = (
+                    f"{rec.prev_hash}:{rec.entry_id}:{rec.decision or ''}:{now_iso}:{rec.session_id or ''}"
+                )
+                legacy_action_governor_data = (
+                    f"{rec.prev_hash}:{rec.entry_id}:{rec.event_type or ''}:{rec.decision or ''}:{now_iso}"
+                )
+
                 if (
                     rec.chain_hash == compute_sha256(legacy_sess_data)
                     or rec.chain_hash == compute_sha256(legacy_auth_data)
                     or rec.chain_hash == compute_sha256(legacy_gate5_data)
                     or rec.chain_hash == compute_sha256(legacy_hnd_data)
+                    or rec.chain_hash == compute_sha256(legacy_api_key_data)
+                    or rec.chain_hash == compute_sha256(legacy_agent_data)
+                    or rec.chain_hash == compute_sha256(legacy_action_governor_data)
                 ):
                     hash_matches = True
 

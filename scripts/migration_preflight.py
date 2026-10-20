@@ -54,7 +54,9 @@ def check_database_migration_status(
             sync_url = async_url
 
     if not sync_url:
-        sync_url = "postgresql://mirage:mirage_dev_secret@localhost:5432/mirage_db"
+        sync_url = "postgresql+psycopg2://mirage:mirage_dev_secret@localhost:5432/mirage_db"
+    elif sync_url.startswith("postgresql://"):
+        sync_url = sync_url.replace("postgresql://", "postgresql+psycopg2://", 1)
 
     # Sanitize URL for report display (mask password)
     safe_url = sync_url

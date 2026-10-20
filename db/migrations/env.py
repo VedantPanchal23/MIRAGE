@@ -31,6 +31,11 @@ else:
         settings = get_settings()
         config.set_main_option("sqlalchemy.url", settings.database_sync_url)
 
+# In SQLAlchemy 2.0+, bare postgresql:// defaults to psycopg (v3). Normalize to psycopg2.
+resolved_url = config.get_main_option("sqlalchemy.url")
+if resolved_url and resolved_url.startswith("postgresql://"):
+    config.set_main_option("sqlalchemy.url", resolved_url.replace("postgresql://", "postgresql+psycopg2://", 1))
+
 target_metadata = Base.metadata
 
 

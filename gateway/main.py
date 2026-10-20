@@ -42,7 +42,7 @@ from gateway.routes.sessions import router as sessions_router
 from gateway.routes.stream import router as stream_router
 from gateway.routes.transactions import router as transactions_router
 from gateway.routes.verify import router as verify_router
-from shared.config import get_settings
+from shared.config import EnvironmentType, get_settings
 from shared.logging import configure_logging, get_logger
 from shared.telemetry import export_metrics, record_request_metric
 from shared.tracing import configure_tracer
@@ -64,6 +64,25 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     )
     logger = get_logger("gateway")
     logger.info("MIRAGE Gateway initialized", version="2.1.0", environment=settings.environment.value)
+
+    # Fail closed at startup if security configuration contains defects in staging/production
+    if settings.environment in (EnvironmentType.STAGING, EnvironmentType.PRODUCTION):
+        defects = settings.validate_environment_configuration()
+        if defects:
+            logger.error("Configuration validation failed at startup", defects=defects)
+            raise RuntimeError(
+                f"Gateway startup blocked due to {len(defects)} security configuration defects: {'; '.join(defects)}"
+            )
+
+    # Log available provider connectivity without disclosing secrets
+    providers = settings.get_configured_providers()
+    configured_list = [name for name, is_set in providers.items() if is_set]
+    logger.info(
+        "Configured LLM provider adapters",
+        configured_providers=configured_list,
+        count=len(configured_list),
+    )
+
     yield
     await default_redis_client_manager.close()
     logger.info("MIRAGE Gateway shutdown complete")
@@ -102,7 +121,10 @@ def create_app() -> FastAPI:
     app.add_middleware(PIIDetectionMiddleware)
 
     # 3. CORS Middleware
-    allowed_origins = DEV_CORS_ORIGINS if app_settings.debug else PROD_CORS_ORIGINS
+    if app_settings.cors_allowed_origins:
+        allowed_origins = app_settings.cors_allowed_origins
+    else:
+        allowed_origins = DEV_CORS_ORIGINS if app_settings.debug else PROD_CORS_ORIGINS
     app.add_middleware(
         CORSMiddleware,
         allow_origins=allowed_origins,

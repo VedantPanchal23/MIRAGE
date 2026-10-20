@@ -1,0 +1,132 @@
+# ==============================================================================
+# MIRAGE 3.0: AWS Private Staging Compose Override
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml config
+#   docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
+# ==============================================================================
+
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB:-mirage_db}
+
+  mongodb:
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-root}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+
+  qdrant:
+    environment:
+      QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY}
+
+  redis:
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+
+  rabbitmq:
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-mirage}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+
+  grafana:
+    # Staging Security: Never bind Grafana to 0.0.0.0. Access only via SSM/SSH port-forwarding.
+    ports:
+      - "127.0.0.1:3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+
+  migration:
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mirage_db}
+      - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mirage_db}
+
+  gateway:
+    # Staging Security: Gateway binds strictly to 127.0.0.1; public requests route via Dashboard Nginx proxy
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      - ENVIRONMENT=staging
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - SECRET_KEY=${SECRET_KEY}
+      - DEMO_AUTH_ENABLED=false
+      - ALLOW_MOCK_PROVIDERS=false
+      - CIRCUIT_BREAKER_FAIL_CLOSED_ON_REDIS=true
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_APP_USER:-mirage_app}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-mirage_db}
+      - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mirage_db}
+      - MONGO_URI=mongodb://${POSTGRES_APP_USER:-mirage_app}:${MONGO_APP_PASSWORD}@mongodb:27017/${MONGO_DB:-mirage_traces}?authSource=${MONGO_DB:-mirage_traces}
+      - MONGO_DB=${MONGO_DB:-mirage_traces}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_USERNAME=${REDIS_USERNAME:-mirage_app}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_URL=redis://${REDIS_USERNAME:-mirage_app}:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_REDIS_USERNAME=${CELERY_REDIS_USERNAME:-mirage_celery}
+      - CELERY_REDIS_PASSWORD=${CELERY_REDIS_PASSWORD}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=${RABBITMQ_USER:-mirage}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-mirage}:${RABBITMQ_PASSWORD}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://${CELERY_REDIS_USERNAME:-mirage_celery}:${CELERY_REDIS_PASSWORD}@redis:6379/1
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - AUDIT_ANCHOR_DIR=/app/data/audit_anchors
+      - NOTARY_KEYS_JSON=${NOTARY_KEYS_JSON:-}
+      - ALLOW_DEV_NOTARY_KEYS=false
+      - CORS_ALLOWED_ORIGINS=${CORS_ALLOWED_ORIGINS:-}
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+
+  worker:
+    environment:
+      - ENVIRONMENT=staging
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      - SECRET_KEY=${SECRET_KEY}
+      - DEMO_AUTH_ENABLED=false
+      - ALLOW_MOCK_PROVIDERS=false
+      - CIRCUIT_BREAKER_FAIL_CLOSED_ON_REDIS=true
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_APP_USER:-mirage_app}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-mirage_db}
+      - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mirage_db}
+      - MONGO_URI=mongodb://${POSTGRES_APP_USER:-mirage_app}:${MONGO_APP_PASSWORD}@mongodb:27017/${MONGO_DB:-mirage_traces}?authSource=${MONGO_DB:-mirage_traces}
+      - MONGO_DB=${MONGO_DB:-mirage_traces}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REDIS_USERNAME=${REDIS_USERNAME:-mirage_app}
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+      - REDIS_URL=redis://${REDIS_USERNAME:-mirage_app}:${REDIS_PASSWORD}@redis:6379/0
+      - CELERY_REDIS_USERNAME=${CELERY_REDIS_USERNAME:-mirage_celery}
+      - CELERY_REDIS_PASSWORD=${CELERY_REDIS_PASSWORD}
+      - RABBITMQ_HOST=rabbitmq
+      - RABBITMQ_PORT=5672
+      - RABBITMQ_USER=${RABBITMQ_USER:-mirage}
+      - RABBITMQ_PASSWORD=${RABBITMQ_PASSWORD}
+      - CELERY_BROKER_URL=amqp://${RABBITMQ_USER:-mirage}:${RABBITMQ_PASSWORD}@rabbitmq:5672//
+      - CELERY_RESULT_BACKEND=redis://${CELERY_REDIS_USERNAME:-mirage_celery}:${CELERY_REDIS_PASSWORD}@redis:6379/1
+      - QDRANT_HOST=qdrant
+      - QDRANT_PORT=6333
+      - QDRANT_API_KEY=${QDRANT_API_KEY}
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - AUDIT_ANCHOR_DIR=/app/data/audit_anchors
+      - NOTARY_KEYS_JSON=${NOTARY_KEYS_JSON:-}
+      - ALLOW_DEV_NOTARY_KEYS=false
+      - GROQ_API_KEY=${GROQ_API_KEY:-}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
+      - HUGGINGFACE_API_KEY=${HUGGINGFACE_API_KEY:-}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+
+  dashboard:
+    ports:
+      - "8080:8080"

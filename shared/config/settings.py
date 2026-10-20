@@ -29,6 +29,10 @@ class Settings(BaseSettings):
     environment: EnvironmentType = Field(default=EnvironmentType.DEVELOPMENT)
     debug: bool = Field(default=True)
     log_level: Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"] = Field(default="INFO")
+    cors_allowed_origins: list[str] = Field(
+        default_factory=list,
+        description="Explicit allowed CORS origins. If empty, falls back to environment defaults",
+    )
     secret_key: str = Field(
         default="dev-insecure-secret-key-change-in-production-min32chars",
         min_length=32,
@@ -302,6 +306,113 @@ class Settings(BaseSettings):
             defects.append("REDIS_URL / REDIS_PASSWORD contains default development password 'mirage_redis_secret'")
 
         return defects
+
+    def validate_staging_configuration(self) -> list[str]:
+        """Validate settings against AWS private staging security requirements.
+
+        Fails closed on default development secrets, unconfigured security settings,
+        or insecure fallback credentials while allowing internal VPC broker protocols.
+        """
+        defects: list[str] = []
+
+        if self.environment != EnvironmentType.STAGING:
+            return defects
+
+        # 1. JWT & HMAC Secret Hardening (staging requires at least 32 characters, no dev default)
+        if self.secret_key == "dev-insecure-secret-key-change-in-production-min32chars":
+            defects.append("SECRET_KEY is using the default insecure development secret")
+        elif len(self.secret_key) < 32:
+            defects.append(
+                f"SECRET_KEY length ({len(self.secret_key)}) is less than 32 characters required for staging"
+            )
+
+        # 2. Authentication & Mock Providers
+        if self.demo_auth_enabled:
+            defects.append("DEMO_AUTH_ENABLED is strictly prohibited in staging")
+        if self.allow_mock_providers is True:
+            defects.append("ALLOW_MOCK_PROVIDERS is strictly prohibited in staging mode")
+
+        # 3. Debugging Mode
+        if self.debug:
+            defects.append("DEBUG mode must be set to false in staging")
+
+        # 4. Database Credentials Hardening
+        if "mirage_dev_secret" in self.database_url or "mirage_dev_secret" in self.database_sync_url:
+            defects.append("DATABASE_URL / DATABASE_SYNC_URL contains default development password 'mirage_dev_secret'")
+
+        # 5. Redis Credentials Hardening
+        if "mirage_redis_secret" in self.redis_url or self.redis_password == "mirage_redis_secret":
+            defects.append("REDIS_URL / REDIS_PASSWORD contains default development password 'mirage_redis_secret'")
+
+        # 6. Broker & Message Queue Hardening
+        if "mirage_rabbit_secret" in self.celery_broker_url or self.rabbitmq_password == "mirage_rabbit_secret":
+            defects.append("CELERY_BROKER_URL / RABBITMQ_PASSWORD contains default password 'mirage_rabbit_secret'")
+        if (
+            "mirage_celery_secret" in self.celery_result_backend
+            or self.celery_redis_password == "mirage_celery_secret"
+        ):
+            defects.append(
+                "CELERY_RESULT_BACKEND / CELERY_REDIS_PASSWORD contains default password 'mirage_celery_secret'"
+            )
+
+        # 7. Document & Vector Store Hardening
+        if "mirage_mongo_secret" in self.mongo_uri:
+            defects.append("MONGO_URI contains default development password 'mirage_mongo_secret'")
+        if self.qdrant_api_key == "mirage_qdrant_secret":
+            defects.append("QDRANT_API_KEY contains default development key 'mirage_qdrant_secret'")
+
+        return defects
+
+    def validate_environment_configuration(self) -> list[str]:
+        """Validate configuration based on active environment (staging, production)."""
+        if self.environment == EnvironmentType.PRODUCTION:
+            return self.validate_production_configuration()
+        elif self.environment == EnvironmentType.STAGING:
+            return self.validate_staging_configuration()
+        return []
+
+    def get_configured_providers(self) -> dict[str, bool]:
+        """Return mapping of supported LLM provider names to whether their API key is configured.
+
+        Security Invariant: Never reveals, formats, or logs secret key values.
+        """
+        return {
+            "groq": bool(
+                self.groq_api_key
+                and self.groq_api_key.strip()
+                and not self.groq_api_key.startswith("your_")
+                and self.groq_api_key != "mock-groq-key"
+            ),
+            "openrouter": bool(
+                self.openrouter_api_key
+                and self.openrouter_api_key.strip()
+                and not self.openrouter_api_key.startswith("your_")
+            ),
+            "huggingface": bool(
+                self.huggingface_api_key
+                and self.huggingface_api_key.strip()
+                and not self.huggingface_api_key.startswith("your_")
+            ),
+            "openai": bool(
+                self.openai_api_key
+                and self.openai_api_key.strip()
+                and not self.openai_api_key.startswith("your_")
+            ),
+            "anthropic": bool(
+                self.anthropic_api_key
+                and self.anthropic_api_key.strip()
+                and not self.anthropic_api_key.startswith("your_")
+            ),
+            "gemini": bool(
+                self.gemini_api_key
+                and self.gemini_api_key.strip()
+                and not self.gemini_api_key.startswith("your_")
+            ),
+            "ollama": bool(
+                self.ollama_base_url
+                and self.ollama_base_url.strip()
+            ),
+        }
 
 
 @lru_cache

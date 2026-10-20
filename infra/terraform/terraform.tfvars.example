@@ -1,0 +1,26 @@
+# ==============================================================================
+# MIRAGE 3.0: Example Terraform Variables for Staging
+# Copy this file to terraform.tfvars for deployment customization.
+# DO NOT commit files containing private production secrets.
+# ==============================================================================
+
+aws_region         = "us-east-1"
+environment        = "staging"
+vpc_cidr           = "10.50.0.0/16"
+public_subnet_cidr = "10.50.1.0/24"
+private_subnet_cidr = "10.50.10.0/24"
+
+# Evaluated against 12-container footprint: 2.3 CPU / 3.3 GB RAM reserved -> t3.large minimum
+instance_type      = "t3.large"
+volume_size_gb     = 50
+
+# Ingress CIDR whitelist. Leave empty [] for 100% private SSM-only bastionless access
+admin_cidrs        = []
+
+enable_public_edge     = true
+enable_audit_s3_bucket = true
+
+tags = {
+  Department = "AI Engineering"
+  CostCenter = "Research-MIRAGE"
+}

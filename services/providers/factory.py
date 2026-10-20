@@ -109,6 +109,30 @@ def get_provider_adapter(provider_name: str) -> BaseProviderAdapter:
         validate_provider_base_url(base_url, allow_local=False)
         return GroqProviderAdapter(api_key=api_key, base_url=base_url)
 
+    elif norm_name == "openrouter":
+        api_key = getattr(settings, "openrouter_api_key", "").strip()
+        base_url = "https://openrouter.ai/api/v1"
+        if not api_key:
+            if settings.environment in (EnvironmentType.TEST, EnvironmentType.DEVELOPMENT) and getattr(
+                settings, "allow_mock_providers", False
+            ):
+                return MockProviderAdapter()
+            raise ProviderConfigurationError("Missing required OPENROUTER_API_KEY")
+        validate_provider_base_url(base_url, allow_local=False)
+        return OpenAIProviderAdapter(api_key=api_key, base_url=base_url)
+
+    elif norm_name in ("huggingface", "hf"):
+        api_key = getattr(settings, "huggingface_api_key", "").strip()
+        base_url = "https://api-inference.huggingface.co/models"
+        if not api_key:
+            if settings.environment in (EnvironmentType.TEST, EnvironmentType.DEVELOPMENT) and getattr(
+                settings, "allow_mock_providers", False
+            ):
+                return MockProviderAdapter()
+            raise ProviderConfigurationError("Missing required HUGGINGFACE_API_KEY")
+        validate_provider_base_url(base_url, allow_local=False)
+        return OpenAIProviderAdapter(api_key=api_key, base_url=base_url)
+
     elif norm_name == "ollama":
         base_url = getattr(settings, "ollama_base_url", "http://localhost:11434")
         validate_provider_base_url(base_url, allow_local=True)

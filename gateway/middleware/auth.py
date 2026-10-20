@@ -44,12 +44,12 @@ def _claims_from_access_token(
     key = secret_key or settings.secret_key
     algo = algorithm or settings.algorithm
 
-    # Enforce fail-closed production key configuration
-    if settings.environment == EnvironmentType.PRODUCTION:
+    # Enforce fail-closed production and staging key configuration
+    if settings.environment in (EnvironmentType.PRODUCTION, EnvironmentType.STAGING):
         if not key or key == "dev-insecure-secret-key-change-in-production-min32chars" or len(key) < 32:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail="Production authentication secret key is unconfigured or using insecure default",
+                detail="Authentication secret key is unconfigured or using insecure default in staging/production",
             )
 
     # Reject algorithm confusion or 'none' algorithm

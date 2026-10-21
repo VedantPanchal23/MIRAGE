@@ -16,6 +16,9 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-root}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD}
+      MONGO_APP_USER: ${MONGO_APP_USER:-mirage_app}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD}
+      MONGO_DB: ${MONGO_DB:-mirage_traces}
 
   qdrant:
     environment:
@@ -56,8 +59,7 @@ services:
       - ALLOW_MOCK_PROVIDERS=false
       - CIRCUIT_BREAKER_FAIL_CLOSED_ON_REDIS=true
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_APP_USER:-mirage_app}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-mirage_db}
-      - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mirage_db}
-      - MONGO_URI=mongodb://${POSTGRES_APP_USER:-mirage_app}:${MONGO_APP_PASSWORD}@mongodb:27017/${MONGO_DB:-mirage_traces}?authSource=${MONGO_DB:-mirage_traces}
+      - MONGO_URI=mongodb://${MONGO_APP_USER:-mirage_app}:${MONGO_APP_PASSWORD}@mongodb:27017/${MONGO_DB:-mirage_traces}?authSource=${MONGO_DB:-mirage_traces}
       - MONGO_DB=${MONGO_DB:-mirage_traces}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -97,8 +99,7 @@ services:
       - ALLOW_MOCK_PROVIDERS=false
       - CIRCUIT_BREAKER_FAIL_CLOSED_ON_REDIS=true
       - DATABASE_URL=postgresql+asyncpg://${POSTGRES_APP_USER:-mirage_app}:${POSTGRES_APP_PASSWORD}@postgres:5432/${POSTGRES_DB:-mirage_db}
-      - DATABASE_SYNC_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-mirage_db}
-      - MONGO_URI=mongodb://${POSTGRES_APP_USER:-mirage_app}:${MONGO_APP_PASSWORD}@mongodb:27017/${MONGO_DB:-mirage_traces}?authSource=${MONGO_DB:-mirage_traces}
+      - MONGO_URI=mongodb://${MONGO_APP_USER:-mirage_app}:${MONGO_APP_PASSWORD}@mongodb:27017/${MONGO_DB:-mirage_traces}?authSource=${MONGO_DB:-mirage_traces}
       - MONGO_DB=${MONGO_DB:-mirage_traces}
       - REDIS_HOST=redis
       - REDIS_PORT=6379
@@ -129,4 +130,4 @@ services:
 
   dashboard:
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"

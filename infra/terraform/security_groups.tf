@@ -6,32 +6,13 @@
 
 resource "aws_security_group" "staging_host" {
   name        = "mirage-${var.environment}-staging-host-sg"
-  description = "Security group for MIRAGE staging host with zero database public exposure"
+  description = "Security group for MIRAGE staging host with zero public inbound access"
   vpc_id      = aws_vpc.mirage.id
 
-  # Ingress: Only create if admin_cidrs is explicitly populated.
-  # If empty, ZERO inbound ports are open (access strictly via AWS SSM Session Manager).
-  dynamic "ingress" {
-    for_each = length(var.admin_cidrs) > 0 ? [1] : []
-    content {
-      description = "Restricted HTTPS ingress for Dashboard and API"
-      from_port   = 443
-      to_port     = 443
-      protocol    = "tcp"
-      cidr_blocks = var.admin_cidrs
-    }
-  }
-
-  dynamic "ingress" {
-    for_each = length(var.admin_cidrs) > 0 ? [1] : []
-    content {
-      description = "Restricted HTTP ingress for Dashboard and API"
-      from_port   = 80
-      to_port     = 80
-      protocol    = "tcp"
-      cidr_blocks = var.admin_cidrs
-    }
-  }
+  # Ingress: Strictly ZERO inbound rules.
+  # The host has no open public ports. All administrative, dashboard, and API access
+  # is conducted through AWS Systems Manager (SSM) Session Manager and port-forwarding tunnels.
+  # Future public showcase access requires an authenticated ALB with ACM TLS termination.
 
   # Egress: HTTPS for AWS APIs (Secrets Manager, SSM, S3, CloudWatch) and external LLM APIs (Groq, OpenRouter, HF, OpenAI, Anthropic, Gemini)
   egress {

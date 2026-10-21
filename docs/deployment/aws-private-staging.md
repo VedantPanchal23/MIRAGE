@@ -67,16 +67,16 @@ The staging environment consumes variables exclusively from AWS Secrets Manager 
 - `CIRCUIT_BREAKER_FAIL_CLOSED_ON_REDIS` (`true`)
 - `CORS_ALLOWED_ORIGINS` (comma-separated list of approved dashboard origins)
 
-### PostgreSQL Database
+### PostgreSQL Database (Privilege Separation)
 - `POSTGRES_DB`
 - `POSTGRES_HOST`
 - `POSTGRES_PORT`
-- `POSTGRES_USER` (migration owner)
-- `POSTGRES_PASSWORD` (migration owner password)
-- `POSTGRES_APP_USER` (unprivileged runtime role: `mirage_app`)
+- `POSTGRES_USER` (migration DDL owner: `mirage` — strictly isolated to `migration` container)
+- `POSTGRES_PASSWORD` (migration DDL owner password — strictly isolated to `migration` container)
+- `POSTGRES_APP_USER` (unprivileged runtime role: `mirage_app` — used by `mirage-gateway` and `mirage-worker`)
 - `POSTGRES_APP_PASSWORD`
-- `DATABASE_URL` (async connection string for `mirage_app`)
-- `DATABASE_SYNC_URL` (sync connection string for `mirage` migration owner)
+- `DATABASE_URL` (async connection string for `mirage_app` — provided to runtime services)
+- `DATABASE_SYNC_URL` (sync connection string for `mirage` migration owner — provided ONLY to migration runner)
 
 ### Redis & Celery Broker
 - `REDIS_HOST`
@@ -93,13 +93,13 @@ The staging environment consumes variables exclusively from AWS Secrets Manager 
 - `RABBITMQ_PASSWORD`
 - `CELERY_BROKER_URL`
 
-### Document, Vector & Monitoring Stores
-- `MONGO_INITDB_ROOT_USERNAME`
+### Document, Vector & Monitoring Stores (Least-Privilege Isolation)
+- `MONGO_INITDB_ROOT_USERNAME` (root database administrator)
 - `MONGO_INITDB_ROOT_PASSWORD`
-- `MONGO_APP_USER` (`mirage_app`)
+- `MONGO_APP_USER` (unprivileged application role: `mirage_app`, provisioned via `docker/mongo-init.js`)
 - `MONGO_APP_PASSWORD`
 - `MONGO_DB` (`mirage_traces`)
-- `MONGO_URI`
+- `MONGO_URI` (application connection string for `mirage_app`)
 - `QDRANT_HOST`
 - `QDRANT_PORT`
 - `QDRANT_API_KEY`
@@ -116,9 +116,9 @@ The staging environment consumes variables exclusively from AWS Secrets Manager 
 
 ---
 
-## 4. Infrastructure Validation Commands
+## 4. Infrastructure & Release Validation Commands
 
-All infrastructure artifacts can be formatted and validated locally without AWS credentials or cloud spend:
+All infrastructure artifacts and release revisions can be formatted and validated locally without AWS credentials or cloud spend:
 
 ```bash
 # 1. Validate Docker Compose base configuration
@@ -132,6 +132,10 @@ cd infra/terraform
 terraform fmt -check -diff
 terraform init -backend=false
 terraform validate
+cd ../..
+
+# 4. Verify release preflight integrity against reviewed git revision
+python3 scripts/verify_staging_release.py --expected-ref HEAD
 ```
 
 ---
@@ -143,15 +147,23 @@ Secrets are never embedded in Git, container images, or CI workflow definitions.
 1. **Create Secrets Container in AWS Secrets Manager**:
    The Terraform template creates `mirage/staging/application_secrets` encrypted with a dedicated Customer Managed KMS Key (`alias/mirage-staging`).
 2. **Populate Real Credentials Securely**:
-   Operators inject high-entropy secrets via the AWS CLI from a secure administrative terminal:
+   Operators inject high-entropy secrets via the AWS CLI from a secure administrative terminal.
+   **Crucial Invariant:** Any placeholder string (`REPLACE_WITH_*`, `placeholder`, `changeme`, or development default passwords) will be **rejected fail-closed** at startup by `Settings` validation in staging and production.
    ```bash
    aws secretsmanager put-secret-value \
      --secret-id mirage/staging/application_secrets \
      --secret-string file://my-secure-staging-secrets.json
    ```
-3. **On-Host Runtime Decryption**:
+3. **On-Host Runtime Decryption & Safe Dotenv Serialization**:
    The EC2 host uses its scoped IAM instance profile (`mirage-staging-staging-host-role`) to call `secretsmanager:GetSecretValue`.
-   The `/opt/mirage/fetch_secrets.sh` utility extracts the JSON keys to a root-only (`chmod 600`) `.env` file upon startup.
+   The `scripts/fetch_secrets.py` utility retrieves the secret JSON, safely escapes special characters (quotes, backslashes, `$` interpolation prevention), checks for placeholder rejection, and writes a root-only (`chmod 0600`) `.env` file upon startup:
+   ```bash
+   python3 scripts/fetch_secrets.py \
+     --secret-id mirage/staging/application_secrets \
+     --region us-east-1 \
+     --environment staging \
+     --output /opt/mirage/.env
+   ```
 
 ---
 
@@ -172,32 +184,62 @@ terraform plan -out=staging.tfplan
 terraform apply staging.tfplan
 ```
 
-### Step 3: Connect via AWS Systems Manager Session Manager
-No public SSH keys or open port 22 are needed:
+### Step 3: Zero-Inbound Host Access via AWS SSM Session Manager
+The staging host security group enforces **ZERO open public inbound ports** (`ingress = []`).
+Access operates exclusively via authenticated AWS Systems Manager Session Manager (SSM) port forwarding tunnels or shell sessions:
+
 ```bash
 INSTANCE_ID=$(terraform output -raw instance_id)
+
+# Start interactive administrative SSM shell session
 aws ssm start-session --target "$INSTANCE_ID" --region us-east-1
+
+# Or open private port-forwarding tunnels from your local workstation:
+# 1. Gateway API (local port 8000 -> staging gateway 127.0.0.1:8000)
+aws ssm start-session --target "$INSTANCE_ID" \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["8000"],"localPortNumber":["8000"]}'
+
+# 2. Operator Dashboard (local port 8080 -> staging dashboard Nginx 127.0.0.1:8080)
+aws ssm start-session --target "$INSTANCE_ID" \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["8080"],"localPortNumber":["8080"]}'
+
+# 3. Grafana Monitoring (local port 3001 -> staging grafana 127.0.0.1:3001)
+aws ssm start-session --target "$INSTANCE_ID" \
+  --document-name AWS-StartPortForwardingSession \
+  --parameters '{"portNumber":["3001"],"localPortNumber":["3001"]}'
 ```
 
-### Step 4: Host Bootstrap & Container Launch
+### Step 4: Host Bootstrap, Release Verification & Container Launch
 Within the interactive SSM terminal:
 ```bash
 sudo su -
 cd /opt/mirage
 
-# 1. Fetch encrypted secrets into root-only .env
-/opt/mirage/fetch_secrets.sh
+# 1. Fetch encrypted secrets into root-only .env using safe serializer
+python3 /opt/mirage/scripts/fetch_secrets.py \
+  --secret-id mirage/staging/application_secrets \
+  --region us-east-1 \
+  --environment staging \
+  --output /opt/mirage/.env
 
-# 2. Clone repository at the approved commit
+# 2. Clone repository at the approved release ref
+export MIRAGE_RELEASE_REF="<REVIEWED_COMMIT_SHA_OR_TAG>"
 git clone https://github.com/VedantPanchal23/MIRAGE.git repo
 cd repo
-git checkout 144556e4986c43f52ec3f4a751a0b73a1b027fc7
+git checkout "$MIRAGE_RELEASE_REF"
+
+# 3. Execute strict release preflight verification
+python3 scripts/verify_staging_release.py --expected-ref "$MIRAGE_RELEASE_REF"
+
+# 4. Copy validated .env into repo working directory
 cp /opt/mirage/.env .env
 
-# 3. Run migration preflight
+# 5. Run migration preflight using DDL migration credentials
 python3 scripts/migration_preflight.py --target-head 023_governed_mcp_servers
 
-# 4. Launch multi-container staging stack
+# 6. Launch multi-container staging stack
 docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d
 ```
 
@@ -218,15 +260,17 @@ Once containers are active, execute the acceptance checklist:
    `curl -I http://127.0.0.1:8080/`
    - Must return HTTP 200 with standard security headers (`X-Content-Type-Options: nosniff`, `X-Frame-Options: DENY`).
 4. **Grafana Private Access**:
-   Verify port 3001 is bound strictly to `127.0.0.1`. Tunnel via SSM:
-   `aws ssm start-session --target $INSTANCE_ID --document-name AWS-StartPortForwardingSession --parameters '{"portNumber":["3000"],"localPortNumber":["3001"]}'`
+   Verify port 3001 is bound strictly to `127.0.0.1`. Tunnel via SSM port-forwarding.
 
 ---
 
-## 8. Backup & Restore Expectations
+## 8. Backup & S3 Audit Retention Realities
 
-- **PostgreSQL**: Daily binary pg_dump snapshots stored in KMS-encrypted S3 (`aws s3 cp s3://mirage-staging-audit-.../backups/`).
+- **PostgreSQL**: Daily binary `pg_dump` snapshots stored in KMS-encrypted S3 (`aws s3 cp s3://mirage-staging-audit-.../backups/`).
 - **Audit Anchor Proofs**: Appended to immutable local directory `/app/data/audit_anchors` and mirrored to private S3 audit bucket.
+- **S3 Object Lock Architecture**:
+  - **Staging Default**: Configured with `GOVERNANCE` mode (`enable_s3_object_lock = true`, `s3_object_lock_mode = "GOVERNANCE"`, retention: 90 days). In `GOVERNANCE` mode, objects are protected against accidental mutation or deletion by non-privileged roles, but can be bypassed during controlled staging teardown by principals with `s3:BypassGovernanceRetention` permission.
+  - **Production Invariant**: In `COMPLIANCE` mode, AWS mathematically prevents object deletion and bucket destruction by **any** IAM identity (including the AWS root account) until the retention duration expires. For production compliance, `force_destroy` is unconditionally disabled.
 - **Rollback**: If a deployment defect is detected, rollback is triggered via `docker compose -f docker-compose.yml -f docker-compose.staging.yml down`, reverting Git commit, and restoring Postgres snapshot per `docs/runbooks/05_database_backup_and_restore.md`.
 
 ---
@@ -238,14 +282,14 @@ Once containers are active, execute the acceptance checklist:
 - **GP3 EBS Root Storage (50 GB)**: ~\$4.00 / month (\$0.08 / GB-mo).
 - **KMS Customer Managed Key**: ~\$1.00 / month + \$0.03 per 10,000 requests.
 - **S3 Storage & Data Transfer**: < \$0.50 / month for staging volumes.
-- **Zero Billable Items**: NAT Gateways (\$0), Application Load Balancers (\$0), Public IPv4 address charges avoided when private or stopped.
+- **Zero Billable Items**: NAT Gateways (\$0), Application Load Balancers (\$0), Zero public open ports.
 
 ### Teardown Procedure
 To completely eliminate all ongoing charges:
 ```bash
 ./scripts/teardown_aws_staging.sh
 ```
-This script runs `terraform destroy`, verifies zero active EC2 instances, confirms no unattached EBS volumes, and audits for unassociated Elastic IPs.
+This script runs `terraform destroy`, verifies zero active EC2 instances, confirms no unattached EBS volumes, and audits for unassociated Elastic IPs. When Object Lock is configured in `GOVERNANCE` mode, the operator IAM identity must include `s3:BypassGovernanceRetention` to allow bucket deletion during teardown.
 
 ---
 
@@ -253,10 +297,15 @@ This script runs `terraform destroy`, verifies zero active EC2 instances, confir
 
 | Artifact | Location | Status |
 | :--- | :--- | :--- |
-| Staging Settings & Validation | `shared/config/settings.py` | **Validated Locally** (Fail-closed on dev secrets) |
-| Staging Compose Override | `docker-compose.staging.yml` | **Validated Locally** (Zero public DB ports) |
-| Terraform IaC Templates | `infra/terraform/*.tf` | **Validated Locally** (KMS, IAM, VPC, EC2, S3) |
+| Staging Settings & Validation | `shared/config/settings.py` | **Validated Locally** (Fail-closed on dev secrets & placeholders) |
+| Staging Compose Override | `docker-compose.staging.yml` | **Validated Locally** (Zero public DB ports, unprivileged runtime) |
+| Database Migration Privilege Separation | `docker/postgres-init.sql` & Compose | **Validated Locally** (`mirage_app` unprivileged, `mirage` migration owner) |
+| MongoDB Identity Dynamic Initialization | `docker/mongo-init.js` & Compose | **Validated Locally** (`MONGO_APP_USER` / `mirage_app` least privilege) |
+| Terraform IaC Templates | `infra/terraform/*.tf` | **Validated Locally** (Zero inbound SG, S3 Governance Lock, KMS, IAM) |
+| Release Preflight Verifier | `scripts/verify_staging_release.py` | **Tested & Passed** (Validates files, revisions, security invariants) |
+| Safe Secret Serializer | `scripts/fetch_secrets.py` | **Tested & Passed** (Escapes special chars, enforces 0600 permissions) |
 | Cost Control & Budget Alerts | `scripts/setup_aws_budget_alerts.sh` | **Prepared** |
 | Teardown & Orphan Audit Script | `scripts/teardown_aws_staging.sh` | **Prepared** |
-| CI Infrastructure Validation | `.github/workflows/ci.yml` | **Updated** (Builds gateway, worker, dashboard) |
+| CI Infrastructure Validation | `.github/workflows/ci.yml` | **Updated** (Runs `terraform fmt`, `init`, and `validate`) |
+| Staging Security Test Suite | `tests/security/test_staging_configuration.py` | **Passed 16/16** (33/33 across suite) |
 | Live AWS Staging Resources | AWS Cloud (`us-east-1`) | **NOT CREATED** (Pending User Review) |

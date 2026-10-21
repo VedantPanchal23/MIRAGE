@@ -15,6 +15,28 @@ class EnvironmentType(StrEnum):
     PRODUCTION = "production"
 
 
+def is_insecure_placeholder(val: str | None) -> bool:
+    """Check if value is empty, a known development default, or an unfilled placeholder."""
+    if val is None or not str(val).strip():
+        return True
+    low = str(val).strip().lower()
+    return (
+        low.startswith("replace_with_")
+        or low.startswith("your_")
+        or "placeholder" in low
+        or "changeme" in low
+        or "example" in low
+        or "min32chars" in low
+        or "mirage_dev_secret" in low
+        or "mirage_redis_secret" in low
+        or "mirage_rabbit_secret" in low
+        or "mirage_celery_secret" in low
+        or "mirage_mongo_secret" in low
+        or "mirage_qdrant_secret" in low
+        or "mirage_grafana_secret" in low
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=".env",
@@ -68,9 +90,9 @@ class Settings(BaseSettings):
         default="postgresql+asyncpg://mirage:mirage_dev_secret@localhost:5432/mirage_db",
         description="Async SQLAlchemy database connection URL",
     )
-    database_sync_url: str = Field(
-        default="postgresql://mirage:mirage_dev_secret@localhost:5432/mirage_db",
-        description="Sync database connection URL for Alembic migrations",
+    database_sync_url: str | None = Field(
+        default=None,
+        description="Sync database connection URL for Alembic migrations and CLI utilities (optional for runtime)",
     )
 
     # --------------------------------------------------------------------------
@@ -274,8 +296,11 @@ class Settings(BaseSettings):
             return defects
 
         # 1. JWT & HMAC Secret Hardening
-        if self.secret_key == "dev-insecure-secret-key-change-in-production-min32chars":
-            defects.append("SECRET_KEY is using the default insecure development secret")
+        if (
+            self.secret_key == "dev-insecure-secret-key-change-in-production-min32chars"
+            or is_insecure_placeholder(self.secret_key)
+        ):
+            defects.append("SECRET_KEY is using the default insecure development secret or unfilled placeholder")
         elif len(self.secret_key) < 48:
             defects.append(
                 f"SECRET_KEY length ({len(self.secret_key)}) is less than 48 characters required for production"
@@ -298,12 +323,40 @@ class Settings(BaseSettings):
             defects.append("ALLOW_MOCK_PROVIDERS is strictly prohibited in production")
 
         # 5. Database Credentials Hardening
-        if "mirage_dev_secret" in self.database_url or "mirage_dev_secret" in self.database_sync_url:
-            defects.append("DATABASE_URL / DATABASE_SYNC_URL contains default development password 'mirage_dev_secret'")
+        db_sync_insecure = (
+            self.database_sync_url
+            and ("mirage_dev_secret" in self.database_sync_url or is_insecure_placeholder(self.database_sync_url))
+        )
+        if "mirage_dev_secret" in self.database_url or is_insecure_placeholder(self.database_url) or db_sync_insecure:
+            defects.append(
+                "DATABASE_URL / DATABASE_SYNC_URL contains default development password "
+                "'mirage_dev_secret' or placeholder"
+            )
 
         # 6. Redis Credentials Hardening
-        if "mirage_redis_secret" in self.redis_url or self.redis_password == "mirage_redis_secret":
-            defects.append("REDIS_URL / REDIS_PASSWORD contains default development password 'mirage_redis_secret'")
+        redis_insecure = (
+            "mirage_redis_secret" in self.redis_url
+            or self.redis_password == "mirage_redis_secret"
+            or is_insecure_placeholder(self.redis_password)
+        )
+        if redis_insecure:
+            defects.append(
+                "REDIS_URL / REDIS_PASSWORD contains default development password 'mirage_redis_secret' or placeholder"
+            )
+
+        # 7. Provider Configuration Validation (if configured, must not be placeholder)
+        for prov_name, key_val in [
+            ("groq", self.groq_api_key),
+            ("openrouter", self.openrouter_api_key),
+            ("huggingface", self.huggingface_api_key),
+            ("openai", self.openai_api_key),
+            ("anthropic", self.anthropic_api_key),
+            ("gemini", self.gemini_api_key),
+        ]:
+            if key_val and is_insecure_placeholder(key_val):
+                defects.append(f"{prov_name.upper()}_API_KEY contains an unfilled placeholder value")
+
+        return defects
 
         return defects
 
@@ -311,16 +364,19 @@ class Settings(BaseSettings):
         """Validate settings against AWS private staging security requirements.
 
         Fails closed on default development secrets, unconfigured security settings,
-        or insecure fallback credentials while allowing internal VPC broker protocols.
+        unfilled placeholders (REPLACE_WITH_*), or insecure fallback credentials.
         """
         defects: list[str] = []
 
         if self.environment != EnvironmentType.STAGING:
             return defects
 
-        # 1. JWT & HMAC Secret Hardening (staging requires at least 32 characters, no dev default)
-        if self.secret_key == "dev-insecure-secret-key-change-in-production-min32chars":
-            defects.append("SECRET_KEY is using the default insecure development secret")
+        # 1. JWT & HMAC Secret Hardening (staging requires at least 32 characters, no dev default or placeholder)
+        if (
+            self.secret_key == "dev-insecure-secret-key-change-in-production-min32chars"
+            or is_insecure_placeholder(self.secret_key)
+        ):
+            defects.append("SECRET_KEY is using the default insecure development secret or unfilled placeholder")
         elif len(self.secret_key) < 32:
             defects.append(
                 f"SECRET_KEY length ({len(self.secret_key)}) is less than 32 characters required for staging"
@@ -337,29 +393,56 @@ class Settings(BaseSettings):
             defects.append("DEBUG mode must be set to false in staging")
 
         # 4. Database Credentials Hardening
-        if "mirage_dev_secret" in self.database_url or "mirage_dev_secret" in self.database_sync_url:
-            defects.append("DATABASE_URL / DATABASE_SYNC_URL contains default development password 'mirage_dev_secret'")
-
-        # 5. Redis Credentials Hardening
-        if "mirage_redis_secret" in self.redis_url or self.redis_password == "mirage_redis_secret":
-            defects.append("REDIS_URL / REDIS_PASSWORD contains default development password 'mirage_redis_secret'")
-
-        # 6. Broker & Message Queue Hardening
-        if "mirage_rabbit_secret" in self.celery_broker_url or self.rabbitmq_password == "mirage_rabbit_secret":
-            defects.append("CELERY_BROKER_URL / RABBITMQ_PASSWORD contains default password 'mirage_rabbit_secret'")
-        if (
-            "mirage_celery_secret" in self.celery_result_backend
-            or self.celery_redis_password == "mirage_celery_secret"
+        if is_insecure_placeholder(self.database_url) or "mirage_dev_secret" in self.database_url:
+            defects.append(
+                "DATABASE_URL / DATABASE_SYNC_URL contains default development password "
+                "'mirage_dev_secret' or placeholder"
+            )
+        if self.database_sync_url and (
+            is_insecure_placeholder(self.database_sync_url) or "mirage_dev_secret" in self.database_sync_url
         ):
             defects.append(
-                "CELERY_RESULT_BACKEND / CELERY_REDIS_PASSWORD contains default password 'mirage_celery_secret'"
+                "DATABASE_URL / DATABASE_SYNC_URL contains default development password "
+                "'mirage_dev_secret' or placeholder"
+            )
+
+        # 5. Redis Credentials Hardening
+        if is_insecure_placeholder(self.redis_password) or "mirage_redis_secret" in self.redis_url:
+            defects.append(
+                "REDIS_URL / REDIS_PASSWORD contains default development password 'mirage_redis_secret' or placeholder"
+            )
+
+        # 6. Broker & Message Queue Hardening
+        if is_insecure_placeholder(self.rabbitmq_password) or "mirage_rabbit_secret" in self.celery_broker_url:
+            defects.append(
+                "CELERY_BROKER_URL / RABBITMQ_PASSWORD contains default password 'mirage_rabbit_secret' or placeholder"
+            )
+        if (
+            is_insecure_placeholder(self.celery_redis_password)
+            or "mirage_celery_secret" in self.celery_result_backend
+        ):
+            defects.append(
+                "CELERY_RESULT_BACKEND / CELERY_REDIS_PASSWORD contains default password "
+                "'mirage_celery_secret' or placeholder"
             )
 
         # 7. Document & Vector Store Hardening
-        if "mirage_mongo_secret" in self.mongo_uri:
-            defects.append("MONGO_URI contains default development password 'mirage_mongo_secret'")
-        if self.qdrant_api_key == "mirage_qdrant_secret":
-            defects.append("QDRANT_API_KEY contains default development key 'mirage_qdrant_secret'")
+        if is_insecure_placeholder(self.mongo_uri) or "mirage_mongo_secret" in self.mongo_uri:
+            defects.append("MONGO_URI contains default development password 'mirage_mongo_secret' or placeholder")
+        if is_insecure_placeholder(self.qdrant_api_key) or self.qdrant_api_key == "mirage_qdrant_secret":
+            defects.append("QDRANT_API_KEY contains default development key 'mirage_qdrant_secret' or placeholder")
+
+        # 8. Provider Configuration Validation
+        for prov_name, key_val in [
+            ("groq", self.groq_api_key),
+            ("openrouter", self.openrouter_api_key),
+            ("huggingface", self.huggingface_api_key),
+            ("openai", self.openai_api_key),
+            ("anthropic", self.anthropic_api_key),
+            ("gemini", self.gemini_api_key),
+        ]:
+            if key_val and is_insecure_placeholder(key_val):
+                defects.append(f"{prov_name.upper()}_API_KEY contains an unfilled placeholder value")
 
         return defects
 

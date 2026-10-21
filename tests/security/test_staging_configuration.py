@@ -220,3 +220,103 @@ class TestCustomCORSConfiguration:
                 },
             )
             assert resp.headers.get("access-control-allow-origin") is None
+
+
+class TestStagingBlockerRemediation:
+    """Validate fixes for AWS pre-provisioning blockers."""
+
+    def test_placeholder_secrets_rejected_in_staging(self) -> None:
+        """Any REPLACE_WITH_* or placeholder values must be rejected in staging."""
+        s = Settings(
+            environment=EnvironmentType.STAGING,
+            debug=False,
+            secret_key="REPLACE_WITH_ACTUAL_SECRET_KEY_MIN32CHARS",
+            postgres_password="strong_staging_db_password_987",
+            database_url="postgresql+asyncpg://mirage_app:strong_staging_db_password_987@staging-db:5432/mirage_db",
+            redis_password="strong_staging_redis_password_987",
+            redis_url="redis://mirage_app:strong_staging_redis_password_987@staging-redis:6379/0",
+            rabbitmq_password="strong_staging_rabbit_password_987",
+            celery_broker_url="amqp://mirage:strong_staging_rabbit_password_987@staging-mq:5672//",
+            celery_redis_password="strong_staging_celery_password_987",
+            celery_result_backend="redis://mirage_celery:strong_staging_celery_password_987@staging-redis:6379/1",
+            mongo_uri="mongodb://mirage_app:strong_staging_mongo_password_987@staging-mongo:27017/mirage_traces",
+            qdrant_api_key="strong_staging_qdrant_key_987",
+            groq_api_key="REPLACE_WITH_GROQ_API_KEY",
+        )
+        defects = s.validate_staging_configuration()
+        assert any("SECRET_KEY" in d and "placeholder" in d for d in defects)
+        assert any("GROQ_API_KEY" in d and "placeholder" in d for d in defects)
+
+    def test_database_sync_url_optional_for_runtime(self) -> None:
+        """database_sync_url is optional for application runtime and defaults to None."""
+        s = Settings(
+            environment=EnvironmentType.STAGING,
+            debug=False,
+            secret_key="staging-strong-secret-key-at-least-32-chars",
+            demo_auth_enabled=False,
+            allow_mock_providers=False,
+            postgres_password="strong_staging_db_password_987",
+            database_url="postgresql+asyncpg://mirage_app:strong_staging_db_password_987@staging-db:5432/mirage_db",
+            database_sync_url=None,
+            redis_password="strong_staging_redis_password_987",
+            redis_url="redis://mirage_app:strong_staging_redis_password_987@staging-redis:6379/0",
+            rabbitmq_password="strong_staging_rabbit_password_987",
+            celery_broker_url="amqp://mirage:strong_staging_rabbit_password_987@staging-mq:5672//",
+            celery_redis_password="strong_staging_celery_password_987",
+            celery_result_backend="redis://mirage_celery:strong_staging_celery_password_987@staging-redis:6379/1",
+            mongo_uri="mongodb://mirage_app:strong_staging_mongo_password_987@staging-mongo:27017/mirage_traces",
+            qdrant_api_key="strong_staging_qdrant_key_987",
+        )
+        assert s.database_sync_url is None
+        defects = s.validate_staging_configuration()
+        assert defects == []
+
+    def test_secret_serializer_handles_special_characters(self) -> None:
+        """fetch_secrets serializer properly quotes strings with dollars, quotes, and backslashes."""
+        from scripts.fetch_secrets import serialize_env_value, serialize_secrets_to_env
+
+        # Test simple
+        assert serialize_env_value("simple123") == "simple123"
+        # Test dollars
+        val_with_dollar = "pass$word"
+        serialized = serialize_env_value(val_with_dollar)
+        assert serialized == "'pass$word'"
+
+        # Test single quote and backslash
+        val_complex = "pass'word\"with\\backslash"
+        serialized_complex = serialize_env_value(val_complex)
+        assert serialized_complex.startswith('"')
+        assert "\\\\" in serialized_complex
+
+        # Test dictionary serialization
+        secrets = {
+            "SECRET_KEY": "valid-long-secret-key-at-least-32-chars",
+            "PLACEHOLDER_KEY": "REPLACE_WITH_VALUE",
+        }
+        content, defects = serialize_secrets_to_env(secrets, environment="staging")
+        assert len(defects) == 1
+        assert "PLACEHOLDER_KEY" in defects[0]
+        assert "SECRET_KEY=valid-long-secret-key-at-least-32-chars" in content
+
+    def test_staging_compose_identity_and_credentials_hygiene(self) -> None:
+        """Verify staging compose does not leak sync credentials to app services or miswire Mongo."""
+        from pathlib import Path
+
+        repo_root = Path(__file__).resolve().parent.parent.parent
+        staging_compose = repo_root / "docker-compose.staging.yml"
+        assert staging_compose.exists()
+        content = staging_compose.read_text(encoding="utf-8")
+
+        # Gateway and worker must not have DATABASE_SYNC_URL
+        gateway_block = content.split("gateway:")[1].split("\n\n")[0]
+        assert "DATABASE_SYNC_URL" not in gateway_block
+        assert "POSTGRES_PASSWORD" not in gateway_block
+
+        worker_block = content.split("worker:")[1].split("\n\n")[0]
+        assert "DATABASE_SYNC_URL" not in worker_block
+        assert "POSTGRES_PASSWORD" not in worker_block
+
+        # MongoDB must use MONGO_APP_USER, not POSTGRES_APP_USER
+        mongo_block = content.split("mongodb:")[1].split("\n\n")[0]
+        assert "POSTGRES_APP_USER" not in mongo_block
+        assert "MONGO_APP_USER" in mongo_block

@@ -62,6 +62,29 @@ variable "enable_audit_s3_bucket" {
   default     = true
 }
 
+variable "enable_s3_object_lock" {
+  type        = bool
+  description = "Enable S3 Object Lock WORM capability on the audit ledger bucket"
+  default     = true
+}
+
+variable "s3_object_lock_mode" {
+  type        = string
+  description = "S3 Object Lock retention mode: GOVERNANCE (allows administrative teardown with bypass permission) or COMPLIANCE (strictly indelible until expiration)"
+  default     = "GOVERNANCE"
+
+  validation {
+    condition     = contains(["GOVERNANCE", "COMPLIANCE"], var.s3_object_lock_mode)
+    error_message = "s3_object_lock_mode must be either GOVERNANCE or COMPLIANCE."
+  }
+}
+
+variable "s3_object_lock_retention_days" {
+  type        = number
+  description = "Default retention window in days for audit ledger objects under Object Lock"
+  default     = 90
+}
+
 variable "tags" {
   type        = map(string)
   description = "Additional resource tags for AWS cost attribution and inventory"

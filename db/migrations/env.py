@@ -29,7 +29,9 @@ else:
     current_url = config.get_main_option("sqlalchemy.url")
     if not current_url or current_url == "postgresql://mirage:mirage_dev_secret@localhost:5432/mirage_db":
         settings = get_settings()
-        config.set_main_option("sqlalchemy.url", settings.database_sync_url)
+        clean_db_url = settings.database_url.replace("+asyncpg", "").replace("+psycopg2", "")
+        target_sync = settings.database_sync_url or clean_db_url
+        config.set_main_option("sqlalchemy.url", target_sync)
 
 # In SQLAlchemy 2.0+, bare postgresql:// defaults to psycopg (v3). Normalize to psycopg2.
 resolved_url = config.get_main_option("sqlalchemy.url")

@@ -56,6 +56,9 @@ services:
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-root}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-mirage_mongo_secret}
+      MONGO_APP_USER: ${MONGO_APP_USER:-mirage_app}
+      MONGO_APP_PASSWORD: ${MONGO_APP_PASSWORD:-mirage_mongo_secret}
+      MONGO_DB: ${MONGO_DB:-mirage_traces}
     volumes:
       - mongodata:/data/db
       - ./docker/mongo-init.js:/docker-entrypoint-initdb.d/01-init.js:ro

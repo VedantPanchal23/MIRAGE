@@ -1,9 +1,9 @@
 // MongoDB initialization script for MIRAGE (runs once on fresh volume)
-// Creates unprivileged application user mirage_app on mirage_traces database
+// Creates unprivileged application user with least-privilege readWrite role
 
-const traceDbName = "mirage_traces";
-const appUser = "mirage_app";
-const appPass = "mirage_mongo_secret";
+const traceDbName = (typeof process !== "undefined" && process.env && process.env.MONGO_DB) ? process.env.MONGO_DB : "mirage_traces";
+const appUser = (typeof process !== "undefined" && process.env && process.env.MONGO_APP_USER) ? process.env.MONGO_APP_USER : "mirage_app";
+const appPass = (typeof process !== "undefined" && process.env && process.env.MONGO_APP_PASSWORD) ? process.env.MONGO_APP_PASSWORD : "mirage_mongo_secret";
 
 const dbInstance = db.getSiblingDB(traceDbName);
 
@@ -19,5 +19,6 @@ if (!existingUser) {
     });
     print(`Created MongoDB application user: ${appUser} on ${traceDbName}`);
 } else {
-    print(`MongoDB application user ${appUser} already exists.`);
+    dbInstance.changeUserPassword(appUser, appPass);
+    print(`MongoDB application user ${appUser} exists; credentials synchronized.`);
 }

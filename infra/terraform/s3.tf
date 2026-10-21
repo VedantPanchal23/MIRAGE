@@ -7,9 +7,10 @@ resource "random_id" "bucket_suffix" {
 }
 
 resource "aws_s3_bucket" "audit_ledger" {
-  count         = var.enable_audit_s3_bucket ? 1 : 0
-  bucket        = "mirage-${var.environment}-audit-${random_id.bucket_suffix.hex}"
-  force_destroy = true # Enables clean staging teardown
+  count               = var.enable_audit_s3_bucket ? 1 : 0
+  bucket              = "mirage-${var.environment}-audit-${random_id.bucket_suffix.hex}"
+  object_lock_enabled = var.enable_s3_object_lock
+  force_destroy       = var.s3_object_lock_mode == "GOVERNANCE" ? true : false
 
   tags = {
     Name = "mirage-${var.environment}-audit-ledger"
@@ -22,6 +23,18 @@ resource "aws_s3_bucket_versioning" "audit_ledger" {
 
   versioning_configuration {
     status = "Enabled"
+  }
+}
+
+resource "aws_s3_bucket_object_lock_configuration" "audit_ledger" {
+  count  = var.enable_audit_s3_bucket && var.enable_s3_object_lock ? 1 : 0
+  bucket = aws_s3_bucket.audit_ledger[0].id
+
+  rule {
+    default_retention {
+      mode = var.s3_object_lock_mode
+      days = var.s3_object_lock_retention_days
+    }
   }
 }
 

@@ -140,6 +140,14 @@ jobs:
       - name: Verify Terraform Formatting
         run: terraform fmt -check -diff infra/terraform
 
+      - name: Initialize Terraform (No Backend)
+        working-directory: infra/terraform
+        run: terraform init -backend=false
+
+      - name: Validate Terraform Configuration
+        working-directory: infra/terraform
+        run: terraform validate
+
       - name: Validate Local Compose Configuration
         run: docker compose -f docker-compose.yml config --quiet
 

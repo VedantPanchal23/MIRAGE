@@ -42,18 +42,18 @@ export function DriftDistributionChart({
   );
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-5">
+    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-5">
       {/* Header with Title and Table Toggle */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center space-x-2.5">
-          <div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
+          <div className="p-2 rounded-lg bg-sky-50 border border-sky-200 text-sky-600">
             <BarChart2 className="w-4 h-4" aria-hidden="true" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-white">
+            <h3 className="text-sm font-bold text-slate-900">
               Baseline vs. Current HRS Distribution
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5">
               10-bin probability density comparison across [0.0, 1.0] risk range
             </p>
           </div>
@@ -64,17 +64,17 @@ export function DriftDistributionChart({
           <div className="flex items-center space-x-3 text-xs">
             <div className="flex items-center space-x-1.5">
               <span
-                className="w-3 h-3 rounded-sm bg-indigo-950 border border-indigo-500/60"
+                className="w-3 h-3 rounded-sm bg-indigo-100 border border-indigo-400"
                 aria-hidden="true"
               />
-              <span className="text-slate-300 font-medium">Baseline (Ref)</span>
+              <span className="text-slate-700 font-medium">Baseline (Ref)</span>
             </div>
             <div className="flex items-center space-x-1.5">
               <span
                 className="w-3 h-3 rounded-sm bg-sky-500 border border-sky-400"
                 aria-hidden="true"
               />
-              <span className="text-slate-300 font-medium">Current (Observed)</span>
+              <span className="text-slate-700 font-medium">Current (Observed)</span>
             </div>
           </div>
 
@@ -83,7 +83,7 @@ export function DriftDistributionChart({
             onClick={() => setShowTable((prev) => !prev)}
             aria-expanded={showTable}
             aria-controls="distribution-table-section"
-            className="flex items-center space-x-1 px-2.5 py-1 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-md border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="flex items-center space-x-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-md border border-slate-200 shadow-xs transition focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <Table className="w-3.5 h-3.5" aria-hidden="true" />
             <span>{showTable ? "Hide Table" : "Show Table"}</span>
@@ -111,22 +111,22 @@ export function DriftDistributionChart({
           return (
             <div
               key={bin.index}
-              className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-3 hover:border-slate-700 transition"
+              className="bg-slate-50/70 border border-slate-200 rounded-lg p-3 hover:border-slate-300 transition"
             >
               <div className="flex items-center justify-between text-xs mb-2">
-                <span className="font-mono font-semibold text-slate-200">
+                <span className="font-mono font-semibold text-slate-900">
                   Bin [{bin.label}]
                 </span>
                 <div className="flex items-center space-x-3 text-[11px] font-mono">
-                  <span className="text-indigo-300">Base: {basePct}%</span>
-                  <span className="text-sky-300">Curr: {currPct}%</span>
+                  <span className="text-indigo-700">Base: {basePct}%</span>
+                  <span className="text-sky-700">Curr: {currPct}%</span>
                   <span
-                    className={`px-1.5 py-0.2 rounded font-semibold ${
+                    className={`px-1.5 py-0.5 rounded font-semibold border ${
                       Math.abs(delta) < 0.005
-                        ? "text-slate-400 bg-slate-800"
+                        ? "text-slate-600 bg-slate-100 border-slate-200"
                         : delta > 0
-                        ? "text-amber-400 bg-amber-950/80 border border-amber-800/60"
-                        : "text-emerald-400 bg-emerald-950/80 border border-emerald-800/60"
+                        ? "text-amber-800 bg-amber-50 border-amber-200"
+                        : "text-emerald-700 bg-emerald-50 border-emerald-200"
                     }`}
                   >
                     {delta > 0 ? `+${deltaPct}%` : `${deltaPct}%`}
@@ -136,20 +136,20 @@ export function DriftDistributionChart({
 
               {/* Paired Visual Bars */}
               <div className="space-y-1.5">
-                {/* Baseline Bar (Patterned / Outlined Indigo) */}
-                <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
+                {/* Baseline Bar (Indigo) */}
+                <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
                   <div
                     style={{ width: baseBarWidth }}
-                    className="h-full bg-indigo-600/80 border-r-2 border-indigo-400 rounded-full transition-all duration-300"
+                    className="h-full bg-indigo-500 rounded-full transition-all duration-300"
                     title={`Baseline: ${basePct}%`}
                   />
                 </div>
 
                 {/* Current Bar (Solid Sky Blue) */}
-                <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
+                <div className="h-2 w-full bg-slate-200 rounded-full overflow-hidden">
                   <div
                     style={{ width: currBarWidth }}
-                    className="h-full bg-sky-500 border-r-2 border-sky-300 rounded-full transition-all duration-300 shadow-sm"
+                    className="h-full bg-sky-500 rounded-full transition-all duration-300 shadow-xs"
                     title={`Current: ${currPct}%`}
                   />
                 </div>
@@ -163,14 +163,14 @@ export function DriftDistributionChart({
       {showTable && (
         <div
           id="distribution-table-section"
-          className="mt-4 pt-4 border-t border-slate-800 overflow-x-auto"
+          className="mt-4 pt-4 border-t border-slate-200 overflow-x-auto"
         >
-          <table className="w-full text-left text-xs text-slate-300 font-sans border-collapse">
-            <caption className="text-left text-xs font-semibold text-slate-400 mb-2 sr-only">
+          <table className="w-full text-left text-xs text-slate-700 font-sans border-collapse">
+            <caption className="text-left text-xs font-semibold text-slate-500 mb-2 sr-only">
               Baseline vs Current Probability Distribution by Bins
             </caption>
             <thead>
-              <tr className="border-b border-slate-800 text-[11px] font-mono text-slate-400 uppercase tracking-wider bg-slate-950/80">
+              <tr className="border-b border-slate-200 text-[11px] font-mono text-slate-600 uppercase tracking-wider bg-slate-100">
                 <th scope="col" className="py-2.5 px-3">
                   HRS Bin Range
                 </th>
@@ -185,30 +185,30 @@ export function DriftDistributionChart({
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 font-mono">
+            <tbody className="divide-y divide-slate-100 font-mono">
               {BINS.map((bin) => {
                 const baseProp = baselineProportions[bin.index] ?? 0;
                 const currProp = currentProportions[bin.index] ?? 0;
                 const delta = currProp - baseProp;
 
                 return (
-                  <tr key={bin.index} className="hover:bg-slate-800/30 transition">
-                    <td className="py-2 px-3 font-semibold text-slate-200">
+                  <tr key={bin.index} className="hover:bg-slate-50 transition">
+                    <td className="py-2 px-3 font-semibold text-slate-900">
                       [{bin.label}]
                     </td>
-                    <td className="py-2 px-3 text-right text-indigo-300">
+                    <td className="py-2 px-3 text-right text-indigo-700">
                       {(baseProp * 100).toFixed(2)}%
                     </td>
-                    <td className="py-2 px-3 text-right text-sky-300 font-bold">
+                    <td className="py-2 px-3 text-right text-sky-700 font-bold">
                       {(currProp * 100).toFixed(2)}%
                     </td>
                     <td
                       className={`py-2 px-3 text-right font-semibold ${
                         Math.abs(delta) < 0.005
-                          ? "text-slate-400"
+                          ? "text-slate-500"
                           : delta > 0
-                          ? "text-amber-400"
-                          : "text-emerald-400"
+                          ? "text-amber-700 font-bold"
+                          : "text-emerald-700 font-bold"
                       }`}
                     >
                       {delta > 0

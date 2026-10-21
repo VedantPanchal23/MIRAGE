@@ -94,18 +94,18 @@ export function DriftChart({
   const baselineY = getY(baselineMean);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-5">
+    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-5">
       {/* Header and Controls */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex items-center space-x-2.5">
-          <div className="p-2 rounded-lg bg-sky-500/10 border border-sky-500/20 text-sky-400">
+          <div className="p-2 rounded-lg bg-sky-50 border border-sky-200 text-sky-600">
             <LineChart className="w-4 h-4" aria-hidden="true" />
           </div>
           <div>
-            <h3 className="text-sm font-bold text-white">
+            <h3 className="text-sm font-bold text-slate-900">
               Longitudinal HRS Drift Trend
             </h3>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-500 mt-0.5">
               Daily mean calibrated Hallucination Risk Score over rolling time window
             </p>
           </div>
@@ -117,7 +117,7 @@ export function DriftChart({
             <div
               role="group"
               aria-label="Time window selection"
-              className="flex items-center bg-slate-950 p-1 rounded-lg border border-slate-800"
+              className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200"
             >
               {WINDOW_OPTIONS.map((opt) => (
                 <button
@@ -127,8 +127,8 @@ export function DriftChart({
                   aria-pressed={days === opt.value}
                   className={`px-2.5 py-1 text-xs rounded-md font-medium transition ${
                     days === opt.value
-                      ? "bg-sky-600 text-white font-semibold shadow-sm"
-                      : "text-slate-400 hover:text-slate-200 hover:bg-slate-900"
+                      ? "bg-sky-600 text-white font-semibold shadow-xs"
+                      : "text-slate-600 hover:text-slate-900 hover:bg-slate-200"
                   }`}
                 >
                   {opt.label}
@@ -142,7 +142,7 @@ export function DriftChart({
             onClick={() => setShowTable((prev) => !prev)}
             aria-expanded={showTable}
             aria-controls="timeseries-table-section"
-            className="flex items-center space-x-1 px-2.5 py-1 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-md border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="flex items-center space-x-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-md border border-slate-200 shadow-xs transition focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <Table className="w-3.5 h-3.5" aria-hidden="true" />
             <span>{showTable ? "Hide Table" : "Show Table"}</span>
@@ -151,10 +151,10 @@ export function DriftChart({
       </div>
 
       {/* SVG Chart Container */}
-      <div className="bg-slate-950 rounded-xl p-4 border border-slate-800/80">
-        <div className="flex justify-between items-center text-[11px] text-slate-400 font-mono mb-2 px-1">
+      <div className="bg-slate-50 rounded-xl p-4 border border-slate-200">
+        <div className="flex justify-between items-center text-[11px] text-slate-500 font-mono mb-2 px-1">
           <span>Observed Window: Past {days} Days ({points.length} data points)</span>
-          <span className="text-indigo-400 font-semibold">
+          <span className="text-indigo-600 font-semibold">
             Baseline Reference: {baselineMean.toFixed(4)} HRS
           </span>
         </div>
@@ -203,7 +203,7 @@ export function DriftChart({
                 y1={getY(maxScore / 2)}
                 x2={width - paddingX}
                 y2={getY(maxScore / 2)}
-                stroke="#334155"
+                stroke="#e2e8f0"
                 strokeDasharray="3 3"
               />
               <text
@@ -222,7 +222,7 @@ export function DriftChart({
                 y1={height - paddingBottom}
                 x2={width - paddingX}
                 y2={height - paddingBottom}
-                stroke="#475569"
+                stroke="#cbd5e1"
               />
               <text
                 x={paddingX - 8}
@@ -241,7 +241,7 @@ export function DriftChart({
                 y1={baselineY}
                 x2={width - paddingX}
                 y2={baselineY}
-                stroke="#818cf8"
+                stroke="#6366f1"
                 strokeWidth="1.5"
                 strokeDasharray="4 4"
               />
@@ -255,7 +255,7 @@ export function DriftChart({
               {points.length >= 2 && (
                 <polyline
                   fill="none"
-                  stroke="#38bdf8"
+                  stroke="#0284c7"
                   strokeWidth="2.5"
                   strokeLinecap="round"
                   strokeLinejoin="round"
@@ -273,7 +273,7 @@ export function DriftChart({
                     cx={cx}
                     cy={cy}
                     r={points.length > 40 ? 2.5 : 3.5}
-                    className="fill-sky-400 stroke-slate-950 stroke-2 hover:r-5 transition-all cursor-pointer"
+                    className="fill-sky-600 stroke-white stroke-2 hover:r-5 transition-all cursor-pointer"
                   >
                     <title>
                       {`${p.date}: ${p.hrs.toFixed(4)} Mean HRS (${p.count} requests${
@@ -301,14 +301,14 @@ export function DriftChart({
       {showTable && points.length > 0 && (
         <div
           id="timeseries-table-section"
-          className="mt-4 pt-4 border-t border-slate-800 overflow-x-auto max-h-64"
+          className="mt-4 pt-4 border-t border-slate-200 overflow-x-auto max-h-64"
         >
-          <table className="w-full text-left text-xs text-slate-300 font-sans border-collapse">
-            <caption className="text-left text-xs font-semibold text-slate-400 mb-2 sr-only">
+          <table className="w-full text-left text-xs text-slate-700 font-sans border-collapse">
+            <caption className="text-left text-xs font-semibold text-slate-500 mb-2 sr-only">
               Daily Longitudinal Hallucination Risk Scores
             </caption>
-            <thead className="sticky top-0 bg-slate-950">
-              <tr className="border-b border-slate-800 text-[11px] font-mono text-slate-400 uppercase tracking-wider">
+            <thead className="sticky top-0 bg-slate-100">
+              <tr className="border-b border-slate-200 text-[11px] font-mono text-slate-600 uppercase tracking-wider">
                 <th scope="col" className="py-2 px-3">
                   Date
                 </th>
@@ -323,21 +323,21 @@ export function DriftChart({
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-slate-800/60 font-mono">
+            <tbody className="divide-y divide-slate-100 font-mono">
               {points.map((p) => (
-                <tr key={p.date} className="hover:bg-slate-800/30 transition">
-                  <td className="py-1.5 px-3 font-semibold text-slate-200">
+                <tr key={p.date} className="hover:bg-slate-50 transition">
+                  <td className="py-1.5 px-3 font-semibold text-slate-900">
                     {p.date}
                   </td>
-                  <td className="py-1.5 px-3 text-right text-sky-300 font-bold">
+                  <td className="py-1.5 px-3 text-right text-sky-700 font-bold">
                     {p.hrs.toFixed(4)}
                   </td>
-                  <td className="py-1.5 px-3 text-right text-slate-300">
+                  <td className="py-1.5 px-3 text-right text-slate-700">
                     {p.count.toLocaleString()}
                   </td>
                   <td
                     className={`py-1.5 px-3 text-right font-semibold ${
-                      p.critical > 0 ? "text-rose-400" : "text-slate-500"
+                      p.critical > 0 ? "text-rose-600 font-bold" : "text-slate-500"
                     }`}
                   >
                     {p.critical.toLocaleString()}

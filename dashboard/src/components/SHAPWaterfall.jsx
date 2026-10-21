@@ -57,15 +57,15 @@ export function SHAPWaterfall({ attribution = null, hrsScore = 0.0 }) {
 
   if (!hasAttribution) {
     return (
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-3">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <h3 className="text-sm font-semibold text-slate-200">
+            <h3 className="text-sm font-semibold text-slate-900">
               TreeSHAP Feature Attribution
             </h3>
             <span
               role="status"
-              className="text-[11px] font-mono bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700"
+              className="text-[11px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200"
             >
               Unavailable
             </span>
@@ -75,7 +75,7 @@ export function SHAPWaterfall({ attribution = null, hrsScore = 0.0 }) {
           </span>
         </div>
 
-        <div className="bg-slate-950/70 border border-slate-800/80 rounded-lg p-4 text-xs text-slate-400 leading-relaxed">
+        <div className="bg-slate-50 border border-slate-200 rounded-lg p-4 text-xs text-slate-600 leading-relaxed">
           TreeSHAP feature attributions are unavailable for this verification session.
           Signal contribution values were not returned by the model server or execution trace.
         </div>
@@ -102,19 +102,19 @@ export function SHAPWaterfall({ attribution = null, hrsScore = 0.0 }) {
 
   if (presentSignals.length === 0) {
     return (
-      <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-3">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-3">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-slate-200">
+          <h3 className="text-sm font-semibold text-slate-900">
             TreeSHAP Feature Attribution
           </h3>
           <span
             role="status"
-            className="text-[11px] font-mono bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700"
+            className="text-[11px] font-mono bg-slate-100 text-slate-600 px-2 py-0.5 rounded border border-slate-200"
           >
             Unavailable
           </span>
         </div>
-        <p className="text-xs text-slate-400">
+        <p className="text-xs text-slate-500">
           No numeric feature attributions found in session telemetry.
         </p>
       </div>
@@ -127,22 +127,22 @@ export function SHAPWaterfall({ attribution = null, hrsScore = 0.0 }) {
   const hasNegativeValues = presentSignals.some((s) => s.value < 0);
 
   return (
-    <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg space-y-5">
+    <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs space-y-5">
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <h3 className="text-sm font-bold text-white">
+          <h3 className="text-sm font-bold text-slate-900">
             TreeSHAP Feature Attribution
           </h3>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             Exact signal attribution (Φ_i) to Calibrated HRS ({Number(hrsScore).toFixed(4)})
           </p>
         </div>
 
         <div className="flex items-center space-x-3 text-xs font-mono">
-          <span className="text-slate-400">
+          <span className="text-slate-500">
             ∑ Φ_i ={" "}
-            <span className="text-white font-bold">
+            <span className="text-slate-900 font-bold">
               {totalSum.toFixed(4)}
             </span>
           </span>
@@ -174,12 +174,12 @@ export function SHAPWaterfall({ attribution = null, hrsScore = 0.0 }) {
           return (
             <div
               key={sig.key}
-              className="bg-slate-950/60 border border-slate-800/80 rounded-lg p-3 hover:border-slate-700 transition"
+              className="bg-slate-50/70 border border-slate-200 rounded-lg p-3 hover:border-slate-300 transition"
             >
               <div className="flex items-center justify-between text-xs mb-1.5">
                 <div className="flex items-center space-x-2">
-                  <span className="font-semibold text-slate-200">{sig.name}</span>
-                  <span className="text-[10px] text-slate-400 hidden sm:inline">
+                  <span className="font-semibold text-slate-900">{sig.name}</span>
+                  <span className="text-[10px] text-slate-500 hidden sm:inline">
                     — {sig.desc}
                   </span>
                 </div>
@@ -188,16 +188,16 @@ export function SHAPWaterfall({ attribution = null, hrsScore = 0.0 }) {
                   <span
                     className={`text-xs font-bold px-2 py-0.5 rounded border ${
                       isNegative
-                        ? "text-emerald-400 bg-emerald-950/80 border-emerald-800"
+                        ? "text-emerald-700 bg-emerald-50 border-emerald-200"
                         : hasNegativeValues && isPositive
-                        ? "text-rose-400 bg-rose-950/80 border-rose-800"
-                        : "text-sky-400 bg-sky-950/80 border-sky-800"
+                        ? "text-rose-700 bg-rose-50 border-rose-200"
+                        : "text-sky-700 bg-sky-50 border-sky-200"
                     }`}
                   >
                     {formattedValue}
                   </span>
                   {percentShare && (
-                    <span className="text-[10px] text-slate-400 w-20 text-right">
+                    <span className="text-[10px] text-slate-500 w-20 text-right">
                       {percentShare} share
                     </span>
                   )}
@@ -210,7 +210,7 @@ export function SHAPWaterfall({ attribution = null, hrsScore = 0.0 }) {
               </div>
 
               {/* Proportional Magnitude Bar */}
-              <div className="w-full bg-slate-900 rounded-full h-2 overflow-hidden flex items-center">
+              <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden flex items-center">
                 <div
                   className={`h-full rounded-full transition-all duration-300 ${
                     isNegative

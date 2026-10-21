@@ -91,15 +91,15 @@ export function DriftView({ isRefreshing, onDataLoaded }) {
           {[...Array(4)].map((_, i) => (
             <div
               key={i}
-              className="bg-slate-900/60 border border-slate-800 rounded-xl p-5 h-32 animate-pulse flex flex-col justify-between"
+              className="bg-white border border-slate-200 rounded-xl p-5 h-32 animate-pulse flex flex-col justify-between shadow-xs"
             >
-              <div className="h-3 bg-slate-800 rounded w-1/3"></div>
-              <div className="h-8 bg-slate-800 rounded w-1/2"></div>
-              <div className="h-3 bg-slate-800 rounded w-2/3"></div>
+              <div className="h-3 bg-slate-200 rounded w-1/3"></div>
+              <div className="h-8 bg-slate-200 rounded w-1/2"></div>
+              <div className="h-3 bg-slate-200 rounded w-2/3"></div>
             </div>
           ))}
         </div>
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-8 h-48 animate-pulse flex items-center justify-center text-slate-500 text-xs">
+        <div className="bg-white border border-slate-200 rounded-xl p-8 h-48 animate-pulse flex items-center justify-center text-slate-500 text-xs shadow-xs">
           Loading longitudinal drift metrics and distribution models...
         </div>
       </section>
@@ -112,25 +112,25 @@ export function DriftView({ isRefreshing, onDataLoaded }) {
       <section
         role="alert"
         aria-labelledby="drift-error-title"
-        className="bg-slate-900 border border-rose-900/60 rounded-xl p-6 shadow-lg space-y-4"
+        className="bg-white border border-rose-200 rounded-xl p-6 shadow-xs space-y-4"
       >
         <div className="flex items-start space-x-3">
-          <div className="w-10 h-10 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 flex-shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 flex-shrink-0">
             <AlertCircle className="w-5 h-5" aria-hidden="true" />
           </div>
           <div className="flex-1">
-            <h2 id="drift-error-title" className="text-sm font-bold text-white">
+            <h2 id="drift-error-title" className="text-sm font-bold text-slate-900">
               Unable to Load Drift Telemetry
             </h2>
-            <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
               {error.message}
             </p>
-            <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px] font-mono text-slate-400">
-              <span className="bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+            <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px] font-mono text-slate-500">
+              <span className="bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
                 Code: {error.code}
               </span>
               {error.traceId && (
-                <span className="bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                <span className="bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
                   Trace: {error.traceId}
                 </span>
               )}
@@ -138,12 +138,12 @@ export function DriftView({ isRefreshing, onDataLoaded }) {
           </div>
         </div>
 
-        <div className="flex justify-end pt-2 border-t border-slate-800">
+        <div className="flex justify-end pt-2 border-t border-slate-100">
           <button
             type="button"
             onClick={() => fetchDriftData(days)}
             aria-label="Retry loading drift analysis"
-            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-xs transition focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Retry</span>
@@ -179,16 +179,16 @@ export function DriftView({ isRefreshing, onDataLoaded }) {
     return (
       <section
         aria-labelledby="drift-empty-title"
-        className="bg-slate-900 border border-slate-800 rounded-xl p-10 text-center shadow-lg space-y-4"
+        className="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-xs space-y-4"
       >
-        <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-slate-400">
+        <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center mx-auto text-slate-500">
           <Database className="w-6 h-6" aria-hidden="true" />
         </div>
         <div>
-          <h2 id="drift-empty-title" className="text-base font-bold text-white">
+          <h2 id="drift-empty-title" className="text-base font-bold text-slate-900">
             No Drift Telemetry Available
           </h2>
-          <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
+          <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
             There are no recorded drift metrics or baseline samples for the authenticated tenant yet. Once requests are processed by the MIRAGE Gateway, Population Stability Index (PSI) and longitudinal distributions will appear here.
           </p>
         </div>
@@ -196,7 +196,7 @@ export function DriftView({ isRefreshing, onDataLoaded }) {
           <button
             type="button"
             onClick={() => fetchDriftData(days)}
-            className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-xs transition focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Check for Updates</span>
@@ -211,25 +211,25 @@ export function DriftView({ isRefreshing, onDataLoaded }) {
   const statusConfig = {
     stable: {
       label: "Stable (PSI < 0.10)",
-      badge: "bg-emerald-950 text-emerald-400 border-emerald-800",
+      badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
       cardBadge: "Stable",
       cardColor: "green",
     },
     moderate_drift: {
       label: "Moderate Drift (0.10 ≤ PSI < 0.20)",
-      badge: "bg-amber-950 text-amber-400 border-amber-800",
+      badge: "bg-amber-50 text-amber-700 border-amber-200",
       cardBadge: "Moderate Drift",
       cardColor: "yellow",
     },
     significant_drift: {
       label: "Significant Drift (PSI ≥ 0.20)",
-      badge: "bg-rose-950 text-rose-400 border-rose-800",
+      badge: "bg-rose-50 text-rose-700 border-rose-200",
       cardBadge: "Significant Drift",
       cardColor: "red",
     },
   }[rawStatus] || {
     label: "Stable (PSI < 0.10)",
-    badge: "bg-emerald-950 text-emerald-400 border-emerald-800",
+    badge: "bg-emerald-50 text-emerald-700 border-emerald-200",
     cardBadge: "Stable",
     cardColor: "green",
   };
@@ -242,11 +242,11 @@ export function DriftView({ isRefreshing, onDataLoaded }) {
         <div>
           <h2
             id="drift-title"
-            className="text-base font-bold text-white tracking-tight"
+            className="text-base font-bold text-slate-900 tracking-tight"
           >
             Longitudinal Drift & Stability Analysis
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             Statistical monitoring of Hallucination Risk Score distributions via Population Stability Index and Two-Sample KS tests.
           </p>
         </div>
@@ -265,17 +265,17 @@ export function DriftView({ isRefreshing, onDataLoaded }) {
         <div
           role="alert"
           aria-label="Active drift alert"
-          className="bg-rose-950/60 border border-rose-800 rounded-xl p-4 flex items-start space-x-3 text-rose-300 shadow-md"
+          className="bg-rose-50 border border-rose-200 rounded-xl p-4 flex items-start space-x-3 text-rose-900 shadow-xs"
         >
           <AlertTriangle
-            className="w-5 h-5 text-rose-400 flex-shrink-0 mt-0.5"
+            className="w-5 h-5 text-rose-600 flex-shrink-0 mt-0.5"
             aria-hidden="true"
           />
           <div>
-            <h3 className="text-xs font-bold uppercase tracking-wider text-rose-300">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-rose-800">
               Operational Drift Alert Triggered
             </h3>
-            <p className="text-xs mt-1 text-rose-200">
+            <p className="text-xs mt-1 text-rose-700">
               {alertReason ||
                 "Longitudinal distribution shift exceeded predefined operational tolerance."}
             </p>

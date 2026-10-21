@@ -512,19 +512,19 @@ export function MultiAgentGovernanceView({ isRefreshing, onDataLoaded }) {
   return (
     <div className="space-y-6">
       {/* View Header with High-Level Metrics */}
-      <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-5 shadow-sm">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800/80 pb-4">
+      <div className="bg-white border border-slate-200 rounded-xl p-5 shadow-xs">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
             <div className="flex items-center space-x-2">
-              <Network className="w-5 h-5 text-indigo-400" />
-              <h1 className="text-lg font-semibold text-white tracking-tight">
+              <Network className="w-5 h-5 text-indigo-600" />
+              <h1 className="text-lg font-semibold text-slate-900 tracking-tight">
                 Governed Multi-Agent Coordination & Assurance
               </h1>
-              <span className="text-xs px-2 py-0.5 rounded font-mono bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+              <span className="text-xs px-2 py-0.5 rounded font-mono bg-indigo-50 text-indigo-700 border border-indigo-200">
                 Phase 8
               </span>
             </div>
-            <p className="text-xs text-slate-400 mt-1">
+            <p className="text-xs text-slate-500 mt-1">
               Authoritative agent lifecycle governance, attenuated delegation grants, governed handoffs, distributed resource leases, and Gate 5 hierarchical outcome assurance.
             </p>
           </div>
@@ -533,9 +533,9 @@ export function MultiAgentGovernanceView({ isRefreshing, onDataLoaded }) {
             <button
               onClick={fetchData}
               disabled={loading}
-              className="px-3 py-1.5 text-xs font-medium text-slate-300 hover:text-white bg-slate-800/80 hover:bg-slate-800 border border-slate-700/60 rounded-lg flex items-center space-x-1.5 transition"
+              className="px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg flex items-center space-x-1.5 transition shadow-xs"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-sky-400" : ""}`} />
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-sky-600" : ""}`} />
               <span>Refresh State</span>
             </button>
           </div>
@@ -543,42 +543,42 @@ export function MultiAgentGovernanceView({ isRefreshing, onDataLoaded }) {
 
         {/* Global Stats Cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-4">
-          <div className="bg-slate-950/60 border border-slate-800/60 rounded-lg p-3">
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
               Active Governed Agents
             </span>
             <div className="flex items-baseline space-x-2 mt-1">
-              <span className="text-xl font-bold text-emerald-400 font-mono">{activeAgentsCount}</span>
+              <span className="text-xl font-bold text-slate-900 font-mono">{activeAgentsCount}</span>
               <span className="text-xs text-slate-500">/ {agents.length} registered</span>
             </div>
           </div>
 
-          <div className="bg-slate-950/60 border border-slate-800/60 rounded-lg p-3">
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
               Active Delegations
             </span>
             <div className="flex items-baseline space-x-2 mt-1">
-              <span className="text-xl font-bold text-sky-400 font-mono">{activeDelegationsCount}</span>
+              <span className="text-xl font-bold text-slate-900 font-mono">{activeDelegationsCount}</span>
               <span className="text-xs text-slate-500">/ {delegations.length} total</span>
             </div>
           </div>
 
-          <div className="bg-slate-950/60 border border-slate-800/60 rounded-lg p-3">
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
               Pending Handoffs
             </span>
             <div className="flex items-baseline space-x-2 mt-1">
-              <span className="text-xl font-bold text-amber-400 font-mono">{pendingHandoffsCount}</span>
+              <span className="text-xl font-bold text-amber-700 font-mono">{pendingHandoffsCount}</span>
               <span className="text-xs text-slate-500">awaiting acceptance</span>
             </div>
           </div>
 
-          <div className="bg-slate-950/60 border border-slate-800/60 rounded-lg p-3">
-            <span className="text-[11px] font-medium text-slate-400 uppercase tracking-wider block">
+          <div className="bg-slate-50 border border-slate-200 rounded-lg p-3">
+            <span className="text-[11px] font-medium text-slate-500 uppercase tracking-wider block">
               Active Concurrency Leases
             </span>
             <div className="flex items-baseline space-x-2 mt-1">
-              <span className="text-xl font-bold text-purple-400 font-mono">{activeLeasesCount}</span>
+              <span className="text-xl font-bold text-slate-900 font-mono">{activeLeasesCount}</span>
               <span className="text-xs text-slate-500">fencing tokens active</span>
             </div>
           </div>
@@ -589,15 +589,15 @@ export function MultiAgentGovernanceView({ isRefreshing, onDataLoaded }) {
       {error && (
         <div
           role="alert"
-          className="bg-rose-950/70 border border-rose-800 text-rose-200 text-xs px-4 py-3 rounded-lg flex items-center justify-between shadow-sm"
+          className="bg-rose-50 border border-rose-200 text-rose-900 text-xs px-4 py-3 rounded-lg flex items-center justify-between shadow-xs"
         >
           <div className="flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
             <span>{error}</span>
           </div>
           <button
             onClick={() => setError(null)}
-            className="text-rose-400 hover:text-white"
+            className="text-rose-600 hover:text-rose-900"
             aria-label="Dismiss error"
           >
             <X className="w-3.5 h-3.5" />
@@ -608,15 +608,15 @@ export function MultiAgentGovernanceView({ isRefreshing, onDataLoaded }) {
       {feedback && (
         <div
           role="status"
-          className="bg-emerald-950/70 border border-emerald-800 text-emerald-200 text-xs px-4 py-3 rounded-lg flex items-center justify-between shadow-sm"
+          className="bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs px-4 py-3 rounded-lg flex items-center justify-between shadow-xs"
         >
           <div className="flex items-center space-x-2">
-            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{feedback}</span>
           </div>
           <button
             onClick={() => setFeedback(null)}
-            className="text-emerald-400 hover:text-white"
+            className="text-emerald-600 hover:text-emerald-900"
             aria-label="Dismiss message"
           >
             <X className="w-3.5 h-3.5" />
@@ -625,7 +625,7 @@ export function MultiAgentGovernanceView({ isRefreshing, onDataLoaded }) {
       )}
 
       {/* Primary Sub-Navigation Bar */}
-      <div className="flex items-center space-x-1 border-b border-slate-800 pb-2 overflow-x-auto scrollbar-none">
+      <div className="flex items-center space-x-1 border-b border-slate-200 pb-2 overflow-x-auto scrollbar-none">
         {[
           { id: "agents", label: "Agents & Lifecycle", icon: Users, count: agents.length },
           { id: "delegations", label: "Delegation Grants", icon: Key, count: delegations.length },
@@ -644,10 +644,10 @@ export function MultiAgentGovernanceView({ isRefreshing, onDataLoaded }) {
                 setActiveSubTab(tab.id);
                 setSearchQuery("");
               }}
-              className={`flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-medium transition focus:outline-none focus:ring-1 focus:ring-indigo-500 whitespace-nowrap ${
+              className={`flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-semibold transition focus:outline-none focus:ring-1 focus:ring-sky-500 whitespace-nowrap ${
                 isActive
-                  ? "bg-indigo-600/15 text-indigo-300 border border-indigo-500/30"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-900/60 border border-transparent"
+                  ? "bg-sky-50 text-sky-700 border border-sky-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent"
               }`}
             >
               <Icon className="w-4 h-4" />
@@ -655,7 +655,7 @@ export function MultiAgentGovernanceView({ isRefreshing, onDataLoaded }) {
               {tab.count !== null && (
                 <span
                   className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono ${
-                    isActive ? "bg-indigo-500/20 text-indigo-200" : "bg-slate-800 text-slate-400"
+                    isActive ? "bg-sky-100 text-sky-800" : "bg-slate-100 text-slate-600"
                   }`}
                 >
                   {tab.count}

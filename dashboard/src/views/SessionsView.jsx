@@ -158,8 +158,8 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
         aria-label="Loading verification sessions"
         className="space-y-6"
       >
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 h-28 animate-pulse flex items-center justify-between" />
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-8 h-80 animate-pulse flex items-center justify-center text-slate-500 text-xs">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 h-28 animate-pulse flex items-center justify-between shadow-xs" />
+        <div className="bg-white border border-slate-200 rounded-xl p-8 h-80 animate-pulse flex items-center justify-center text-slate-500 text-xs shadow-xs">
           Loading verification sessions and claim records...
         </div>
       </section>
@@ -172,25 +172,25 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
       <section
         role="alert"
         aria-labelledby="sessions-error-title"
-        className="bg-slate-900 border border-rose-900/60 rounded-xl p-6 shadow-lg space-y-4"
+        className="bg-white border border-rose-200 rounded-xl p-6 shadow-xs space-y-4"
       >
         <div className="flex items-start space-x-3">
-          <div className="w-10 h-10 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 flex-shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 flex-shrink-0">
             <AlertCircle className="w-5 h-5" aria-hidden="true" />
           </div>
           <div className="flex-1">
-            <h2 id="sessions-error-title" className="text-sm font-bold text-white">
+            <h2 id="sessions-error-title" className="text-sm font-bold text-slate-900">
               Unable to Load Verification Sessions
             </h2>
-            <p className="text-xs text-slate-300 mt-1 leading-relaxed">
+            <p className="text-xs text-slate-600 mt-1 leading-relaxed">
               {sessionsError.message}
             </p>
-            <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px] font-mono text-slate-400">
-              <span className="bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+            <div className="flex flex-wrap items-center gap-3 mt-3 text-[11px] font-mono text-slate-500">
+              <span className="bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
                 Code: {sessionsError.code}
               </span>
               {sessionsError.traceId && (
-                <span className="bg-slate-950 px-2 py-0.5 rounded border border-slate-800">
+                <span className="bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
                   Trace: {sessionsError.traceId}
                 </span>
               )}
@@ -198,12 +198,12 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
           </div>
         </div>
 
-        <div className="flex justify-end pt-2 border-t border-slate-800">
+        <div className="flex justify-end pt-2 border-t border-slate-100">
           <button
             type="button"
             onClick={fetchSessionsList}
             aria-label="Retry loading sessions"
-            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-xs transition focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Retry</span>
@@ -249,10 +249,10 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
       {/* Title & Filter Bar */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 id="sessions-title" className="text-base font-bold text-white tracking-tight">
+          <h2 id="sessions-title" className="text-base font-bold text-slate-900 tracking-tight">
             Sessions Inspector & TreeSHAP Attribution
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             Audit verification sessions, propositional claim breakdowns, and model feature attributions.
           </p>
         </div>
@@ -261,9 +261,9 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
         <div
           role="group"
           aria-label="Filter sessions by risk tier"
-          className="flex items-center bg-slate-900 p-1 rounded-lg border border-slate-800"
+          className="flex items-center bg-white p-1 rounded-lg border border-slate-200 shadow-xs"
         >
-          <span className="text-[11px] font-mono text-slate-400 px-2 hidden sm:inline">
+          <span className="text-[11px] font-mono text-slate-500 px-2 hidden sm:inline">
             Tier:
           </span>
           {RISK_TIERS.map((tier) => (
@@ -274,8 +274,8 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
               aria-pressed={selectedRiskTier === tier}
               className={`px-2.5 py-1 text-xs rounded-md font-medium transition ${
                 selectedRiskTier === tier
-                  ? "bg-sky-600 text-white font-semibold shadow-sm"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                  ? "bg-sky-50 text-sky-700 font-semibold border border-sky-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               }`}
             >
               {tier}
@@ -288,16 +288,16 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
       {!loadingSessions && sessions.length === 0 ? (
         <div
           aria-labelledby="sessions-empty-title"
-          className="bg-slate-900 border border-slate-800 rounded-xl p-10 text-center shadow-lg space-y-4"
+          className="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-xs space-y-4"
         >
-          <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-slate-400">
+          <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center mx-auto text-slate-500">
             <Database className="w-6 h-6" aria-hidden="true" />
           </div>
           <div>
-            <h3 id="sessions-empty-title" className="text-base font-bold text-white">
+            <h3 id="sessions-empty-title" className="text-base font-bold text-slate-900">
               No Verification Sessions Found
             </h3>
-            <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
+            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
               {selectedRiskTier !== "ALL"
                 ? `No sessions recorded with risk tier '${selectedRiskTier}'. Try selecting 'ALL' or check back after new verification requests are processed.`
                 : "There are no recorded verification sessions for the authenticated tenant yet. Once requests are processed by the gateway, session logs and claim breakdowns will appear here."}
@@ -308,7 +308,7 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
               <button
                 type="button"
                 onClick={() => handleFilterChange("ALL")}
-                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition"
+                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-xs transition"
               >
                 <span>Clear Tier Filter</span>
               </button>
@@ -316,7 +316,7 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
               <button
                 type="button"
                 onClick={fetchSessionsList}
-                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition"
+                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-xs transition"
               >
                 <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Check for Updates</span>
@@ -328,21 +328,21 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
         /* Sessions Table & Master-Detail Inspection View */
         <div className="space-y-6">
           {/* Sessions List Card */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl shadow-lg overflow-hidden">
-            <div className="p-4 border-b border-slate-800 flex items-center justify-between">
-              <span className="text-xs font-semibold text-slate-300">
+          <div className="bg-white border border-slate-200 rounded-xl shadow-xs overflow-hidden">
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between">
+              <span className="text-xs font-semibold text-slate-900">
                 Verification Sessions ({total} total)
               </span>
-              <span className="text-xs text-slate-400 font-mono">
+              <span className="text-xs text-slate-500 font-mono">
                 Page {page} of {totalPages}
               </span>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-300 border-collapse">
+              <table className="w-full text-left text-xs text-slate-700 border-collapse">
                 <caption className="sr-only">List of verification sessions</caption>
                 <thead>
-                  <tr className="border-b border-slate-800 text-[11px] font-mono text-slate-400 uppercase tracking-wider bg-slate-950/70">
+                  <tr className="border-b border-slate-200 text-[11px] font-mono text-slate-500 uppercase tracking-wider bg-slate-50">
                     <th scope="col" className="py-2.5 px-4">
                       Session ID
                     </th>
@@ -366,17 +366,17 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
                     </th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 font-mono">
+                <tbody className="divide-y divide-slate-100 font-mono">
                   {sessions.map((sess) => {
                     const isSelected = sess.session_id === selectedSessionId;
                     const tier = (sess.risk_tier || "UNKNOWN").toUpperCase();
 
                     const tierBadgeClass = {
-                      LOW: "text-emerald-400 bg-emerald-950/80 border-emerald-800",
-                      MEDIUM: "text-amber-400 bg-amber-950/80 border-amber-800",
-                      HIGH: "text-rose-400 bg-rose-950/80 border-rose-800",
-                      CRITICAL: "text-purple-400 bg-purple-950/80 border-purple-800",
-                    }[tier] || "text-slate-400 bg-slate-800 border-slate-700";
+                      LOW: "text-emerald-700 bg-emerald-50 border-emerald-200",
+                      MEDIUM: "text-amber-700 bg-amber-50 border-amber-200",
+                      HIGH: "text-rose-700 bg-rose-50 border-rose-200",
+                      CRITICAL: "text-purple-700 bg-purple-50 border-purple-200",
+                    }[tier] || "text-slate-600 bg-slate-100 border-slate-200";
 
                     return (
                       <tr
@@ -384,11 +384,11 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
                         onClick={() => setSelectedSessionId(sess.session_id)}
                         className={`cursor-pointer transition ${
                           isSelected
-                            ? "bg-sky-950/40 border-l-4 border-l-sky-500 font-semibold"
-                            : "hover:bg-slate-800/40"
+                            ? "bg-sky-50/70 border-l-4 border-l-sky-500 font-semibold"
+                            : "hover:bg-slate-50"
                         }`}
                       >
-                        <td className="py-3 px-4 font-bold text-slate-200">
+                        <td className="py-3 px-4 font-bold text-slate-900">
                           {sess.session_id}
                         </td>
                         <td className="py-3 px-3">
@@ -398,7 +398,7 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
                             {tier}
                           </span>
                         </td>
-                        <td className="py-3 px-3 text-right text-white font-bold">
+                        <td className="py-3 px-3 text-right text-slate-900 font-bold">
                           {typeof sess.hrs_score === "number"
                             ? sess.hrs_score.toFixed(4)
                             : "N/A"}
@@ -409,19 +409,19 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
                               </span>
                             )}
                         </td>
-                        <td className="py-3 px-3 text-center text-slate-300">
+                        <td className="py-3 px-3 text-center text-slate-600">
                           {sess.claims_count ?? (sess.claims?.length || 0)}
                         </td>
                         <td className="py-3 px-3">
                           {sess.correction_applied ? (
-                            <span className="text-[10px] text-emerald-400 bg-emerald-950/80 border border-emerald-800 px-1.5 py-0.5 rounded">
+                            <span className="text-[10px] text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
                               Applied
                             </span>
                           ) : (
-                            <span className="text-[10px] text-slate-500">None</span>
+                            <span className="text-[10px] text-slate-400">None</span>
                           )}
                         </td>
-                        <td className="py-3 px-4 text-slate-400 text-[11px]">
+                        <td className="py-3 px-4 text-slate-500 text-[11px]">
                           {sess.created_at ? sess.created_at.slice(0, 19).replace("T", " ") : "N/A"}
                         </td>
                         <td className="py-3 px-4 text-right">
@@ -434,7 +434,7 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
                             className={`text-[11px] px-2.5 py-1 rounded font-medium border transition ${
                               isSelected
                                 ? "bg-sky-600 text-white border-sky-500"
-                                : "bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700"
+                                : "bg-white text-slate-700 border-slate-300 hover:bg-slate-50"
                             }`}
                           >
                             Inspect
@@ -448,7 +448,7 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
             </div>
 
             {/* Pagination Bar */}
-            <div className="p-3 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
+            <div className="p-3 border-t border-slate-200 bg-slate-50 flex items-center justify-between text-xs text-slate-500">
               <span className="font-mono">
                 Showing {Math.min(total, (page - 1) * pageSize + 1)} -{" "}
                 {Math.min(total, page * pageSize)} of {total}
@@ -460,11 +460,11 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                   disabled={page <= 1}
                   aria-label="Previous page"
-                  className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-700 transition"
+                  className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
                 >
                   <ChevronLeft className="w-4 h-4" />
                 </button>
-                <span className="font-mono px-2">
+                <span className="font-mono px-2 text-slate-700 font-semibold">
                   {page} / {totalPages}
                 </span>
                 <button
@@ -472,7 +472,7 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page >= totalPages}
                   aria-label="Next page"
-                  className="p-1.5 rounded-lg bg-slate-800 border border-slate-700 text-slate-300 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-700 transition"
+                  className="p-1.5 rounded-lg bg-white border border-slate-200 text-slate-700 disabled:opacity-40 disabled:cursor-not-allowed hover:bg-slate-50 transition"
                 >
                   <ChevronRight className="w-4 h-4" />
                 </button>
@@ -487,7 +487,7 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
                 <div
                   role="status"
                   aria-label="Loading session details"
-                  className="bg-slate-900 border border-slate-800 rounded-xl p-6 text-center text-xs text-slate-400 font-mono animate-pulse"
+                  className="bg-white border border-slate-200 rounded-xl p-6 text-center text-xs text-slate-500 font-mono animate-pulse shadow-xs"
                 >
                   Loading claim breakdown and TreeSHAP attribution for {selectedSessionId}...
                 </div>
@@ -496,15 +496,15 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
               {detailsError && (
                 <div
                   role="alert"
-                  className="bg-slate-900 border border-rose-900/60 rounded-xl p-4 flex items-start space-x-3 text-rose-300"
+                  className="bg-white border border-rose-200 rounded-xl p-4 flex items-start space-x-3 text-rose-800 shadow-xs"
                 >
-                  <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" />
+                  <AlertCircle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" />
                   <div className="flex-1 text-xs">
                     <p className="font-bold">{detailsError.message}</p>
                     <button
                       type="button"
                       onClick={() => fetchSessionDetails(selectedSessionId)}
-                      className="mt-2 underline font-semibold hover:text-white"
+                      className="mt-2 underline font-semibold text-rose-900 hover:text-rose-950"
                     >
                       Retry loading details
                     </button>
@@ -514,13 +514,13 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
 
               {/* Session Overview Card */}
               {sessionDetails && (
-                <div className="bg-slate-900 border border-slate-800 rounded-xl p-6 shadow-lg">
-                  <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800">
+                <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-200">
                     <div>
-                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-400">
+                      <span className="text-[11px] font-mono uppercase tracking-wider text-slate-500">
                         Inspected Session
                       </span>
-                      <h3 className="text-base font-bold text-white font-mono mt-0.5">
+                      <h3 className="text-base font-bold text-slate-900 font-mono mt-0.5">
                         {sessionDetails.session_id}
                       </h3>
                     </div>
@@ -529,12 +529,12 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
                       <span
                         className={`text-xs px-2.5 py-1 rounded-md font-bold border ${
                           {
-                            LOW: "text-emerald-400 bg-emerald-950/80 border-emerald-800",
-                            MEDIUM: "text-amber-400 bg-amber-950/80 border-amber-800",
-                            HIGH: "text-rose-400 bg-rose-950/80 border-rose-800",
-                            CRITICAL: "text-purple-400 bg-purple-950/80 border-purple-800",
+                            LOW: "text-emerald-700 bg-emerald-50 border-emerald-200",
+                            MEDIUM: "text-amber-700 bg-amber-50 border-amber-200",
+                            HIGH: "text-rose-700 bg-rose-50 border-rose-200",
+                            CRITICAL: "text-purple-700 bg-purple-50 border-purple-200",
                           }[(sessionDetails.risk_tier || "UNKNOWN").toUpperCase()] ||
-                          "text-slate-400 bg-slate-800 border-slate-700"
+                          "text-slate-600 bg-slate-100 border-slate-200"
                         }`}
                       >
                         {(sessionDetails.risk_tier || "UNKNOWN").toUpperCase()} RISK
@@ -544,41 +544,41 @@ export function SessionsView({ isRefreshing, onDataLoaded }) {
 
                   {/* Metadata Grid */}
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pt-4 text-xs font-mono">
-                    <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                       <span className="text-[10px] text-slate-500 uppercase block">Calibrated HRS</span>
-                      <span className="text-lg font-bold text-white block mt-0.5">
+                      <span className="text-lg font-bold text-slate-900 block mt-0.5">
                         {typeof sessionDetails.hrs_score === "number"
                           ? sessionDetails.hrs_score.toFixed(4)
                           : "0.0000"}
                       </span>
                       {typeof selectedSummary?.ci_lower === "number" && (
-                        <span className="text-[10px] text-sky-400">
+                        <span className="text-[10px] text-sky-700 font-medium">
                           95% CI: [{selectedSummary.ci_lower.toFixed(3)}, {selectedSummary.ci_upper.toFixed(3)}]
                         </span>
                       )}
                     </div>
 
-                    <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                       <span className="text-[10px] text-slate-500 uppercase block">Model ID</span>
-                      <span className="text-sm font-semibold text-slate-200 block mt-1 truncate" title={sessionDetails.model_id}>
+                      <span className="text-sm font-semibold text-slate-800 block mt-1 truncate" title={sessionDetails.model_id}>
                         {sessionDetails.model_id || "default"}
                       </span>
                     </div>
 
-                    <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                       <span className="text-[10px] text-slate-500 uppercase block">Trace ID</span>
-                      <span className="text-xs text-slate-300 block mt-1 truncate" title={sessionDetails.trace_id}>
+                      <span className="text-xs text-slate-700 block mt-1 truncate" title={sessionDetails.trace_id}>
                         {sessionDetails.trace_id || "N/A"}
                       </span>
                     </div>
 
-                    <div className="bg-slate-950/60 p-3 rounded-lg border border-slate-800/80">
+                    <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                       <span className="text-[10px] text-slate-500 uppercase block">Correction Status</span>
                       <span className="text-sm font-semibold block mt-1">
                         {sessionDetails.correction_applied ? (
-                          <span className="text-emerald-400">Rewrite Applied</span>
+                          <span className="text-emerald-700">Rewrite Applied</span>
                         ) : (
-                          <span className="text-slate-400">Not Triggered</span>
+                          <span className="text-slate-500">Not Triggered</span>
                         )}
                       </span>
                     </div>

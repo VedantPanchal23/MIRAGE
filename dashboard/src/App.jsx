@@ -8,7 +8,6 @@ import {
   isSectionPermitted,
 } from "./components/Navigation";
 import { AccessDenied } from "./components/AccessDenied";
-import { PlaceholderView } from "./components/PlaceholderView";
 import { LoginModal } from "./components/LoginModal";
 import { OverviewView } from "./views/OverviewView";
 import { DriftView } from "./views/DriftView";
@@ -175,7 +174,7 @@ export function DashboardShell() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-sky-500 selection:text-white">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans selection:bg-sky-500 selection:text-white">
       {/* Top Header */}
       <Header
         isAuthenticated={isAuthenticated}
@@ -201,12 +200,12 @@ export function DashboardShell() {
       {authError && (
         <div
           role="alert"
-          className="bg-amber-950/70 border-b border-amber-800 text-amber-300 text-xs px-6 py-2.5 flex items-center justify-between"
+          className="bg-amber-50 border-b border-amber-200 text-amber-900 text-xs px-6 py-2.5 flex items-center justify-between"
         >
           <span>{authError}</span>
           <button
             onClick={() => setIsLoginOpen(true)}
-            className="text-xs underline font-semibold text-white hover:text-amber-200"
+            className="text-xs underline font-semibold text-amber-800 hover:text-amber-950"
           >
             Authenticate
           </button>
@@ -219,7 +218,7 @@ export function DashboardShell() {
       </main>
 
       {/* Application Footer */}
-      <footer className="border-t border-slate-800/80 px-6 py-4 text-xs text-slate-500 flex flex-wrap justify-between items-center gap-2">
+      <footer className="border-t border-slate-200 bg-white px-6 py-4 text-xs text-slate-500 flex flex-wrap justify-between items-center gap-2">
         <span>MIRAGE — CSPIT, CHARUSAT Research Project</span>
         <span>React 18 | Vite | Python 3.12 | OpenTelemetry | pybreaker</span>
       </footer>

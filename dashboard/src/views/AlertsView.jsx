@@ -37,14 +37,14 @@ function getSeverityBadge(severity = "") {
   const sev = severity.toLowerCase();
   switch (sev) {
     case "critical":
-      return "text-purple-400 bg-purple-950/80 border-purple-800";
+      return "text-purple-700 bg-purple-50 border-purple-200";
     case "high":
-      return "text-rose-400 bg-rose-950/80 border-rose-800";
+      return "text-rose-700 bg-rose-50 border-rose-200";
     case "medium":
-      return "text-amber-400 bg-amber-950/80 border-amber-800";
+      return "text-amber-700 bg-amber-50 border-amber-200";
     case "low":
     default:
-      return "text-sky-400 bg-sky-950/80 border-sky-800";
+      return "text-sky-700 bg-sky-50 border-sky-200";
   }
 }
 
@@ -55,13 +55,13 @@ function getStatusBadge(status = "") {
   const st = status.toLowerCase();
   switch (st) {
     case "active":
-      return "text-rose-400 bg-rose-950/80 border-rose-800";
+      return "text-rose-700 bg-rose-50 border-rose-200";
     case "acknowledged":
-      return "text-emerald-400 bg-emerald-950/80 border-emerald-800";
+      return "text-emerald-700 bg-emerald-50 border-emerald-200";
     case "resolved":
-      return "text-slate-400 bg-slate-800 border-slate-700";
+      return "text-slate-600 bg-slate-100 border-slate-200";
     default:
-      return "text-slate-400 bg-slate-800 border-slate-700";
+      return "text-slate-600 bg-slate-100 border-slate-200";
   }
 }
 
@@ -208,8 +208,8 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
         aria-label="Loading operator alerts"
         className="space-y-6"
       >
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-6 h-28 animate-pulse flex items-center justify-between" />
-        <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-8 h-80 animate-pulse flex items-center justify-center text-slate-500 text-xs">
+        <div className="bg-white border border-slate-200 rounded-xl p-6 h-28 animate-pulse flex items-center justify-between shadow-xs" />
+        <div className="bg-white border border-slate-200 rounded-xl p-8 h-80 animate-pulse flex items-center justify-center text-slate-500 text-xs shadow-xs">
           Loading operator alerts and telemetry events...
         </div>
       </section>
@@ -222,18 +222,18 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
       <section
         role="alert"
         aria-labelledby="alerts-error-title"
-        className="bg-slate-900 border border-rose-900/60 rounded-xl p-6 shadow-lg space-y-4"
+        className="bg-white border border-rose-200 rounded-xl p-6 shadow-xs space-y-4"
       >
         <div className="flex items-start space-x-3">
-          <div className="w-10 h-10 rounded-lg bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400 flex-shrink-0">
+          <div className="w-10 h-10 rounded-lg bg-rose-50 border border-rose-200 flex items-center justify-center text-rose-600 flex-shrink-0">
             <AlertCircle className="w-5 h-5" aria-hidden="true" />
           </div>
           <div className="space-y-1">
-            <h3 id="alerts-error-title" className="text-sm font-bold text-white">
+            <h3 id="alerts-error-title" className="text-sm font-bold text-slate-900">
               Unable to Load Operator Alerts
             </h3>
-            <p className="text-xs text-rose-300">{error.message}</p>
-            <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-slate-400 pt-1">
+            <p className="text-xs text-rose-700">{error.message}</p>
+            <div className="flex flex-wrap items-center gap-3 text-[11px] font-mono text-slate-500 pt-1">
               <span>Code: {error.code}</span>
               {error.traceId && <span>Trace: {error.traceId}</span>}
               <span>Status: {error.status}</span>
@@ -241,12 +241,12 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
           </div>
         </div>
 
-        <div className="flex justify-end pt-2 border-t border-slate-800">
+        <div className="flex justify-end pt-2 border-t border-slate-100">
           <button
             type="button"
             onClick={fetchAlertsList}
             aria-label="Retry loading alerts"
-            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition focus:outline-none focus:ring-2 focus:ring-sky-500"
+            className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-xs transition focus:outline-none focus:ring-2 focus:ring-sky-500"
           >
             <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
             <span>Retry</span>
@@ -261,10 +261,10 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
       {/* Title & Filter Header */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
-          <h2 id="alerts-title" className="text-base font-bold text-white tracking-tight">
+          <h2 id="alerts-title" className="text-base font-bold text-slate-900 tracking-tight">
             Operator Alerts & Operational Events
           </h2>
-          <p className="text-xs text-slate-400 mt-0.5">
+          <p className="text-xs text-slate-500 mt-0.5">
             Audit persisted operational anomalies, threshold breaches, and acknowledge alerts directly.
           </p>
         </div>
@@ -273,9 +273,9 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
         <div
           role="group"
           aria-label="Filter alerts by status"
-          className="flex items-center bg-slate-900 p-1 rounded-lg border border-slate-800"
+          className="flex items-center bg-white p-1 rounded-lg border border-slate-200 shadow-xs"
         >
-          <span className="text-[11px] font-mono text-slate-400 px-2 hidden sm:inline">
+          <span className="text-[11px] font-mono text-slate-500 px-2 hidden sm:inline">
             Status:
           </span>
           {STATUS_FILTERS.map((st) => (
@@ -286,8 +286,8 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
               aria-pressed={statusFilter === st}
               className={`px-2.5 py-1 text-xs rounded-md font-medium transition ${
                 statusFilter === st
-                  ? "bg-sky-600 text-white font-semibold shadow-sm"
-                  : "text-slate-400 hover:text-slate-200 hover:bg-slate-800"
+                  ? "bg-sky-50 text-sky-700 font-semibold border border-sky-200"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
               }`}
             >
               {st}
@@ -298,34 +298,34 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
 
       {/* Summary Metrics Bar */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
-          <span className="text-[11px] font-mono text-slate-400 uppercase block">Total Alerts</span>
-          <span className="text-xl font-bold text-white mt-1 block font-mono">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+          <span className="text-[11px] font-mono text-slate-500 uppercase block">Total Alerts</span>
+          <span className="text-xl font-bold text-slate-900 mt-1 block font-mono">
             {totalAlerts}
           </span>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
-          <span className="text-[11px] font-mono text-slate-400 uppercase block">Active Alerts</span>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+          <span className="text-[11px] font-mono text-slate-500 uppercase block">Active Alerts</span>
           <span
             className={`text-xl font-bold mt-1 block font-mono ${
-              activeAlerts > 0 ? "text-rose-400" : "text-emerald-400"
+              activeAlerts > 0 ? "text-rose-600" : "text-emerald-600"
             }`}
           >
             {activeAlerts}
           </span>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm">
-          <span className="text-[11px] font-mono text-slate-400 uppercase block">Permission Mode</span>
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs">
+          <span className="text-[11px] font-mono text-slate-500 uppercase block">Permission Mode</span>
           <span className="text-xs font-semibold mt-1.5 block">
             {canAcknowledge ? (
-              <span className="text-emerald-400 inline-flex items-center space-x-1">
+              <span className="text-emerald-700 inline-flex items-center space-x-1">
                 <ShieldCheck className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Operator (Ack Enabled)</span>
               </span>
             ) : (
-              <span className="text-slate-400 inline-flex items-center space-x-1">
+              <span className="text-slate-500 inline-flex items-center space-x-1">
                 <Eye className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Read-Only Viewer</span>
               </span>
@@ -333,16 +333,16 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
           </span>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 shadow-sm flex items-center justify-between">
+        <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex items-center justify-between">
           <div>
-            <span className="text-[11px] font-mono text-slate-400 uppercase block">Telemetry</span>
-            <span className="text-xs text-slate-300 font-mono mt-1 block">PostgreSQL</span>
+            <span className="text-[11px] font-mono text-slate-500 uppercase block">Telemetry</span>
+            <span className="text-xs text-slate-700 font-mono mt-1 block">PostgreSQL</span>
           </div>
           <button
             type="button"
             onClick={fetchAlertsList}
             aria-label="Refresh alerts"
-            className="p-2 text-slate-400 hover:text-slate-200 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition"
+            className="p-2 text-slate-500 hover:text-slate-800 bg-white hover:bg-slate-50 rounded-lg border border-slate-200 shadow-xs transition"
           >
             <RefreshCw className="w-4 h-4" aria-hidden="true" />
           </button>
@@ -353,16 +353,16 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
       {!loading && alerts.length === 0 ? (
         <div
           aria-labelledby="alerts-empty-title"
-          className="bg-slate-900 border border-slate-800 rounded-xl p-10 text-center shadow-lg space-y-4"
+          className="bg-white border border-slate-200 rounded-xl p-10 text-center shadow-xs space-y-4"
         >
-          <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center mx-auto text-slate-400">
-            <ShieldCheck className="w-6 h-6 text-emerald-400" aria-hidden="true" />
+          <div className="w-12 h-12 rounded-full bg-slate-100 border border-slate-200 flex items-center justify-center mx-auto text-slate-500">
+            <ShieldCheck className="w-6 h-6 text-emerald-600" aria-hidden="true" />
           </div>
           <div>
-            <h3 id="alerts-empty-title" className="text-base font-bold text-white">
+            <h3 id="alerts-empty-title" className="text-base font-bold text-slate-900">
               No Persisted Alerts Available
             </h3>
-            <p className="text-xs text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
+            <p className="text-xs text-slate-500 mt-1 max-w-md mx-auto leading-relaxed">
               {statusFilter !== "ALL"
                 ? `No alerts found with status '${statusFilter}'. Try selecting 'ALL' or check back later.`
                 : "No operational alerts recorded for the authenticated tenant. All verification pipelines, drift tolerances, and circuit breakers are healthy."}
@@ -373,7 +373,7 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
               <button
                 type="button"
                 onClick={() => setStatusFilter("ALL")}
-                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition"
+                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-xs transition"
               >
                 <span>Clear Status Filter</span>
               </button>
@@ -381,7 +381,7 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
               <button
                 type="button"
                 onClick={fetchAlertsList}
-                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-300 bg-slate-800 hover:bg-slate-700 rounded-lg border border-slate-700 transition"
+                className="inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-medium text-slate-700 bg-white hover:bg-slate-50 rounded-lg border border-slate-300 shadow-xs transition"
               >
                 <RefreshCw className="w-3.5 h-3.5" aria-hidden="true" />
                 <span>Check for Updates</span>
@@ -403,16 +403,16 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
               <article
                 key={alert.alert_id}
                 aria-label={`Alert ${alert.alert_id}`}
-                className={`bg-slate-900 border rounded-xl p-5 shadow-lg space-y-4 transition ${
+                className={`bg-white border rounded-xl p-5 shadow-xs space-y-4 transition ${
                   isActive
-                    ? "border-rose-900/60 bg-gradient-to-r from-rose-950/10 to-transparent"
-                    : "border-slate-800 hover:border-slate-700"
+                    ? "border-rose-300 bg-rose-50/20"
+                    : "border-slate-200 hover:border-slate-300"
                 }`}
               >
                 {/* Header row: ID, Severity, Status, Type, and Timestamp */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800/80">
+                <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-100">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="font-mono text-xs font-bold text-white bg-slate-950 px-2.5 py-0.5 rounded border border-slate-800">
+                    <span className="font-mono text-xs font-bold text-slate-800 bg-slate-50 px-2.5 py-0.5 rounded border border-slate-200">
                       {alert.alert_id}
                     </span>
 
@@ -433,13 +433,13 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
                     </span>
 
                     {alert.alert_type && (
-                      <span className="text-[10px] font-mono text-slate-400 bg-slate-800 px-2 py-0.5 rounded">
+                      <span className="text-[10px] font-mono text-slate-600 bg-slate-100 px-2 py-0.5 rounded">
                         {alert.alert_type}
                       </span>
                     )}
                   </div>
 
-                  <div className="flex items-center space-x-1.5 text-[11px] font-mono text-slate-400">
+                  <div className="flex items-center space-x-1.5 text-[11px] font-mono text-slate-500">
                     <Clock className="w-3.5 h-3.5" aria-hidden="true" />
                     <span>Created: {formatTimestamp(alert.created_at)}</span>
                   </div>
@@ -447,10 +447,10 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
 
                 {/* Content: Title & Description */}
                 <div className="space-y-1.5">
-                  <h3 className="text-sm font-bold text-white leading-snug">
+                  <h3 className="text-sm font-bold text-slate-900 leading-snug">
                     {alert.title}
                   </h3>
-                  <p className="text-xs text-slate-300 leading-relaxed">
+                  <p className="text-xs text-slate-600 leading-relaxed">
                     {alert.description}
                   </p>
                 </div>
@@ -458,11 +458,11 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
                 {/* Metrics / Trigger threshold information */}
                 {(alert.threshold !== null && alert.threshold !== undefined ||
                   alert.current_value !== null && alert.current_value !== undefined) && (
-                  <div className="bg-slate-950/70 border border-slate-800/80 rounded-lg p-3 flex flex-wrap items-center gap-4 text-xs font-mono text-slate-300">
+                  <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 flex flex-wrap items-center gap-4 text-xs font-mono text-slate-700">
                     {alert.current_value !== null && alert.current_value !== undefined && (
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase block">Observed Value</span>
-                        <span className="font-bold text-rose-400">
+                        <span className="font-bold text-rose-600">
                           {typeof alert.current_value === "number"
                             ? alert.current_value.toFixed(4)
                             : alert.current_value}
@@ -473,7 +473,7 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
                     {alert.threshold !== null && alert.threshold !== undefined && (
                       <div>
                         <span className="text-[10px] text-slate-500 uppercase block">Trigger Threshold</span>
-                        <span className="font-bold text-amber-400">
+                        <span className="font-bold text-amber-600">
                           {typeof alert.threshold === "number"
                             ? alert.threshold.toFixed(4)
                             : alert.threshold}
@@ -485,9 +485,9 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
 
                 {/* Footer: Acknowledgement Metadata or Action Control */}
                 <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
-                  <div className="text-[11px] font-mono text-slate-400">
+                  <div className="text-[11px] font-mono text-slate-500">
                     {alert.acknowledged_at && (
-                      <span className="inline-flex items-center space-x-1 text-emerald-400">
+                      <span className="inline-flex items-center space-x-1 text-emerald-700">
                         <Check className="w-3.5 h-3.5" aria-hidden="true" />
                         <span>
                           Acknowledged at {formatTimestamp(alert.acknowledged_at)}
@@ -509,8 +509,8 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
                             aria-label={`Acknowledge alert ${alert.alert_id}`}
                             className={`inline-flex items-center space-x-1.5 px-3.5 py-1.5 text-xs font-semibold rounded-lg transition ${
                               isPending
-                                ? "bg-slate-800 text-slate-500 cursor-not-allowed border border-slate-700"
-                                : "bg-sky-600 hover:bg-sky-500 text-white shadow-sm focus:outline-none focus:ring-2 focus:ring-sky-500"
+                                ? "bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200"
+                                : "bg-sky-600 hover:bg-sky-700 text-white shadow-xs focus:outline-none focus:ring-2 focus:ring-sky-500"
                             }`}
                           >
                             {isPending ? (
@@ -527,7 +527,7 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
                           </button>
                         </div>
                       ) : (
-                        <span className="text-xs font-mono text-emerald-400 font-semibold inline-flex items-center space-x-1">
+                        <span className="text-xs font-mono text-emerald-700 font-semibold inline-flex items-center space-x-1">
                           <CheckCircle2 className="w-4 h-4" aria-hidden="true" />
                           <span>Acknowledged</span>
                         </span>
@@ -535,7 +535,7 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
                     ) : (
                       /* Read-only users without ALERTS_ACKNOWLEDGE */
                       <span
-                        className="text-[11px] font-mono text-slate-500 px-2 py-1 rounded bg-slate-950 border border-slate-800"
+                        className="text-[11px] font-mono text-slate-500 px-2 py-1 rounded bg-slate-50 border border-slate-200"
                         title="Acknowledgement requires ALERTS_ACKNOWLEDGE permission"
                       >
                         Read-Only Inspection
@@ -548,12 +548,12 @@ export function AlertsView({ isRefreshing = false, onDataLoaded }) {
                 {ackErr && (
                   <div
                     role="alert"
-                    className="bg-rose-950/40 border border-rose-800/80 rounded-lg p-3 text-xs text-rose-300 flex items-start space-x-2"
+                    className="bg-rose-50 border border-rose-200 rounded-lg p-3 text-xs text-rose-800 flex items-start space-x-2"
                   >
-                    <AlertTriangle className="w-4 h-4 text-rose-400 flex-shrink-0 mt-0.5" aria-hidden="true" />
+                    <AlertTriangle className="w-4 h-4 text-rose-600 flex-shrink-0 mt-0.5" aria-hidden="true" />
                     <div className="space-y-0.5">
                       <p className="font-semibold">Acknowledgement Failed: {ackErr.message}</p>
-                      <div className="text-[10px] font-mono text-slate-400">
+                      <div className="text-[10px] font-mono text-slate-500">
                         <span>Code: {ackErr.code}</span>
                         {ackErr.traceId && <span className="ml-2">Trace: {ackErr.traceId}</span>}
                       </div>

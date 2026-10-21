@@ -62,7 +62,7 @@ function TenantStatusBadge({ status }) {
   const s = (status || "").toUpperCase();
   if (s === "ACTIVE") {
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800">
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
         <CheckCircle className="w-3 h-3" />
         ACTIVE
       </span>
@@ -70,14 +70,14 @@ function TenantStatusBadge({ status }) {
   }
   if (s === "SUSPENDED") {
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-950 text-amber-400 border border-amber-800">
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
         <AlertTriangle className="w-3 h-3" />
         SUSPENDED
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-900 text-slate-400 border border-slate-700">
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
       <XCircle className="w-3 h-3" />
       {s || "OFFBOARDED"}
     </span>
@@ -90,7 +90,7 @@ function TenantStatusBadge({ status }) {
 function ApiKeyStatusBadge({ keyItem }) {
   if (keyItem.revoked_at) {
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-950 text-rose-400 border border-rose-800">
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-rose-50 text-rose-700 border border-rose-200">
         <XCircle className="w-3 h-3" />
         Revoked
       </span>
@@ -98,7 +98,7 @@ function ApiKeyStatusBadge({ keyItem }) {
   }
   if (keyItem.expires_at && new Date(keyItem.expires_at) < new Date()) {
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-950 text-amber-400 border border-amber-800">
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-50 text-amber-700 border border-amber-200">
         <Clock className="w-3 h-3" />
         Expired
       </span>
@@ -106,14 +106,14 @@ function ApiKeyStatusBadge({ keyItem }) {
   }
   if (keyItem.is_active) {
     return (
-      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-950 text-emerald-400 border border-emerald-800">
+      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">
         <CheckCircle className="w-3 h-3" />
         Active
       </span>
     );
   }
   return (
-    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-900 text-slate-400 border border-slate-700">
+    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 border border-slate-200">
       Inactive
     </span>
   );
@@ -414,13 +414,13 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
   return (
     <div className="space-y-6">
       {/* Header and Subtabs */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-800 pb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Building className="w-6 h-6 text-sky-400" />
+          <h1 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+            <Building className="w-6 h-6 text-sky-600" />
             SaaS Control Plane & Security
           </h1>
-          <p className="text-sm text-slate-400 mt-1">
+          <p className="text-sm text-slate-500 mt-1">
             Manage multi-tenant lifecycle, administrative isolation boundaries, and cryptographically hashed API keys.
           </p>
         </div>
@@ -429,10 +429,10 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
           <button
             onClick={refreshAll}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-slate-900 border border-slate-700 hover:bg-slate-800 text-slate-200 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 shadow-xs transition-colors disabled:opacity-50"
             title="Refresh All"
           >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-sky-400" : ""}`} />
+            <RefreshCw className={`w-3.5 h-3.5 ${loading ? "animate-spin text-sky-600" : ""}`} />
             Refresh
           </button>
         </div>
@@ -440,45 +440,45 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
 
       {/* Alert Banners */}
       {error && (
-        <div className="p-4 rounded-lg bg-rose-950/60 border border-rose-800/80 text-rose-200 flex items-start justify-between gap-3">
+        <div className="p-4 rounded-lg bg-rose-50 border border-rose-200 text-rose-900 flex items-start justify-between gap-3 shadow-xs">
           <div className="flex items-start gap-2">
-            <AlertCircle className="w-5 h-5 text-rose-400 mt-0.5 shrink-0" />
+            <AlertCircle className="w-5 h-5 text-rose-600 mt-0.5 shrink-0" />
             <div>
               <p className="font-semibold text-sm">Operation Failed</p>
-              <p className="text-xs text-rose-300 mt-0.5">{error}</p>
+              <p className="text-xs text-rose-800 mt-0.5">{error}</p>
             </div>
           </div>
-          <button onClick={() => setError(null)} className="text-rose-400 hover:text-white">
+          <button onClick={() => setError(null)} className="text-rose-600 hover:text-rose-950">
             <X className="w-4 h-4" />
           </button>
         </div>
       )}
 
       {successMessage && (
-        <div className="p-3 rounded-lg bg-emerald-950/60 border border-emerald-800/80 text-emerald-200 flex items-center justify-between text-xs">
+        <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center justify-between text-xs shadow-xs">
           <div className="flex items-center gap-2">
-            <CheckCircle className="w-4 h-4 text-emerald-400 shrink-0" />
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
             <span>{successMessage}</span>
           </div>
-          <button onClick={() => setSuccessMessage(null)} className="text-emerald-400 hover:text-white">
+          <button onClick={() => setSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-950">
             <X className="w-3.5 h-3.5" />
           </button>
         </div>
       )}
 
       {/* Navigation Sub-Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-800">
+      <div className="flex items-center gap-2 border-b border-slate-200">
         <button
           onClick={() => setActiveSubTab("tenants")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeSubTab === "tenants"
-              ? "border-sky-500 text-sky-400"
-              : "border-transparent text-slate-400 hover:text-slate-200"
+              ? "border-sky-600 text-sky-700"
+              : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
           <Building className="w-4 h-4" />
           Tenants Directory
-          <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">
+          <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono">
             {tenants.length}
           </span>
         </button>
@@ -487,13 +487,13 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
           onClick={() => setActiveSubTab("apikeys")}
           className={`flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
             activeSubTab === "apikeys"
-              ? "border-sky-500 text-sky-400"
-              : "border-transparent text-slate-400 hover:text-slate-200"
+              ? "border-sky-600 text-sky-700"
+              : "border-transparent text-slate-600 hover:text-slate-900"
           }`}
         >
           <Key className="w-4 h-4" />
           API Credentials
-          <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 font-mono">
+          <span className="ml-1 text-xs px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 font-mono">
             {apiKeys.length}
           </span>
         </button>
@@ -508,20 +508,20 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
             {/* Search and Filter */}
             <div className="flex items-center gap-2 flex-1 max-w-md">
               <div className="relative flex-1">
-                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+                <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
                   placeholder="Search by ID, name, environment..."
                   value={tenantSearchQuery}
                   onChange={(e) => setTenantSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                  className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sky-500"
                 />
               </div>
 
               <select
                 value={tenantStatusFilter}
                 onChange={(e) => setTenantStatusFilter(e.target.value)}
-                className="bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-500"
+                className="bg-white border border-slate-300 rounded-lg px-2.5 py-1.5 text-xs text-slate-700 focus:outline-none focus:border-sky-500"
               >
                 <option value="ALL">All Statuses</option>
                 <option value="ACTIVE">Active Only</option>
@@ -534,7 +534,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
             {isSuperAdmin && (
               <button
                 onClick={() => setShowCreateTenantModal(true)}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors shrink-0"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-700 text-white shadow-xs transition-colors shrink-0"
               >
                 <Plus className="w-4 h-4" />
                 Provision Tenant
@@ -543,9 +543,9 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
           </div>
 
           {/* Tenants Table */}
-          <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/40">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-900/80 text-slate-400 uppercase font-semibold border-b border-slate-800">
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-xs">
+            <table className="w-full text-left text-xs text-slate-700">
+              <thead className="bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-3">Tenant ID</th>
                   <th className="px-4 py-3">Name</th>
@@ -555,7 +555,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono">
+              <tbody className="divide-y divide-slate-100 font-mono">
                 {filteredTenants.length === 0 ? (
                   <tr>
                     <td colSpan="6" className="px-4 py-8 text-center text-slate-500 font-sans">
@@ -564,23 +564,23 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   </tr>
                 ) : (
                   filteredTenants.map((t) => (
-                    <tr key={t.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="px-4 py-3 font-semibold text-white">{t.id}</td>
-                      <td className="px-4 py-3 font-sans text-slate-200">{t.name}</td>
+                    <tr key={t.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-semibold text-slate-900">{t.id}</td>
+                      <td className="px-4 py-3 font-sans text-slate-800">{t.name}</td>
                       <td className="px-4 py-3 font-sans">
                         <TenantStatusBadge status={t.status} />
                         {t.status === "SUSPENDED" && t.suspension_reason && (
-                          <span className="block text-[10px] text-amber-400/80 font-sans mt-0.5 max-w-xs truncate" title={t.suspension_reason}>
+                          <span className="block text-[10px] text-amber-700 font-sans mt-0.5 max-w-xs truncate" title={t.suspension_reason}>
                             Reason: {t.suspension_reason}
                           </span>
                         )}
                       </td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px]">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]">
                           {t.environment}
                         </span>
                       </td>
-                      <td className="px-4 py-3 text-slate-400">{formatDate(t.created_at)}</td>
+                      <td className="px-4 py-3 text-slate-500">{formatDate(t.created_at)}</td>
                       <td className="px-4 py-3 text-right font-sans space-x-2">
                         {isSuperAdmin && t.status === "ACTIVE" && (
                           <button
@@ -588,7 +588,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                               setTenantToSuspend(t);
                               setShowSuspendModal(true);
                             }}
-                            className="px-2 py-1 rounded text-xs font-medium bg-amber-950/60 hover:bg-amber-900 text-amber-300 border border-amber-800 transition-colors"
+                            className="px-2 py-1 rounded text-xs font-semibold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-colors shadow-xs"
                           >
                             Suspend
                           </button>
@@ -597,7 +597,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                         {isSuperAdmin && t.status === "SUSPENDED" && (
                           <button
                             onClick={() => handleReactivateTenant(t)}
-                            className="px-2 py-1 rounded text-xs font-medium bg-emerald-950/60 hover:bg-emerald-900 text-emerald-300 border border-emerald-800 transition-colors"
+                            className="px-2 py-1 rounded text-xs font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 transition-colors shadow-xs"
                           >
                             Reactivate
                           </button>
@@ -609,7 +609,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                               setTenantToOffboard(t);
                               setShowOffboardModal(true);
                             }}
-                            className="px-2 py-1 rounded text-xs font-medium bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800 transition-colors"
+                            className="px-2 py-1 rounded text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 transition-colors shadow-xs"
                           >
                             Offboard
                           </button>
@@ -632,20 +632,20 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             {/* Search */}
             <div className="relative flex-1 max-w-md">
-              <Search className="w-4 h-4 text-slate-500 absolute left-3 top-2.5" />
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
                 placeholder="Search keys by label, prefix, tenant..."
                 value={keySearchQuery}
                 onChange={(e) => setKeySearchQuery(e.target.value)}
-                className="w-full pl-9 pr-3 py-1.5 bg-slate-900 border border-slate-700 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-sky-500"
+                className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:border-sky-500"
               />
             </div>
 
             {/* Create API Key Button */}
             <button
               onClick={() => setShowCreateKeyModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors shrink-0"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-700 text-white shadow-xs transition-colors shrink-0"
             >
               <Plus className="w-4 h-4" />
               Generate API Key
@@ -653,9 +653,9 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
           </div>
 
           {/* API Keys Table */}
-          <div className="overflow-x-auto rounded-lg border border-slate-800 bg-slate-900/40">
-            <table className="w-full text-left text-xs text-slate-300">
-              <thead className="bg-slate-900/80 text-slate-400 uppercase font-semibold border-b border-slate-800">
+          <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white shadow-xs">
+            <table className="w-full text-left text-xs text-slate-700">
+              <thead className="bg-slate-50 text-slate-600 uppercase font-semibold border-b border-slate-200">
                 <tr>
                   <th className="px-4 py-3">Label / Name</th>
                   <th className="px-4 py-3">Key Prefix</th>
@@ -667,7 +667,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-slate-800/60 font-mono">
+              <tbody className="divide-y divide-slate-100 font-mono">
                 {filteredKeys.length === 0 ? (
                   <tr>
                     <td colSpan="8" className="px-4 py-8 text-center text-slate-500 font-sans">
@@ -676,22 +676,22 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   </tr>
                 ) : (
                   filteredKeys.map((k) => (
-                    <tr key={k.id} className="hover:bg-slate-800/40 transition-colors">
-                      <td className="px-4 py-3 font-sans font-medium text-white">{k.name}</td>
-                      <td className="px-4 py-3 text-sky-400">
+                    <tr key={k.id} className="hover:bg-slate-50 transition-colors">
+                      <td className="px-4 py-3 font-sans font-medium text-slate-900">{k.name}</td>
+                      <td className="px-4 py-3 text-sky-700 font-semibold">
                         {k.key_prefix}...
                       </td>
-                      <td className="px-4 py-3 text-slate-300">{k.tenant_id}</td>
+                      <td className="px-4 py-3 text-slate-700">{k.tenant_id}</td>
                       <td className="px-4 py-3">
-                        <span className="px-2 py-0.5 rounded bg-slate-800 text-slate-300 text-[11px]">
+                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]">
                           {(k.scopes || []).join(", ")}
                         </span>
                       </td>
                       <td className="px-4 py-3 font-sans">
                         <ApiKeyStatusBadge keyItem={k} />
                       </td>
-                      <td className="px-4 py-3 text-slate-400">{formatDate(k.last_used_at)}</td>
-                      <td className="px-4 py-3 text-slate-400">{formatDate(k.expires_at)}</td>
+                      <td className="px-4 py-3 text-slate-500">{formatDate(k.last_used_at)}</td>
+                      <td className="px-4 py-3 text-slate-500">{formatDate(k.expires_at)}</td>
                       <td className="px-4 py-3 text-right font-sans space-x-2">
                         {k.is_active && (
                           <>
@@ -702,14 +702,14 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                                 setRotateGracePeriod(0);
                                 setShowRotateKeyModal(true);
                               }}
-                              className="px-2 py-1 rounded text-xs font-medium bg-sky-950/60 hover:bg-sky-900 text-sky-300 border border-sky-800 transition-colors"
+                              className="px-2 py-1 rounded text-xs font-semibold bg-sky-50 hover:bg-sky-100 text-sky-800 border border-sky-200 transition-colors shadow-xs"
                               title="Rotate Key"
                             >
                               Rotate
                             </button>
                             <button
                               onClick={() => handleRevokeApiKey(k)}
-                              className="px-2 py-1 rounded text-xs font-medium bg-rose-950/60 hover:bg-rose-900 text-rose-300 border border-rose-800 transition-colors"
+                              className="px-2 py-1 rounded text-xs font-semibold bg-rose-50 hover:bg-rose-100 text-rose-800 border border-rose-200 transition-colors shadow-xs"
                               title="Revoke Key"
                             >
                               Revoke
@@ -730,16 +730,16 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
       {/* MODAL 1: PROVISION TENANT */}
       {/* ========================================================================= */}
       {showCreateTenantModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                <Building className="w-5 h-5 text-sky-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <Building className="w-5 h-5 text-sky-600" />
                 Provision New Tenant
               </h3>
               <button
                 onClick={() => setShowCreateTenantModal(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -747,8 +747,8 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
 
             <form onSubmit={handleCreateTenant} className="space-y-4 mt-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Tenant Identifier <span className="text-rose-400">*</span>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Tenant Identifier <span className="text-rose-600">*</span>
                 </label>
                 <input
                   type="text"
@@ -758,13 +758,13 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   onChange={(e) =>
                     setNewTenantData({ ...newTenantData, id: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500 font-mono"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-500 font-mono"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Organization / Workspace Name <span className="text-rose-400">*</span>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Organization / Workspace Name <span className="text-rose-600">*</span>
                 </label>
                 <input
                   type="text"
@@ -774,12 +774,12 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   onChange={(e) =>
                     setNewTenantData({ ...newTenantData, name: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-500"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-slate-700 mb-1">
                   Environment
                 </label>
                 <select
@@ -787,7 +787,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   onChange={(e) =>
                     setNewTenantData({ ...newTenantData, environment: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-500"
                 >
                   <option value="production">Production</option>
                   <option value="staging">Staging</option>
@@ -796,7 +796,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-slate-700 mb-1">
                   Monthly USD Budget
                 </label>
                 <input
@@ -810,21 +810,21 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                       monthly_budget: e.target.value,
                     })
                   }
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500 font-mono"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-500 font-mono"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowCreateTenantModal(false)}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white"
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors"
+                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-700 text-white shadow-xs transition-colors"
                 >
                   Provision
                 </button>
@@ -838,22 +838,22 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
       {/* MODAL 2: SUSPEND TENANT */}
       {/* ========================================================================= */}
       {showSuspendModal && tenantToSuspend && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-amber-800/80 rounded-xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-center gap-3 text-amber-400 pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white border border-amber-300 rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center gap-3 text-amber-600 pb-3 border-b border-slate-100">
               <AlertTriangle className="w-6 h-6 shrink-0" />
               <div>
-                <h3 className="text-base font-semibold text-white">Suspend Tenant</h3>
-                <p className="text-xs text-slate-400 font-mono">{tenantToSuspend.id}</p>
+                <h3 className="text-base font-semibold text-slate-900">Suspend Tenant</h3>
+                <p className="text-xs text-slate-500 font-mono">{tenantToSuspend.id}</p>
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 my-4">
+            <p className="text-xs text-slate-600 my-4">
               Suspending this tenant will immediately terminate all active sessions, block incoming API authentication calls at the database boundary, and reject background execution leases.
             </p>
 
             <div className="mb-4">
-              <label className="block text-xs font-medium text-slate-300 mb-1">
+              <label className="block text-xs font-medium text-slate-700 mb-1">
                 Reason for Suspension (required)
               </label>
               <textarea
@@ -861,7 +861,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                 value={suspensionReason}
                 onChange={(e) => setSuspensionReason(e.target.value)}
                 placeholder="e.g., Billing delinquent / security incident investigation"
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-amber-500"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-amber-500"
               />
             </div>
 
@@ -872,14 +872,14 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   setShowSuspendModal(false);
                   setTenantToSuspend(null);
                 }}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white"
+                className="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleSuspendTenant}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-amber-600 hover:bg-amber-500 text-white transition-colors"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-amber-600 hover:bg-amber-700 text-white shadow-xs transition-colors"
               >
                 Confirm Suspension
               </button>
@@ -892,30 +892,30 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
       {/* MODAL 3: OFFBOARD TENANT */}
       {/* ========================================================================= */}
       {showOffboardModal && tenantToOffboard && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-rose-800/80 rounded-xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-center gap-3 text-rose-400 pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white border border-rose-300 rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center gap-3 text-rose-600 pb-3 border-b border-slate-100">
               <ShieldAlert className="w-6 h-6 shrink-0" />
               <div>
-                <h3 className="text-base font-semibold text-white">Permanent Offboarding</h3>
-                <p className="text-xs text-slate-400 font-mono">{tenantToOffboard.id}</p>
+                <h3 className="text-base font-semibold text-slate-900">Permanent Offboarding</h3>
+                <p className="text-xs text-slate-500 font-mono">{tenantToOffboard.id}</p>
               </div>
             </div>
 
-            <p className="text-xs text-rose-300/90 my-4">
+            <p className="text-xs text-rose-800 my-4">
               Offboarding terminates the tenant lifecycle permanently. All credentials will be invalidated and resource allocations frozen.
             </p>
 
             <div className="mb-4">
-              <label className="block text-xs font-medium text-slate-300 mb-1">
-                Type <span className="font-mono text-rose-400 font-semibold">{tenantToOffboard.id}</span> to confirm:
+              <label className="block text-xs font-medium text-slate-700 mb-1">
+                Type <span className="font-mono text-rose-600 font-semibold">{tenantToOffboard.id}</span> to confirm:
               </label>
               <input
                 type="text"
                 value={offboardConfirmId}
                 onChange={(e) => setOffboardConfirmId(e.target.value)}
                 placeholder={tenantToOffboard.id}
-                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white focus:outline-none focus:border-rose-500 font-mono"
+                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 focus:outline-none focus:border-rose-500 font-mono"
               />
             </div>
 
@@ -927,7 +927,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   setTenantToOffboard(null);
                   setOffboardConfirmId("");
                 }}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white"
+                className="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900"
               >
                 Cancel
               </button>
@@ -935,7 +935,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                 type="button"
                 disabled={offboardConfirmId !== tenantToOffboard.id}
                 onClick={handleOffboardTenant}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-rose-600 hover:bg-rose-500 text-white transition-colors disabled:opacity-50"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-rose-600 hover:bg-rose-700 text-white shadow-xs transition-colors disabled:opacity-50"
               >
                 Permanently Offboard
               </button>
@@ -948,16 +948,16 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
       {/* MODAL 4: GENERATE API KEY */}
       {/* ========================================================================= */}
       {showCreateKeyModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-              <h3 className="text-base font-semibold text-white flex items-center gap-2">
-                <Key className="w-5 h-5 text-sky-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <h3 className="text-base font-semibold text-slate-900 flex items-center gap-2">
+                <Key className="w-5 h-5 text-sky-600" />
                 Generate API Key
               </h3>
               <button
                 onClick={() => setShowCreateKeyModal(false)}
-                className="text-slate-400 hover:text-white"
+                className="text-slate-400 hover:text-slate-600"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -965,8 +965,8 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
 
             <form onSubmit={handleCreateApiKey} className="space-y-4 mt-4">
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
-                  Key Label / Name <span className="text-rose-400">*</span>
+                <label className="block text-xs font-medium text-slate-700 mb-1">
+                  Key Label / Name <span className="text-rose-600">*</span>
                 </label>
                 <input
                   type="text"
@@ -976,13 +976,13 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   onChange={(e) =>
                     setNewKeyData({ ...newKeyData, name: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-500"
                 />
               </div>
 
               {isSuperAdmin && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
                     Target Tenant ID (leave empty for caller tenant)
                   </label>
                   <input
@@ -992,13 +992,13 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                     onChange={(e) =>
                       setNewKeyData({ ...newKeyData, tenant_id: e.target.value })
                     }
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500 font-mono"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-500 font-mono"
                   />
                 </div>
               )}
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-slate-700 mb-1">
                   Scopes (comma-separated)
                 </label>
                 <input
@@ -1008,12 +1008,12 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   onChange={(e) =>
                     setNewKeyData({ ...newKeyData, scopes: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500 font-mono"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-500 font-mono"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-slate-300 mb-1">
+                <label className="block text-xs font-medium text-slate-700 mb-1">
                   Validity Period (Days)
                 </label>
                 <input
@@ -1024,21 +1024,21 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   onChange={(e) =>
                     setNewKeyData({ ...newKeyData, expires_in_days: e.target.value })
                   }
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-sm text-white focus:outline-none focus:border-sky-500 font-mono"
+                  className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-sm text-slate-900 focus:outline-none focus:border-sky-500 font-mono"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                 <button
                   type="button"
                   onClick={() => setShowCreateKeyModal(false)}
-                  className="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white"
+                  className="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors"
+                  className="px-4 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-700 text-white shadow-xs transition-colors"
                 >
                   Generate Key
                 </button>
@@ -1052,17 +1052,17 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
       {/* MODAL 5: ROTATE API KEY */}
       {/* ========================================================================= */}
       {showRotateKeyModal && keyToRotate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-sm">
-          <div className="bg-slate-900 border border-slate-800 rounded-xl max-w-md w-full p-6 shadow-2xl">
-            <div className="flex items-center gap-3 text-sky-400 pb-3 border-b border-slate-800">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 rounded-xl max-w-md w-full p-6 shadow-2xl">
+            <div className="flex items-center gap-3 text-sky-600 pb-3 border-b border-slate-100">
               <RotateCw className="w-6 h-6 shrink-0" />
               <div>
-                <h3 className="text-base font-semibold text-white">Rotate API Key</h3>
-                <p className="text-xs text-slate-400">{keyToRotate.name} ({keyToRotate.key_prefix}...)</p>
+                <h3 className="text-base font-semibold text-slate-900">Rotate API Key</h3>
+                <p className="text-xs text-slate-500">{keyToRotate.name} ({keyToRotate.key_prefix}...)</p>
               </div>
             </div>
 
-            <p className="text-xs text-slate-300 my-4">
+            <p className="text-xs text-slate-600 my-4">
               Rotating creates a new high-entropy secret. You can invalidate the previous key immediately or configure a temporary grace period.
             </p>
 
@@ -1072,16 +1072,16 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   type="checkbox"
                   checked={rotateImmediate}
                   onChange={(e) => setRotateImmediate(e.target.checked)}
-                  className="rounded bg-slate-950 border-slate-700 text-sky-600 focus:ring-0"
+                  className="rounded bg-white border-slate-300 text-sky-600 focus:ring-0"
                 />
-                <span className="text-xs font-medium text-slate-200">
+                <span className="text-xs font-medium text-slate-700">
                   Revoke previous key immediately
                 </span>
               </label>
 
               {!rotateImmediate && (
                 <div>
-                  <label className="block text-xs font-medium text-slate-300 mb-1">
+                  <label className="block text-xs font-medium text-slate-700 mb-1">
                     Grace Period (seconds)
                   </label>
                   <input
@@ -1090,7 +1090,7 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                     max="86400"
                     value={rotateGracePeriod}
                     onChange={(e) => setRotateGracePeriod(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-lg text-xs text-white font-mono focus:outline-none focus:border-sky-500"
+                    className="w-full px-3 py-2 bg-white border border-slate-300 rounded-lg text-xs text-slate-900 font-mono focus:outline-none focus:border-sky-500"
                   />
                 </div>
               )}
@@ -1103,14 +1103,14 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
                   setShowRotateKeyModal(false);
                   setKeyToRotate(null);
                 }}
-                className="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-400 hover:text-white"
+                className="px-3 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900"
               >
                 Cancel
               </button>
               <button
                 type="button"
                 onClick={handleRotateApiKey}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-500 text-white transition-colors"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-sky-600 hover:bg-sky-700 text-white shadow-xs transition-colors"
               >
                 Rotate Now
               </button>
@@ -1124,18 +1124,18 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
       {/* INVARIANT: Secret is cleared immediately upon dismissal */}
       {/* ========================================================================= */}
       {revealedSecretModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 p-4 backdrop-blur-md">
-          <div className="bg-slate-900 border border-amber-500/80 rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4">
-            <div className="flex items-center gap-3 text-amber-400 pb-3 border-b border-slate-800">
-              <ShieldAlert className="w-6 h-6 shrink-0 text-amber-400" />
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="bg-white border border-amber-300 rounded-xl max-w-lg w-full p-6 shadow-2xl space-y-4">
+            <div className="flex items-center gap-3 text-amber-600 pb-3 border-b border-slate-100">
+              <ShieldAlert className="w-6 h-6 shrink-0 text-amber-600" />
               <div>
-                <h3 className="text-base font-bold text-white">Save Your API Key Secret</h3>
-                <p className="text-xs text-slate-400">{revealedSecretModal.keyName}</p>
+                <h3 className="text-base font-bold text-slate-900">Save Your API Key Secret</h3>
+                <p className="text-xs text-slate-500">{revealedSecretModal.keyName}</p>
               </div>
             </div>
 
-            <div className="p-3 rounded-lg bg-amber-950/60 border border-amber-800/80 text-amber-200 text-xs flex items-start gap-2">
-              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-2">
+              <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
               <span>
                 <strong>Warning:</strong> This plaintext secret is displayed <strong>ONLY ONCE</strong>.
                 It will NEVER be retrievable again. Store it securely in your secrets manager or environment configuration.
@@ -1143,19 +1143,19 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
             </div>
 
             <div className="space-y-1">
-              <label className="text-xs text-slate-400 font-medium">Plaintext API Secret</label>
-              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-950 border border-slate-700 font-mono text-xs text-emerald-400 select-all overflow-x-auto">
+              <label className="text-xs text-slate-700 font-medium">Plaintext API Secret</label>
+              <div className="flex items-center gap-2 p-2.5 rounded-lg bg-slate-50 border border-slate-300 font-mono text-xs text-emerald-700 font-bold select-all overflow-x-auto">
                 <span className="flex-1 break-all">{revealedSecretModal.secret}</span>
                 <button
                   type="button"
                   onClick={() => handleCopySecret(revealedSecretModal.secret)}
-                  className="px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 flex items-center gap-1 shrink-0 transition-colors"
+                  className="px-2.5 py-1 rounded bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 flex items-center gap-1 shrink-0 transition-colors shadow-xs"
                   title="Copy Key to Clipboard"
                 >
                   {copiedSecret ? (
                     <>
-                      <Check className="w-3.5 h-3.5 text-emerald-400" />
-                      <span className="text-[11px] text-emerald-400">Copied!</span>
+                      <Check className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-[11px] text-emerald-600 font-semibold">Copied!</span>
                     </>
                   ) : (
                     <>
@@ -1167,11 +1167,11 @@ export function TenantsView({ isRefreshing, onDataLoaded }) {
               </div>
             </div>
 
-            <div className="pt-3 border-t border-slate-800 flex justify-end">
+            <div className="pt-3 border-t border-slate-100 flex justify-end">
               <button
                 type="button"
                 onClick={handleDismissSecret}
-                className="px-4 py-2 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white transition-colors"
+                className="px-4 py-2 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors"
               >
                 I have saved this key safely
               </button>

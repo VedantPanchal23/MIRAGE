@@ -159,7 +159,7 @@ export function Navigation({
   return (
     <nav
       aria-label="Dashboard Sections"
-      className="border-b border-slate-800 bg-slate-900/60 backdrop-blur px-6"
+      className="border-b border-slate-200 bg-white px-6 shadow-xs"
     >
       <div
         role="tablist"
@@ -174,7 +174,7 @@ export function Navigation({
             : true;
 
           const baseClasses =
-            "flex items-center space-x-2 px-3.5 py-2 rounded-lg text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-500 whitespace-nowrap";
+            "flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-500 whitespace-nowrap";
 
           if (!isPermitted) {
             return (
@@ -186,9 +186,9 @@ export function Navigation({
                 aria-disabled="true"
                 disabled
                 title={`Access restricted: requires permission ${item.requiredPermissions.join(" or ")}`}
-                className={`${baseClasses} text-slate-400 opacity-60 cursor-not-allowed border border-transparent`}
+                className={`${baseClasses} text-slate-400 opacity-50 cursor-not-allowed border border-transparent`}
               >
-                <Icon className="w-4 h-4 text-slate-400" aria-hidden="true" />
+                <Icon className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
                 <span>{item.label}</span>
                 <Lock className="w-3 h-3 text-slate-400 ml-1" aria-hidden="true" />
               </button>
@@ -196,8 +196,8 @@ export function Navigation({
           }
 
           const stateClasses = isActive
-            ? "bg-sky-500/10 text-sky-400 border border-sky-500/30 shadow-sm"
-            : "text-slate-400 hover:text-slate-200 hover:bg-slate-800/60 border border-transparent";
+            ? "bg-sky-50 text-sky-700 border border-sky-200 font-semibold shadow-xs"
+            : "text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent";
 
           return (
             <button
@@ -210,7 +210,7 @@ export function Navigation({
               onClick={() => onSelectTab(item.id)}
               className={`${baseClasses} ${stateClasses}`}
             >
-              <Icon className="w-4 h-4" aria-hidden="true" />
+              <Icon className="w-3.5 h-3.5" aria-hidden="true" />
               <span>{item.label}</span>
             </button>
           );

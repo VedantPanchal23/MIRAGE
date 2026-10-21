@@ -442,6 +442,619 @@ class ActionGovernorService:
     # Gate 3 Action Assurance & Authorization Evaluation
     # -------------------------------------------------------------------------
 
+    # -------------------------------------------------------------------------
+    # Helper Subroutines for Gate 3 Action Assurance & Lifecycle Execution
+    # -------------------------------------------------------------------------
+
+    @staticmethod
+    def _block_decision(
+        reason: str,
+        risk_score: int = 100,
+        autonomy_level: int = 4,
+        normalized_parameters: dict[str, Any] | None = None,
+        parameters_hash: str = "",
+        decision: Decision = Decision.BLOCK,
+    ) -> ActionAuthorizationDecision:
+        """Create a fail-closed blocked or denied ActionAuthorizationDecision."""
+        return ActionAuthorizationDecision(
+            action_id=f"act_err_{uuid.uuid4().hex[:8]}",
+            decision=decision,
+            state=ActionState.BLOCKED,
+            reason=reason,
+            risk_score=risk_score,
+            autonomy_level=autonomy_level,
+            normalized_parameters=normalized_parameters or {},
+            parameters_hash=parameters_hash,
+        )
+
+    @staticmethod
+    async def _evaluate_risk_and_salami_budget(
+        session: Any,
+        tenant_id: str,
+        req: ActionProposal,
+        tool: ToolDefinition,
+        normalized_params: dict[str, Any],
+        now: datetime,
+    ) -> tuple[int, int, float, int, float, bool]:
+        """Compute single-action risk, autonomy level, and cumulative blast radius budget."""
+        base_risk = {
+            ActionType.READ.value: 10,
+            ActionType.WRITE.value: 35,
+            ActionType.EXECUTE.value: 40,
+            ActionType.EGRESS.value: 50,
+            ActionType.DELETE.value: 65,
+        }.get(req.action_type.value, 40)
+
+        trust_mod = {
+            ToolTrustLevel.INTERNAL.value: 0,
+            ToolTrustLevel.VERIFIED.value: 10,
+            ToolTrustLevel.UNTRUSTED.value: 25,
+        }.get(tool.trust_level, 10)
+
+        env_mod = {
+            "DEV": 0,
+            "STAGING": 15,
+            "PROD": 30,
+        }.get(req.blast_radius.target_environment.upper(), 10)
+
+        param_cost = 0.0
+        for cost_key in ("amount", "amount_usd", "estimated_cost", "dollar_cost", "spend"):
+            cval = normalized_params.get(cost_key)
+            if isinstance(cval, (int, float)):
+                param_cost = max(param_cost, float(cval))
+
+        effective_cost = max(float(req.blast_radius.estimated_dollar_cost), param_cost)
+        cost_mod = min(25, int(effective_cost / 100.0))
+        single_action_risk = min(100, base_risk + trust_mod + env_mod + cost_mod)
+        autonomy_level = min(4, single_action_risk // 20)
+
+        # Salami-Slicing Defense & Cumulative Blast Radius Accounting
+        window_start = now - timedelta(hours=MAX_WINDOW_HOURS)
+        blast_stmt = select(
+            func.count(ActionContract.id).label("count"),
+            func.coalesce(func.sum(ActionContract.risk_score), 0).label("cumulative_risk"),
+        ).where(
+            ActionContract.tenant_id == tenant_id,
+            ActionContract.created_at >= window_start,
+            ActionContract.state.in_(
+                [
+                    ActionState.AUTHORIZED.value,
+                    ActionState.EXECUTING.value,
+                    ActionState.COMPLETED.value,
+                ]
+            ),
+        )
+        blast_res = await session.execute(blast_stmt)
+        blast_row = blast_res.one()
+        window_count = int(blast_row[0] or 0)
+        window_risk = int(blast_row[1] or 0)
+
+        # Sum cumulative dollar cost
+        cost_contracts_stmt = select(ActionContract.blast_radius).where(
+            ActionContract.tenant_id == tenant_id,
+            ActionContract.created_at >= window_start,
+            ActionContract.state.in_(
+                [
+                    ActionState.AUTHORIZED.value,
+                    ActionState.EXECUTING.value,
+                    ActionState.COMPLETED.value,
+                ]
+            ),
+        )
+        cost_contracts_res = await session.execute(cost_contracts_stmt)
+        all_radii = cost_contracts_res.scalars().all()
+        window_cost = sum(
+            float(r.get("estimated_dollar_cost", 0.0) or 0.0) for r in all_radii if isinstance(r, dict)
+        )
+
+        is_salami_violation = bool(
+            (window_risk + single_action_risk > MAX_WINDOW_CUMULATIVE_RISK)
+            or (window_cost + effective_cost > MAX_WINDOW_CUMULATIVE_COST)
+            or (window_count >= MAX_WINDOW_ACTION_COUNT)
+        )
+
+        return single_action_risk, autonomy_level, effective_cost, window_risk, window_cost, is_salami_violation
+
+    @staticmethod
+    def _build_outcome_assurance_contract(
+        req: ActionProposal,
+        tool: ToolDefinition,
+        single_action_risk: int,
+        autonomy_level: int,
+        effective_cost: float,
+        requires_human_approval: bool,
+    ) -> tuple[bool, dict[str, Any] | None, str | None]:
+        """Validate and construct Gate 5 Outcome Assurance Contract specification."""
+        requires_outcome_assurance = bool(
+            (req.outcome_contract and req.outcome_contract.requires_outcome_assurance)
+            or req.action_type in (ActionType.WRITE, ActionType.DELETE, ActionType.EXECUTE, ActionType.EGRESS)
+            or single_action_risk >= 40
+            or autonomy_level >= 2
+            or effective_cost > 0.0
+        )
+
+        if not requires_outcome_assurance:
+            return False, None, None
+
+        merged_postconditions = list(req.postconditions)
+        if req.outcome_contract and req.outcome_contract.expected_postconditions:
+            for ep in req.outcome_contract.expected_postconditions:
+                if isinstance(ep, dict) and "target" in ep:
+                    assertion = ep.get("assertion", "EQUALS")
+                    merged_postconditions.append(
+                        PostconditionRule(
+                            assertion=assertion,
+                            target=ep["target"],
+                            expected_value=ep.get("expected_value"),
+                        )
+                    )
+
+        # Criterion 1: Must define expected postconditions for autonomous authorization
+        if not requires_human_approval and len(merged_postconditions) == 0:
+            return (
+                True,
+                None,
+                ("Outcome Assurance contract violation: "
+                "action requires outcome assurance but defines zero expected postconditions."),
+            )
+
+        # Criterion 2: Acceptable evidence sources
+        acceptable_sources: list[str] = []
+        if req.outcome_contract and req.outcome_contract.acceptable_evidence_sources:
+            acceptable_sources = req.outcome_contract.acceptable_evidence_sources
+        elif tool.tool_type == ToolType.HTTP:
+            scheme = req.target_resource.split("://")[0] if "://" in req.target_resource else "http"
+            acceptable_sources = [f"http:{scheme}", "HTTP_RESOURCE"]
+        else:
+            acceptable_sources = ["DATABASE", "HTTP_RESOURCE", "ASYNC_EVENT", "INDEPENDENT_OBSERVER"]
+
+        if req.outcome_contract and len(req.outcome_contract.acceptable_evidence_sources) == 0:
+            return (
+                True,
+                None,
+                ("Outcome Assurance contract violation: "
+                "acceptable_evidence_sources cannot be empty when outcome contract is specified."),
+            )
+
+        # Criterion 3: Verification deadline
+        deadline_sec = 30.0
+        if req.outcome_contract:
+            if req.outcome_contract.verification_deadline_seconds <= 0:
+                return (
+                    True,
+                    None,
+                    "Outcome Assurance contract violation: verification_deadline_seconds must be positive.",
+                )
+            deadline_sec = req.outcome_contract.verification_deadline_seconds
+
+        outcome_contract_dict = {
+            "requires_outcome_assurance": True,
+            "expected_postconditions": [p.model_dump() for p in merged_postconditions],
+            "acceptable_evidence_sources": acceptable_sources,
+            "verification_deadline_seconds": deadline_sec,
+            "risk_sensitive_verification_policy": (
+                req.outcome_contract.risk_sensitive_verification_policy.value
+                if req.outcome_contract
+                else "STRICT_DIRECT_ONLY"
+                if single_action_risk >= 60
+                else "DEFAULT"
+            ),
+            "on_partial": req.outcome_contract.on_partial.value if req.outcome_contract else "HOLD_FOR_REVIEW",
+            "on_uncertain": req.outcome_contract.on_uncertain.value if req.outcome_contract else "ESCALATE",
+        }
+
+        return True, outcome_contract_dict, None
+
+    @staticmethod
+    async def _resolve_active_fencing_token(
+        session: Any,
+        tenant_id: str,
+        transaction_id: str,
+        target_resource: str,
+        now: datetime,
+    ) -> int | None:
+        """Resolve active fencing token if lease is held by current transaction (exact or governing parent)."""
+        try:
+            canonical_target = canonicalize_resource_uri(target_resource)
+            lease_stmt = select(ResourceLease).where(
+                ResourceLease.tenant_id == tenant_id,
+                ResourceLease.holder_transaction_id == transaction_id,
+                ResourceLease.status == LeaseStatus.ACQUIRED.value,
+                ResourceLease.expires_at > now,
+            )
+            lease_res = await session.execute(lease_stmt)
+            holder_leases = lease_res.scalars().all()
+            best_match_lease: ResourceLease | None = None
+            best_len = -1
+            for hl in holder_leases:
+                h_uri = hl.resource_uri
+                if canonical_target == h_uri or canonical_target.startswith(h_uri.rstrip("/") + "/"):
+                    if len(h_uri) > best_len:
+                        best_len = len(h_uri)
+                        best_match_lease = hl
+            if best_match_lease:
+                return best_match_lease.fencing_token
+        except Exception:
+            return None
+        return None
+
+    async def _pre_dispatch_and_commit_executing(
+        self,
+        auth: AuthContext,
+        req: ActionExecutionRequest,
+        now: datetime,
+    ) -> tuple[ActionContract, ToolDefinition]:
+        """Phase 1: Pre-dispatch authorization, validation, and durable commitment of EXECUTING state."""
+        async with db_session.get_tenant_session(auth.tenant_id) as session:
+            stmt = (
+                select(ActionContract)
+                .where(
+                    ActionContract.tenant_id == auth.tenant_id,
+                    ActionContract.id == req.action_id,
+                )
+                .with_for_update()
+            )
+            res = await session.execute(stmt)
+            contract = res.scalar_one_or_none()
+            if not contract:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action contract not found")
+
+            # Principal binding check: Prevent proposals authorized under one principal from being executed by another
+            if auth.role != Role.SUPER_ADMIN:
+                if auth.agent_id:
+                    if contract.agent_id != auth.agent_id:
+                        del_check = await session.execute(
+                            select(AgentDelegation).where(
+                                AgentDelegation.tenant_id == auth.tenant_id,
+                                AgentDelegation.child_agent_id == auth.agent_id,
+                                (AgentDelegation.child_transaction_id == contract.transaction_id)
+                                | (AgentDelegation.parent_transaction_id == contract.transaction_id),
+                                AgentDelegation.status == DelegationStatus.ACTIVE.value,
+                            )
+                        )
+                        if not del_check.scalar_one_or_none():
+                            raise HTTPException(
+                                status_code=status.HTTP_403_FORBIDDEN,
+                                detail="Principal mismatch: action contract was authorized for a different agent",
+                            )
+                elif auth.identity_id:
+                    if auth.identity_id != contract.actor_identity_id:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail="Principal mismatch: action contract was authorized for a different actor",
+                        )
+
+            # Invariant: Action must not be in terminal or blocked states
+            if contract.state == ActionState.BLOCKED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Action contract is in state 'BLOCKED' and cannot be executed",
+                )
+
+            if contract.state == ActionState.EXECUTING.value:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Action contract is currently EXECUTING. "
+                        "Retries are rejected to prevent duplicate external side effects."
+                    ),
+                )
+
+            if contract.state == ActionState.EXECUTION_UNCERTAIN.value:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        "Action contract is in EXECUTION_UNCERTAIN state due to post-dispatch "
+                        "persistence failure; operator reconciliation required before retry."
+                    ),
+                )
+
+            if contract.state in (ActionState.COMPLETED.value, ActionState.EXECUTED.value):
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Action contract is already executed (current: {contract.state})",
+                )
+
+            if contract.state != ActionState.AUTHORIZED.value:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Action is not in AUTHORIZED state (current: {contract.state})",
+                )
+
+            # Re-verify Parent Transaction Liveness & Status
+            txn_stmt = select(AITransaction).where(
+                AITransaction.tenant_id == auth.tenant_id,
+                AITransaction.id == contract.transaction_id,
+            )
+            txn_res = await session.execute(txn_stmt)
+            transaction = txn_res.scalar_one_or_none()
+            if not transaction:
+                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Parent transaction not found")
+            if transaction.state in (
+                "COMPLETED",
+                "FAILED",
+                "BLOCKED",
+                "CANCELLED",
+                "TIMEOUT",
+                "PARTIAL",
+            ) or transaction.final_disposition in ("BLOCKED", "FAILED", "CANCELLED", "TIMEOUT"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Parent transaction is in terminal/aborted state "
+                        f"(state='{transaction.state}', disposition='{transaction.final_disposition}')"
+                    ),
+                )
+
+            # Re-verify Initiating Agent Lifecycle State at Execution Boundary
+            if contract.agent_id:
+                is_eligible, reason = await agent_governance_service.evaluate_agent_eligibility(
+                    session=session,
+                    tenant_id=auth.tenant_id,
+                    agent_id=contract.agent_id,
+                )
+                if not is_eligible:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Agent '{contract.agent_id}' is suspended, revoked, "
+                            f"or inactive at execution time: {reason}"
+                        ),
+                    )
+
+            # Re-verify Tool is still active in Registry
+            tool_stmt = select(ToolDefinition).where(
+                ToolDefinition.tenant_id == auth.tenant_id,
+                ToolDefinition.id == contract.tool_id,
+            )
+            tool_res = await session.execute(tool_stmt)
+            tool = tool_res.scalar_one_or_none()
+            if not tool or not tool.active:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=f"Tool '{contract.tool_name}' is inactive or has been revoked in the registry.",
+                )
+
+            # Re-verify Delegation Grant and Parent Transaction at Execution Boundary for Child Transactions
+            delegation: AgentDelegation | None = None
+            if transaction.parent_transaction_id is not None:
+                parent_stmt = select(AITransaction).where(
+                    AITransaction.id == transaction.parent_transaction_id,
+                    AITransaction.tenant_id == auth.tenant_id,
+                )
+                parent_res = await session.execute(parent_stmt)
+                parent_txn = parent_res.scalar_one_or_none()
+                if (
+                    not parent_txn
+                    or parent_txn.state
+                    in (
+                        "COMPLETED",
+                        "FAILED",
+                        "BLOCKED",
+                        "CANCELLED",
+                        "TIMEOUT",
+                        "PARTIAL",
+                        "TERMINATED",
+                    )
+                    or parent_txn.final_disposition in ("BLOCKED", "FAILED", "CANCELLED", "TIMEOUT")
+                ):
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Execution blocked: Parent transaction '{transaction.parent_transaction_id}' "
+                            f"is not active (state: {parent_txn.state if parent_txn else 'NOT_FOUND'}, "
+                            f"disposition: {parent_txn.final_disposition if parent_txn else 'NONE'})."
+                        ),
+                    )
+
+                del_stmt = (
+                    select(AgentDelegation)
+                    .where(
+                        AgentDelegation.tenant_id == auth.tenant_id,
+                        AgentDelegation.child_transaction_id == transaction.id,
+                    )
+                    .with_for_update()
+                )
+                del_res = await session.execute(del_stmt)
+                delegation = del_res.scalar_one_or_none()
+                if not delegation:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Execution blocked: Child transaction '{transaction.id}' has no bound delegation grant."
+                        ),
+                    )
+                if delegation.status != DelegationStatus.ACTIVE.value:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Execution blocked: Delegation grant '{delegation.id}' "
+                            f"is not ACTIVE (current: {delegation.status})."
+                        ),
+                    )
+                if delegation.expires_at <= now:
+                    delegation.status = DelegationStatus.EXPIRED.value
+                    await session.flush()
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Execution blocked: Delegation grant '{delegation.id}' has expired.",
+                    )
+                if delegation.revoked_at is not None:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Execution blocked: Delegation grant '{delegation.id}' is revoked.",
+                    )
+                if delegation.child_agent_id != contract.agent_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Execution blocked: Delegation child agent '{delegation.child_agent_id}' "
+                            f"does not match contract agent '{contract.agent_id}'."
+                        ),
+                    )
+
+                # Execution-time delegation revalidation (ancestor chain, scope, constraints)
+                val_res = await delegation_service.validate_delegation_for_operation(
+                    auth=auth,
+                    delegation_id=delegation.id,
+                    capability_type=contract.required_capability,
+                    resource={"target_resource": contract.target_resource, **(contract.normalized_parameters or {})},
+                    requested_autonomy_level=min(4, contract.risk_score // 20),
+                    session=session,
+                )
+                if val_res.decision != Decision.ALLOW:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Execution blocked by delegation revalidation: {val_res.reason}",
+                    )
+
+            # Re-verify Actor still holds the required capability (Fail-closed on runtime revocation)
+            cap_stmt = select(Capability).where(
+                Capability.tenant_id == auth.tenant_id,
+                Capability.capability_type == contract.required_capability,
+                Capability.revoked_at.is_(None),
+                (Capability.expires_at.is_(None) | (Capability.expires_at > now)),
+            )
+            if transaction.agent_id:
+                cap_stmt = cap_stmt.where(
+                    (Capability.agent_id == transaction.agent_id) | (Capability.identity_id == auth.identity_id)
+                )
+            else:
+                cap_stmt = cap_stmt.where(Capability.identity_id == auth.identity_id)
+
+            cap_res = await session.execute(cap_stmt)
+            active_caps = cap_res.scalars().all()
+            if not active_caps:
+                if delegation is not None:
+                    delegated_cap_dict = next(
+                        (
+                            c
+                            for c in delegation.delegated_capabilities
+                            if c.get("capability_type") == contract.required_capability
+                        ),
+                        None,
+                    )
+                    if not delegated_cap_dict:
+                        raise HTTPException(
+                            status_code=status.HTTP_403_FORBIDDEN,
+                            detail=(
+                                f"Capability revoked or expired for required scope '{contract.required_capability}'. "
+                                "Execution blocked."
+                            ),
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Capability revoked or expired for required scope '{contract.required_capability}'. "
+                            "Execution blocked."
+                        ),
+                    )
+
+            # Approval Replay & Tamper Defense:
+            if contract.approval_id:
+                appr_stmt = (
+                    select(ActionApproval)
+                    .where(
+                        ActionApproval.tenant_id == auth.tenant_id,
+                        ActionApproval.id == contract.approval_id,
+                    )
+                    .with_for_update()
+                )
+                appr_res = await session.execute(appr_stmt)
+                approval = appr_res.scalar_one_or_none()
+                if not approval:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Execution forbidden: Required L4 approval was not found",
+                    )
+                if approval.status == ApprovalStatus.CONSUMED.value:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Approval replay attack detected: Approval token has already been consumed.",
+                    )
+                if approval.status != ApprovalStatus.GRANTED.value:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=f"Execution forbidden: Approval is in status '{approval.status}'",
+                    )
+                if approval.expires_at < now:
+                    approval.status = ApprovalStatus.EXPIRED.value
+                    await session.flush()
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Execution forbidden: Approval token has expired.",
+                    )
+
+                # Cross-transaction & cross-action replay defense:
+                if approval.action_id != contract.id or approval.transaction_id != contract.transaction_id:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            "Approval replay attack detected: Approval token does not belong to this "
+                            "action/transaction."
+                        ),
+                    )
+
+                # Recompute and verify contract binding hash
+                cost_val = (
+                    float(contract.blast_radius.get("estimated_dollar_cost", 0.0))
+                    if isinstance(contract.blast_radius, dict)
+                    else 0.0
+                )
+                recomputed_hash = compute_contract_binding_hash(
+                    tenant_id=contract.tenant_id,
+                    transaction_id=contract.transaction_id,
+                    action_id=contract.id,
+                    tool_name=contract.tool_name,
+                    action_type=contract.action_type,
+                    target_resource=contract.target_resource,
+                    parameters_hash=compute_parameters_hash(contract.normalized_parameters),
+                    required_capability=contract.required_capability,
+                    estimated_dollar_cost=cost_val,
+                    taint_flags=contract.taint_flags,
+                )
+                if recomputed_hash != approval.parameters_hash:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            "Parameter tampering detected: cryptographic binding fingerprint mismatch "
+                            "between contract and approval."
+                        ),
+                    )
+
+                # Transition approval to CONSUMED (single-use defense)
+                approval.status = ApprovalStatus.CONSUMED.value
+
+            # Concurrency & Fencing Token Execution Boundary Revalidation
+            lease_val = await concurrency_service.validate_lease_for_action(
+                tenant_id=auth.tenant_id,
+                transaction_id=contract.transaction_id,
+                target_resource=contract.target_resource,
+                fencing_token=contract.fencing_token,
+                session=session,
+            )
+            if lease_val.decision != Decision.ALLOW:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Execution blocked by concurrency fencing revalidation: {lease_val.reason}",
+                )
+
+            # Durable state transition committed before external side effects
+            contract.state = ActionState.EXECUTING.value
+            contract.executed_at = now
+            await _record_action_audit_event(
+                session=session,
+                tenant_id=auth.tenant_id,
+                event_type="ACTION_DISPATCH_STARTED",
+                actor_identity_id=auth.identity_id,
+                transaction_id=contract.transaction_id,
+                decision="EXECUTING",
+                reason="Pre-dispatch checks passed, state committed to EXECUTING before tool proxy dispatch.",
+                payload={"action_id": contract.id, "tool": contract.tool_name},
+            )
+            return contract, tool
+
     async def propose_and_authorize_action(self, auth: AuthContext, req: ActionProposal) -> ActionAuthorizationDecision:
         """Evaluate Gate 3 Action Assurance for a proposed action contract."""
         async with db_session.get_tenant_session(auth.tenant_id) as session:
@@ -930,82 +1543,21 @@ class ActionGovernorService:
                         parameters_hash=params_hash,
                     )
 
-            # 7. Action Risk Model Calculation
-            base_risk = {
-                ActionType.READ.value: 10,
-                ActionType.WRITE.value: 35,
-                ActionType.EXECUTE.value: 40,
-                ActionType.EGRESS.value: 50,
-                ActionType.DELETE.value: 65,
-            }.get(req.action_type.value, 40)
-
-            trust_mod = {
-                ToolTrustLevel.INTERNAL.value: 0,
-                ToolTrustLevel.VERIFIED.value: 10,
-                ToolTrustLevel.UNTRUSTED.value: 25,
-            }.get(tool.trust_level, 10)
-
-            env_mod = {
-                "DEV": 0,
-                "STAGING": 15,
-                "PROD": 30,
-            }.get(req.blast_radius.target_environment.upper(), 10)
-
-            param_cost = 0.0
-            for cost_key in ("amount", "amount_usd", "estimated_cost", "dollar_cost", "spend"):
-                cval = normalized_params.get(cost_key)
-                if isinstance(cval, (int, float)):
-                    param_cost = max(param_cost, float(cval))
-
-            effective_cost = max(float(req.blast_radius.estimated_dollar_cost), param_cost)
-            cost_mod = min(25, int(effective_cost / 100.0))
-            single_action_risk = min(100, base_risk + trust_mod + env_mod + cost_mod)
-            autonomy_level = min(4, single_action_risk // 20)
-
-            # 8. Salami-Slicing Defense & Cumulative Blast Radius Accounting
-            window_start = now - timedelta(hours=MAX_WINDOW_HOURS)
-            blast_stmt = select(
-                func.count(ActionContract.id).label("count"),
-                func.coalesce(func.sum(ActionContract.risk_score), 0).label("cumulative_risk"),
-            ).where(
-                ActionContract.tenant_id == auth.tenant_id,
-                ActionContract.created_at >= window_start,
-                ActionContract.state.in_(
-                    [
-                        ActionState.AUTHORIZED.value,
-                        ActionState.EXECUTING.value,
-                        ActionState.COMPLETED.value,
-                    ]
-                ),
-            )
-            blast_res = await session.execute(blast_stmt)
-            blast_row = blast_res.one()
-            window_count = int(blast_row[0] or 0)
-            window_risk = int(blast_row[1] or 0)
-
-            # Sum cumulative dollar cost
-            cost_contracts_stmt = select(ActionContract.blast_radius).where(
-                ActionContract.tenant_id == auth.tenant_id,
-                ActionContract.created_at >= window_start,
-                ActionContract.state.in_(
-                    [
-                        ActionState.AUTHORIZED.value,
-                        ActionState.EXECUTING.value,
-                        ActionState.COMPLETED.value,
-                    ]
-                ),
-            )
-            cost_contracts_res = await session.execute(cost_contracts_stmt)
-            all_radii = cost_contracts_res.scalars().all()
-            window_cost = sum(
-                float(r.get("estimated_dollar_cost", 0.0) or 0.0) for r in all_radii if isinstance(r, dict)
-            )
-
-            # Detect salami slicing
-            is_salami_violation = (
-                (window_risk + single_action_risk > MAX_WINDOW_CUMULATIVE_RISK)
-                or (window_cost + effective_cost > MAX_WINDOW_CUMULATIVE_COST)
-                or (window_count >= MAX_WINDOW_ACTION_COUNT)
+            # 7. Action Risk Model Calculation & Salami-Slicing Budget Evaluation
+            (
+                single_action_risk,
+                autonomy_level,
+                effective_cost,
+                window_risk,
+                window_cost,
+                is_salami_violation,
+            ) = await self._evaluate_risk_and_salami_budget(
+                session=session,
+                tenant_id=auth.tenant_id,
+                req=req,
+                tool=tool,
+                normalized_params=normalized_params,
+                now=now,
             )
 
             # Autonomy level threshold check
@@ -1040,103 +1592,26 @@ class ActionGovernorService:
                     requires_human_approval = True
 
             # Phase 6: Outcome Assurance Contract Validation
-            requires_outcome_assurance = bool(
-                (req.outcome_contract and req.outcome_contract.requires_outcome_assurance)
-                or req.action_type in (ActionType.WRITE, ActionType.DELETE, ActionType.EXECUTE, ActionType.EGRESS)
-                or single_action_risk >= 40
-                or autonomy_level >= 2
-                or effective_cost > 0.0
+            (
+                requires_outcome_assurance,
+                outcome_contract_dict,
+                contract_error,
+            ) = self._build_outcome_assurance_contract(
+                req=req,
+                tool=tool,
+                single_action_risk=single_action_risk,
+                autonomy_level=autonomy_level,
+                effective_cost=effective_cost,
+                requires_human_approval=requires_human_approval,
             )
-
-            outcome_contract_dict: dict[str, Any] | None = None
-            if requires_outcome_assurance:
-                merged_postconditions = list(req.postconditions)
-                if req.outcome_contract and req.outcome_contract.expected_postconditions:
-                    for ep in req.outcome_contract.expected_postconditions:
-                        if isinstance(ep, dict) and "target" in ep:
-                            assertion = ep.get("assertion", "EQUALS")
-                            merged_postconditions.append(
-                                PostconditionRule(
-                                    assertion=assertion,
-                                    target=ep["target"],
-                                    expected_value=ep.get("expected_value"),
-                                )
-                            )
-
-                # Criterion 1: Must define expected postconditions for autonomous authorization
-                if not requires_human_approval and len(merged_postconditions) == 0:
-                    return ActionAuthorizationDecision(
-                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
-                        decision=Decision.BLOCK,
-                        state=ActionState.BLOCKED,
-                        reason=(
-                            "Outcome Assurance contract violation: "
-                            "action requires outcome assurance but defines zero expected postconditions."
-                        ),
-                        risk_score=single_action_risk,
-                        autonomy_level=autonomy_level,
-                        normalized_parameters=normalized_params,
-                        parameters_hash=params_hash,
-                    )
-
-                # Criterion 2: Acceptable evidence sources
-                acceptable_sources: list[str] = []
-                if req.outcome_contract and req.outcome_contract.acceptable_evidence_sources:
-                    acceptable_sources = req.outcome_contract.acceptable_evidence_sources
-                elif tool.tool_type == ToolType.HTTP:
-                    scheme = req.target_resource.split("://")[0] if "://" in req.target_resource else "http"
-                    acceptable_sources = [f"http:{scheme}", "HTTP_RESOURCE"]
-                else:
-                    acceptable_sources = ["DATABASE", "HTTP_RESOURCE", "ASYNC_EVENT", "INDEPENDENT_OBSERVER"]
-
-                if req.outcome_contract and len(req.outcome_contract.acceptable_evidence_sources) == 0:
-                    return ActionAuthorizationDecision(
-                        action_id=f"act_err_{uuid.uuid4().hex[:8]}",
-                        decision=Decision.BLOCK,
-                        state=ActionState.BLOCKED,
-                        reason=(
-                            "Outcome Assurance contract violation: "
-                            "acceptable_evidence_sources cannot be empty when outcome contract is specified."
-                        ),
-                        risk_score=single_action_risk,
-                        autonomy_level=autonomy_level,
-                        normalized_parameters=normalized_params,
-                        parameters_hash=params_hash,
-                    )
-
-                # Criterion 3: Verification deadline
-                deadline_sec = 30.0
-                if req.outcome_contract:
-                    if req.outcome_contract.verification_deadline_seconds <= 0:
-                        return ActionAuthorizationDecision(
-                            action_id=f"act_err_{uuid.uuid4().hex[:8]}",
-                            decision=Decision.BLOCK,
-                            state=ActionState.BLOCKED,
-                            reason=(
-                                "Outcome Assurance contract violation: verification_deadline_seconds must be positive."
-                            ),
-                            risk_score=single_action_risk,
-                            autonomy_level=autonomy_level,
-                            normalized_parameters=normalized_params,
-                            parameters_hash=params_hash,
-                        )
-                    deadline_sec = req.outcome_contract.verification_deadline_seconds
-
-                outcome_contract_dict = {
-                    "requires_outcome_assurance": True,
-                    "expected_postconditions": [p.model_dump() for p in merged_postconditions],
-                    "acceptable_evidence_sources": acceptable_sources,
-                    "verification_deadline_seconds": deadline_sec,
-                    "risk_sensitive_verification_policy": (
-                        req.outcome_contract.risk_sensitive_verification_policy.value
-                        if req.outcome_contract
-                        else "STRICT_DIRECT_ONLY"
-                        if single_action_risk >= 60
-                        else "DEFAULT"
-                    ),
-                    "on_partial": req.outcome_contract.on_partial.value if req.outcome_contract else "HOLD_FOR_REVIEW",
-                    "on_uncertain": req.outcome_contract.on_uncertain.value if req.outcome_contract else "ESCALATE",
-                }
+            if contract_error:
+                return self._block_decision(
+                    contract_error,
+                    risk_score=single_action_risk,
+                    autonomy_level=autonomy_level,
+                    normalized_parameters=normalized_params,
+                    parameters_hash=params_hash,
+                )
 
             action_id = f"act_{uuid.uuid4().hex[:16]}"
             approval_id: str | None = None
@@ -1173,29 +1648,13 @@ class ActionGovernorService:
                 decision_reason = "Action authorized: capabilities verified, preconditions passed, risk within budget."
 
             # Resolve active fencing token if lease is held by current transaction (exact or governing parent)
-            active_fencing_token: int | None = None
-            try:
-                canonical_target = canonicalize_resource_uri(req.target_resource)
-                lease_stmt = select(ResourceLease).where(
-                    ResourceLease.tenant_id == auth.tenant_id,
-                    ResourceLease.holder_transaction_id == req.transaction_id,
-                    ResourceLease.status == LeaseStatus.ACQUIRED.value,
-                    ResourceLease.expires_at > now,
-                )
-                lease_res = await session.execute(lease_stmt)
-                holder_leases = lease_res.scalars().all()
-                best_match_lease: ResourceLease | None = None
-                best_len = -1
-                for hl in holder_leases:
-                    h_uri = hl.resource_uri
-                    if canonical_target == h_uri or canonical_target.startswith(h_uri.rstrip("/") + "/"):
-                        if len(h_uri) > best_len:
-                            best_len = len(h_uri)
-                            best_match_lease = hl
-                if best_match_lease:
-                    active_fencing_token = best_match_lease.fencing_token
-            except Exception:
-                active_fencing_token = None
+            active_fencing_token = await self._resolve_active_fencing_token(
+                session=session,
+                tenant_id=auth.tenant_id,
+                transaction_id=req.transaction_id,
+                target_resource=req.target_resource,
+                now=now,
+            )
 
             # Create Action Contract Record first (breaking circular FK with action_approvals)
             action_contract = ActionContract(
@@ -1574,375 +2033,7 @@ class ActionGovernorService:
         # ---------------------------------------------------------------------
         # Phase 1: Pre-dispatch authorization, validation, and durable commitment of EXECUTING state
         # ---------------------------------------------------------------------
-        async with db_session.get_tenant_session(auth.tenant_id) as session:
-            stmt = (
-                select(ActionContract)
-                .where(
-                    ActionContract.tenant_id == auth.tenant_id,
-                    ActionContract.id == req.action_id,
-                )
-                .with_for_update()
-            )
-            res = await session.execute(stmt)
-            contract = res.scalar_one_or_none()
-            if not contract:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action contract not found")
-
-            # Principal binding check: Prevent proposals authorized under one principal from being executed by another
-            if auth.role != Role.SUPER_ADMIN:
-                if auth.agent_id:
-                    if contract.agent_id != auth.agent_id:
-                        del_check = await session.execute(
-                            select(AgentDelegation).where(
-                                AgentDelegation.tenant_id == auth.tenant_id,
-                                AgentDelegation.child_agent_id == auth.agent_id,
-                                (AgentDelegation.child_transaction_id == contract.transaction_id)
-                                | (AgentDelegation.parent_transaction_id == contract.transaction_id),
-                                AgentDelegation.status == DelegationStatus.ACTIVE.value,
-                            )
-                        )
-                        if not del_check.scalar_one_or_none():
-                            raise HTTPException(
-                                status_code=status.HTTP_403_FORBIDDEN,
-                                detail="Principal mismatch: action contract was authorized for a different agent",
-                            )
-                elif auth.identity_id:
-                    if auth.identity_id != contract.actor_identity_id:
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail="Principal mismatch: action contract was authorized for a different actor",
-                        )
-
-            # Invariant: Action must not be in terminal or blocked states
-            if contract.state == ActionState.BLOCKED.value:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Action contract is in state 'BLOCKED' and cannot be executed",
-                )
-
-            if contract.state == ActionState.EXECUTING.value:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        "Action contract is currently EXECUTING. "
-                        "Retries are rejected to prevent duplicate external side effects."
-                    ),
-                )
-
-            if contract.state == ActionState.EXECUTION_UNCERTAIN.value:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        "Action contract is in EXECUTION_UNCERTAIN state due to post-dispatch "
-                        "persistence failure; operator reconciliation required before retry."
-                    ),
-                )
-
-            if contract.state in (ActionState.COMPLETED.value, ActionState.EXECUTED.value):
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Action contract is already executed (current: {contract.state})",
-                )
-
-            if contract.state != ActionState.AUTHORIZED.value:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Action is not in AUTHORIZED state (current: {contract.state})",
-                )
-
-            # Re-verify Parent Transaction Liveness & Status
-            txn_stmt = select(AITransaction).where(
-                AITransaction.tenant_id == auth.tenant_id,
-                AITransaction.id == contract.transaction_id,
-            )
-            txn_res = await session.execute(txn_stmt)
-            transaction = txn_res.scalar_one_or_none()
-            if not transaction:
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Parent transaction not found")
-            if transaction.state in (
-                "COMPLETED",
-                "FAILED",
-                "BLOCKED",
-                "CANCELLED",
-                "TIMEOUT",
-                "PARTIAL",
-            ) or transaction.final_disposition in ("BLOCKED", "FAILED", "CANCELLED", "TIMEOUT"):
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
-                        f"Parent transaction is in terminal/aborted state "
-                        f"(state='{transaction.state}', disposition='{transaction.final_disposition}')"
-                    ),
-                )
-
-            # Re-verify Initiating Agent Lifecycle State at Execution Boundary
-            if contract.agent_id:
-                is_eligible, reason = await agent_governance_service.evaluate_agent_eligibility(
-                    session=session,
-                    tenant_id=auth.tenant_id,
-                    agent_id=contract.agent_id,
-                )
-                if not is_eligible:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Agent '{contract.agent_id}' is suspended, revoked, "
-                            f"or inactive at execution time: {reason}"
-                        ),
-                    )
-
-            # Re-verify Tool is still active in Registry
-            tool_stmt = select(ToolDefinition).where(
-                ToolDefinition.tenant_id == auth.tenant_id,
-                ToolDefinition.id == contract.tool_id,
-            )
-            tool_res = await session.execute(tool_stmt)
-            tool = tool_res.scalar_one_or_none()
-            if not tool or not tool.active:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=f"Tool '{contract.tool_name}' is inactive or has been revoked in the registry.",
-                )
-
-            # Re-verify Delegation Grant and Parent Transaction at Execution Boundary for Child Transactions
-            delegation: AgentDelegation | None = None
-            if transaction.parent_transaction_id is not None:
-                parent_stmt = select(AITransaction).where(
-                    AITransaction.id == transaction.parent_transaction_id,
-                    AITransaction.tenant_id == auth.tenant_id,
-                )
-                parent_res = await session.execute(parent_stmt)
-                parent_txn = parent_res.scalar_one_or_none()
-                if (
-                    not parent_txn
-                    or parent_txn.state
-                    in (
-                        "COMPLETED",
-                        "FAILED",
-                        "BLOCKED",
-                        "CANCELLED",
-                        "TIMEOUT",
-                        "PARTIAL",
-                        "TERMINATED",
-                    )
-                    or parent_txn.final_disposition in ("BLOCKED", "FAILED", "CANCELLED", "TIMEOUT")
-                ):
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Execution blocked: Parent transaction '{transaction.parent_transaction_id}' "
-                            f"is not active (state: {parent_txn.state if parent_txn else 'NOT_FOUND'}, "
-                            f"disposition: {parent_txn.final_disposition if parent_txn else 'NONE'})."
-                        ),
-                    )
-
-                del_stmt = (
-                    select(AgentDelegation)
-                    .where(
-                        AgentDelegation.tenant_id == auth.tenant_id,
-                        AgentDelegation.child_transaction_id == transaction.id,
-                    )
-                    .with_for_update()
-                )
-                del_res = await session.execute(del_stmt)
-                delegation = del_res.scalar_one_or_none()
-                if not delegation:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Execution blocked: Child transaction '{transaction.id}' has no bound delegation grant."
-                        ),
-                    )
-                if delegation.status != DelegationStatus.ACTIVE.value:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Execution blocked: Delegation grant '{delegation.id}' "
-                            f"is not ACTIVE (current: {delegation.status})."
-                        ),
-                    )
-                if delegation.expires_at <= now:
-                    delegation.status = DelegationStatus.EXPIRED.value
-                    await session.flush()
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Execution blocked: Delegation grant '{delegation.id}' has expired.",
-                    )
-                if delegation.revoked_at is not None:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Execution blocked: Delegation grant '{delegation.id}' is revoked.",
-                    )
-                if delegation.child_agent_id != contract.agent_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Execution blocked: Delegation child agent '{delegation.child_agent_id}' "
-                            f"does not match contract agent '{contract.agent_id}'."
-                        ),
-                    )
-
-                # Execution-time delegation revalidation (ancestor chain, scope, constraints)
-                val_res = await delegation_service.validate_delegation_for_operation(
-                    auth=auth,
-                    delegation_id=delegation.id,
-                    capability_type=contract.required_capability,
-                    resource={"target_resource": contract.target_resource, **(contract.normalized_parameters or {})},
-                    requested_autonomy_level=min(4, contract.risk_score // 20),
-                    session=session,
-                )
-                if val_res.decision != Decision.ALLOW:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Execution blocked by delegation revalidation: {val_res.reason}",
-                    )
-
-            # Re-verify Actor still holds the required capability (Fail-closed on runtime revocation)
-            cap_stmt = select(Capability).where(
-                Capability.tenant_id == auth.tenant_id,
-                Capability.capability_type == contract.required_capability,
-                Capability.revoked_at.is_(None),
-                (Capability.expires_at.is_(None) | (Capability.expires_at > now)),
-            )
-            if transaction.agent_id:
-                cap_stmt = cap_stmt.where(
-                    (Capability.agent_id == transaction.agent_id) | (Capability.identity_id == auth.identity_id)
-                )
-            else:
-                cap_stmt = cap_stmt.where(Capability.identity_id == auth.identity_id)
-
-            cap_res = await session.execute(cap_stmt)
-            active_caps = cap_res.scalars().all()
-            if not active_caps:
-                if delegation is not None:
-                    delegated_cap_dict = next(
-                        (
-                            c
-                            for c in delegation.delegated_capabilities
-                            if c.get("capability_type") == contract.required_capability
-                        ),
-                        None,
-                    )
-                    if not delegated_cap_dict:
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail=(
-                                f"Capability revoked or expired for required scope '{contract.required_capability}'. "
-                                "Execution blocked."
-                            ),
-                        )
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Capability revoked or expired for required scope '{contract.required_capability}'. "
-                            "Execution blocked."
-                        ),
-                    )
-
-            # Approval Replay & Tamper Defense:
-            if contract.approval_id:
-                appr_stmt = (
-                    select(ActionApproval)
-                    .where(
-                        ActionApproval.tenant_id == auth.tenant_id,
-                        ActionApproval.id == contract.approval_id,
-                    )
-                    .with_for_update()
-                )
-                appr_res = await session.execute(appr_stmt)
-                approval = appr_res.scalar_one_or_none()
-                if not approval:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Execution forbidden: Required L4 approval was not found",
-                    )
-                if approval.status == ApprovalStatus.CONSUMED.value:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Approval replay attack detected: Approval token has already been consumed.",
-                    )
-                if approval.status != ApprovalStatus.GRANTED.value:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Execution forbidden: Approval is in status '{approval.status}'",
-                    )
-                if approval.expires_at < now:
-                    approval.status = ApprovalStatus.EXPIRED.value
-                    await session.flush()
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Execution forbidden: Approval token has expired.",
-                    )
-
-                # Cross-transaction & cross-action replay defense:
-                if approval.action_id != contract.id or approval.transaction_id != contract.transaction_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            "Approval replay attack detected: Approval token does not belong to this "
-                            "action/transaction."
-                        ),
-                    )
-
-                # Recompute and verify contract binding hash
-                cost_val = (
-                    float(contract.blast_radius.get("estimated_dollar_cost", 0.0))
-                    if isinstance(contract.blast_radius, dict)
-                    else 0.0
-                )
-                recomputed_hash = compute_contract_binding_hash(
-                    tenant_id=contract.tenant_id,
-                    transaction_id=contract.transaction_id,
-                    action_id=contract.id,
-                    tool_name=contract.tool_name,
-                    action_type=contract.action_type,
-                    target_resource=contract.target_resource,
-                    parameters_hash=compute_parameters_hash(contract.normalized_parameters),
-                    required_capability=contract.required_capability,
-                    estimated_dollar_cost=cost_val,
-                    taint_flags=contract.taint_flags,
-                )
-                if recomputed_hash != approval.parameters_hash:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            "Parameter tampering detected: cryptographic binding fingerprint mismatch "
-                            "between contract and approval."
-                        ),
-                    )
-
-                # Transition approval to CONSUMED (single-use defense)
-                approval.status = ApprovalStatus.CONSUMED.value
-
-            # Concurrency & Fencing Token Execution Boundary Revalidation
-            lease_val = await concurrency_service.validate_lease_for_action(
-                tenant_id=auth.tenant_id,
-                transaction_id=contract.transaction_id,
-                target_resource=contract.target_resource,
-                fencing_token=contract.fencing_token,
-                session=session,
-            )
-            if lease_val.decision != Decision.ALLOW:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=f"Execution blocked by concurrency fencing revalidation: {lease_val.reason}",
-                )
-
-            # Durable state transition committed before external side effects
-            contract.state = ActionState.EXECUTING.value
-            contract.executed_at = now
-            await _record_action_audit_event(
-                session=session,
-                tenant_id=auth.tenant_id,
-                event_type="ACTION_DISPATCH_STARTED",
-                actor_identity_id=auth.identity_id,
-                transaction_id=contract.transaction_id,
-                decision="EXECUTING",
-                reason="Pre-dispatch checks passed, state committed to EXECUTING before tool proxy dispatch.",
-                payload={"action_id": contract.id, "tool": contract.tool_name},
-            )
-            # Phase 1 commits upon exiting this context manager
+        contract, tool = await self._pre_dispatch_and_commit_executing(auth, req, now)
 
         # ---------------------------------------------------------------------
         # Phase 2: Dispatch strictly via Governed Tool Proxy

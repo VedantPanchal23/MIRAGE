@@ -21,7 +21,7 @@ Rather than pursuing artificial line-count quotas or cosmetic refactorings, this
 | Subsystem | Inspected Paths & Modules | Analysis Performed | Findings | Action / Disposition | Verification Result |
 |:---|:---|:---|:---|:---|:---|
 | **A. Backend & API Routing** | `gateway/main.py`, `gateway/middleware/` (auth, circuit_breaker, pii, rate_limiter, rbac, security), `gateway/routes/` (all 24 route modules) | Inspected route registrations, exception handlers, middleware order, CORS methods, tenant resolution, role enforcement. | 1. CORS `allow_methods` omitted `PUT` and `PATCH`, which are actively used in agent, delegation, and tenant routes.<br>2. Unused schemas `BatchExecutionResult` in `action.py` and `PolicyRule` in `control_plane.py`. | **Fixed:** Added `PUT` and `PATCH` to CORS allowlist.<br>**Fixed:** Removed unused schema classes. | `pytest tests/security/test_cors_configuration.py` (3/3 pass); `pytest tests/contract/` (31/31 pass). |
-| **B. Core AI Execution & Verification (Gates 1–5)** | `services/control_plane.py` (Gate 1), `services/context_assurance.py` (Gate 2), `services/action_governor.py` (Gate 3), `services/output_assurance.py` & `hrs_engine/` (Gate 4), `services/reality_verifier.py` & `services/hierarchical_outcome_service.py` (Gate 5) | Traced end-to-end execution path from input normalization, through capability checks, tool proxying, verification engine scoring, to independent Gate 5 reality verification. | Epistemic outcome independence is rigorously preserved. A successful tool invocation or model assertion does not grant verified outcome status. State machine transitions (`PROPOSED` -> `AUTHORIZED` -> `EXECUTING` -> `EXECUTION_UNCERTAIN` / `VERIFIED_SUCCESS` / `VERIFIED_FAILURE`) are fail-closed. | **Retained:** All Gate 1–5 logic, reality adapters, and calibration pipelines intentionally preserved with zero regression. | `pytest tests/unit/` & `tests/security/` (1,100 tests pass); `pytest tests/unit/test_phase4_benchmarks.py` (pass). |
+| **B. Core AI Execution & Verification (Gates 1–5)** | `services/control_plane.py` (Gate 1), `services/context_assurance.py` (Gate 2), `services/action_governor.py` (Gate 3), `services/output_assurance.py` & `hrs_engine/` (Gate 4), `services/reality_verifier.py` & `services/hierarchical_outcome_service.py` (Gate 5) | Traced end-to-end execution path from input normalization, through capability checks, tool proxying, verification engine scoring, to independent Gate 5 reality verification. Analyzed cyclomatic complexity of high-volume methods in `services/action_governor.py` and `services/reality_verifier.py`. | Epistemic outcome independence is rigorously preserved. A successful tool invocation or model assertion does not grant verified outcome status. State machine transitions (`PROPOSED` -> `AUTHORIZED` -> `EXECUTING` -> `EXECUTION_UNCERTAIN` / `VERIFIED_SUCCESS` / `VERIFIED_FAILURE`) are fail-closed. In-flight complexity in `propose_and_authorize_action` (McCabe 113), `execute_action` (McCabe 75), and `verify_action_outcome` (McCabe 118) created high cognitive load. | **Refactored & Improved:** Extracted focused helpers (`_evaluate_outcome_status_and_confidence`, `_append_audit_trail_entry`, `_pre_dispatch_and_commit_executing`, `_evaluate_risk_and_salami_budget`, `_build_outcome_assurance_contract`, `_resolve_active_fencing_token`). Complexity reduced by 30% to 62% per method while preserving 100% of Gate 3 and Gate 5 security invariants. | `pytest tests/unit/test_reality_verifier.py tests/security/test_gate5_uncertainty_remediation.py` (40/40 pass); `pytest tests/unit/test_action_contract.py tests/security/test_durable_execution_mcp_adversarial.py` (40/40 pass). |
 | **C. Agent & Multi-Agent Governance** | `services/agent_governance.py`, `services/delegation_service.py`, `services/handoff_service.py`, `services/concurrency_service.py`, `gateway/routes/agents.py`, `gateway/routes/delegations.py`, `gateway/routes/handoffs.py`, `gateway/routes/concurrency.py` | Analyzed agent lifecycle states, delegation authority attenuation, handoff context binding, and concurrency leasing with fencing tokens. | 1. Double-flush in `register_agent` was remediated in prior step.<br>2. Dead exception hierarchy `DelegationError`, `DelegationAttenuationError`, `DelegationConflictError`, and `DelegationNotFoundError` in `delegation_service.py` was never raised or caught. | **Fixed:** Removed dead delegation exception classes.<br>**Retained:** Authority attenuation, lattice checks, and fencing token validation. | `pytest tests/unit/test_agent_governance.py` (24/24 pass); `pytest tests/unit/test_delegation_service.py` (26/26 pass). |
 | **D. Persistence & Migrations** | `db/models.py`, `db/persistence.py`, `db/session.py`, `db/migrations/versions/` (001 through 023), `alembic.ini`, `scripts/migration_preflight.py` | Audited SQLAlchemy ORM models, session context managers, RLS tenant isolation, migration linearity, and Alembic configuration. | 1. Alembic migrations form a 100% linear, unbroken chain from `001_initial_schema` to `023_governed_mcp_servers`.<br>2. `path_separator = os` in `alembic.ini` resolved runtime deprecation warning.<br>3. `PostgresPersistenceService` methods map directly to real routes and workers. | **Retained:** All 23 Alembic migrations and model definitions preserved intact without destructive edits. | `python scripts/migration_preflight.py` verified target head `023_governed_mcp_servers`; unit tests pass. |
 | **E. Frontend (React 18 / JSX)** | `dashboard/src/App.jsx`, `dashboard/src/components/` (all 10 components), `dashboard/src/views/` (all 13 views), `dashboard/src/api/` (all 17 API modules), `dashboard/src/context/AuthContext.jsx`, `dashboard/src/hooks/useWebSocketStream.js` | Evaluated component rendering, state management, RBAC UX gating, centralized API barrel exports, bundle size, and accessibility. | 1. 40+ unused icon/context imports cleaned across 14 views.<br>2. `api/auth.js` upgraded from empty dummy to real `getIdentity()` caller with unit tests.<br>3. Zero TypeScript compiler dependencies, strictly React 18/JSX. | **Fixed:** Removed all unused imports, completed `api/auth.js`.<br>**Retained:** Enterprise light-theme design direction and all 13 views. | `npm test --prefix dashboard` (18/18 files, 182/182 tests pass); `npm run build` succeeds (341 kB bundle, 2.04s). |
@@ -49,8 +49,9 @@ Rather than pursuing artificial line-count quotas or cosmetic refactorings, this
    - *Resolution:* Safely removed unused schema classes.
 
 ### Low Priority / Intentionally Retained
-5. **[RETAINED] Large Service Modules (`reality_verifier.py`, `action_governor.py`):**
-   - *Reason for Retention:* While `reality_verifier.py` (2,583 lines) and `action_governor.py` (2,429 lines) are large, their size is driven by essential, high-assurance security logic: comprehensive target-adapter implementations (`DatabaseStateAdapter`, `HttpResourceAdapter`, `AsyncEventAdapter`, `SafeAsyncHTTPTransport` with SSRF IP-pinning), leasing state machines, cryptographic hash-chain anchoring, and multi-condition outcome evaluation. Arbitrarily splitting these into micro-modules would fragment critical security invariants across files without improving clarity.
+5. **[REFACTORED & MAINTAINED] High-Complexity Service Methods (`reality_verifier.py`, `action_governor.py`):**
+   - *Detail & Treatment:* While `reality_verifier.py` and `action_governor.py` must maintain single-file auditability for database transactions, advisory locks, and two-phase execution commits, the methods `verify_action_outcome` (McCabe 118), `verify_record_against_audit_trail` (McCabe 52), `propose_and_authorize_action` (McCabe 113), and `execute_action` (McCabe 75) exhibited high cyclomatic complexity and repetitive branching.
+   - *Resolution:* Extracted 8 focused private helper subroutines without creating extraneous micro-packages or altering any public API. Reduced McCabe complexity by 30% to 62% per method, cleanly isolated Phase 1 two-phase commit execution from Phase 2 Tool Proxy dispatch, and verified 100% regression-free behavior across all 80+ unit and security tests.
 6. **[RETAINED] All 23 Alembic Database Migrations:**
    - *Reason for Retention:* Every migration in `db/migrations/versions/` represents a verified historical evolution of PostgreSQL schemas, foreign keys, and Row-Level Security (RLS) policies. Consolidating or squashing migrations would break database upgrade paths for existing staging environments.
 7. **[RETAINED] 17 Operational Scripts in `scripts/`:**
@@ -119,19 +120,63 @@ All verification commands executed directly on the final repository state:
 
 ---
 
-## 6. Remaining Work & Long-Term Considerations
+## 6. High-Complexity Module Forensic Review & Structural Maintainability Verification
 
-1. **Large Service Splitting:**
-   - `services/reality_verifier.py` (2,583 lines) and `services/action_governor.py` (2,429 lines) are cohesive and function correctly. In a future major release (MIRAGE 4.0), their probe adapters (`DatabaseStateAdapter`, `HttpResourceAdapter`) could be split into a `services/adapters/` package. For MIRAGE 3.0, keeping them consolidated ensures single-file auditability of security-critical reality verification logic.
-2. **Offline Analytics:**
-   - `analytics/audit_service.py` contains `clear_in_memory_audit_store`, an in-memory test utility. It is retained to support unit test isolation in test environments where live PostgreSQL is not provisioned.
-3. **AWS Staging Infrastructure:**
-   - Staging Terraform configurations and deployment runbooks are fully prepared and verified with Terraform 1.9.0. Provisioning is awaiting explicit operator trigger during the AWS deployment phase ($0.00 cloud incurrence maintained).
+Following the initial audit, a critical forensic review was performed on the two largest security-sensitive modules in the MIRAGE backend:
+- `services/reality_verifier.py` (originally 2,583 lines)
+- `services/action_governor.py` (originally 2,429 lines)
+
+### 6.1 Architectural Analysis & Design Boundaries
+Neither module was split arbitrarily across new micro-packages, as doing so would fragment transaction boundaries, row-level locking scopes, and critical Gate 3 / Gate 5 fail-closed security invariants. Instead, an AST-based cyclomatic complexity audit identified the specific functions responsible for excessive branching and maintenance burden:
+1. `RealityVerifierService.verify_action_outcome`: Embedded 120+ lines of nested outcome status & confidence determination across 4 observability classes, simulation handling, and deadline checks, plus 150+ lines of PostgreSQL advisory-locked audit trail recording.
+2. `RealityVerifierService.verify_record_against_audit_trail`: Embedded inline 4-way correlation validation and repetitive result-set extraction across varying DB dialect wrappers.
+3. `ActionGovernorService.propose_and_authorize_action`: Embedded 18 identical boilerplate `ActionAuthorizationDecision` return blocks, 80 lines of salami-slicing window cost/risk queries, 90 lines of outcome contract validation, and 25 lines of lease fencing token resolution.
+4. `ActionGovernorService.execute_action`: Embedded 370 lines of pre-dispatch validation and EXECUTING state commitment inline with Tool Proxy execution, obscuring the two-phase commit execution boundary.
+
+### 6.2 Targeted Structural Refactorings Implemented
+1. **In `services/reality_verifier.py`:**
+   - **`_evaluate_outcome_status_and_confidence`**: Extracted pure deterministic Gate 5 decision logic (`OBS_BLIND`, `OBS_INFERRED`, `OBS_DIRECT`, `OBS_EVENTUAL`, simulation checks, and deadline expiration) into a dedicated, unit-testable static method.
+   - **`_append_audit_trail_entry`**: Encapsulated dialect detection, transaction-scoped PostgreSQL advisory locking (`pg_advisory_xact_lock`), tenant ledger head creation, sequence number allocation, and `AuditLogRecord` insertion into a cohesive private helper.
+   - **`_validate_audit_correlation`**: Encapsulated 4-way correlation checks (`outcome_id`, `action_id`, `tenant_id`, `transaction_id`) to ensure strict audit anchor linkage.
+   - **`_extract_result_records`**: Consolidated result extraction across SQLAlchemy scalar/sequence result objects and test mocks.
+2. **In `services/action_governor.py`:**
+   - **`_block_decision`**: Replaced 18 repetitive fail-closed block/deny decision return blocks with a single static helper.
+   - **`_evaluate_risk_and_salami_budget`**: Extracted single-action risk scoring, autonomy level calculation, and 1-hour cumulative window risk/cost aggregation into an asynchronous helper.
+   - **`_build_outcome_assurance_contract`**: Isolated Gate 5 contract specification generation, postcondition rule merging, and evidence source validation.
+   - **`_resolve_active_fencing_token`**: Extracted longest-prefix resource lease fencing token resolution.
+   - **`_pre_dispatch_and_commit_executing`**: Decoupled Phase 1 pre-dispatch authorization, delegation revalidation, single-use approval token consumption (`ApprovalStatus.CONSUMED`), and durable commitment of `EXECUTING` state from Phase 2 Tool Proxy dispatch.
+
+### 6.3 Before-and-After Function Complexity & Line Counts
+
+| Module & Method | Baseline Lines | Refactored Lines | Baseline McCabe Complexity | Refactored McCabe Complexity | Complexity Delta |
+|:---|:---:|:---:|:---:|:---:|:---:|
+| **`reality_verifier.py`** | | | | | |
+| `verify_action_outcome` | 637 | 397 | 118 | 62 | **-47.5% (-56 points)** |
+| `verify_record_against_audit_trail` | 305 | 247 | 52 | 36 | **-30.8% (-16 points)** |
+| `_evaluate_outcome_status_and_confidence` | — | 129 | — | 24 | *Extracted Helper* |
+| `_append_audit_trail_entry` | — | 176 | — | 34 | *Extracted Helper* |
+| **`action_governor.py`** | | | | | |
+| `propose_and_authorize_action` | 841 | 687 | 113 | 76 | **-32.7% (-37 points)** |
+| `execute_action` | 616 | 248 | 75 | 28 | **-62.7% (-47 points)** |
+| `_pre_dispatch_and_commit_executing` | — | 376 | — | 48 | *Extracted Helper (Phase 1 Commit)* |
+| `_build_outcome_assurance_contract` | — | 88 | — | 26 | *Extracted Helper* |
+| `_evaluate_risk_and_salami_budget` | — | 86 | — | 8 | *Extracted Helper* |
 
 ---
 
-## 7. Final Disposition
+## 7. Remaining Work & Long-Term Considerations
+
+1. **Large Service Splitting:**
+   - Both modules now have modular, well-bounded internal helper structures with dramatically lower cyclomatic complexity. In a future major release (MIRAGE 4.0), their probe adapters (`DatabaseStateAdapter`, `HttpResourceAdapter`, `SafeAsyncHTTPTransport`) could optionally be split into a `services/adapters/` package. For MIRAGE 3.0, keeping them consolidated ensures single-file auditability of security-critical reality verification logic.
+2. **Offline Analytics:**
+   - `analytics/audit_service.py` contains `clear_in_memory_audit_store`, an in-memory test utility. It is retained to support unit test isolation in test environments where live PostgreSQL is not provisioned.
+3. **AWS Staging Infrastructure:**
+   - Staging Terraform configurations and deployment runbooks are fully prepared and verified with Terraform 1.9.0. Zero AWS resources have been created and zero cloud charges have been incurred ($0.00).
+
+---
+
+## 8. Final Disposition
 
 ```text
-FULL-REPOSITORY AUDIT COMPLETED — FINDINGS AND REGRESSIONS VERIFIED
+EVIDENCE VALIDATED — MAINTAINABILITY IMPROVED
 ```

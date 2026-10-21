@@ -1219,6 +1219,380 @@ class RealityVerifierService:
 
         return verified_at
 
+    @staticmethod
+    def _validate_audit_correlation(record: OutcomeVerificationRecord, matching_audit: AuditLogRecord) -> None:
+        """Enforce unambiguous 4-way correlation check between OutcomeVerificationRecord and AuditLogRecord."""
+        payload = matching_audit.event_payload or {}
+        if payload.get("outcome_id") != record.id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
+                    f"outcome_id '{payload.get('outcome_id')}' does not match record '{record.id}'."
+                ),
+            )
+        if not payload.get("action_id") or payload.get("action_id") != record.action_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
+                    f"action_id '{payload.get('action_id')}' does not match record '{record.action_id}'."
+                ),
+            )
+        if matching_audit.tenant_id != record.tenant_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
+                    f"tenant_id '{matching_audit.tenant_id}' does not match record '{record.tenant_id}'."
+                ),
+            )
+        if matching_audit.transaction_id != record.transaction_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord column transaction_id "
+                    f"'{matching_audit.transaction_id}' does not match record '{record.transaction_id}'."
+                ),
+            )
+        if payload.get("transaction_id") != record.transaction_id:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail=(
+                    f"Audit anchor correlation mismatch: AuditLogRecord payload transaction_id "
+                    f"'{payload.get('transaction_id')}' does not match record '{record.transaction_id}'."
+                ),
+            )
+
+    @staticmethod
+    def _extract_result_records(exec_res: Any) -> list[Any]:
+        """Safely extract result records across live SQLAlchemy execution and test mock objects."""
+        if hasattr(exec_res, "scalars"):
+            scalars_call = exec_res.scalars()
+            if hasattr(scalars_call, "all"):
+                res_all = scalars_call.all()
+                if isinstance(res_all, list):
+                    return res_all
+                elif hasattr(exec_res, "scalar_one_or_none"):
+                    s_one = exec_res.scalar_one_or_none()
+                    return [s_one] if s_one is not None else []
+                return list(res_all)
+            elif hasattr(exec_res, "scalar_one_or_none"):
+                s_one = exec_res.scalar_one_or_none()
+                return [s_one] if s_one is not None else []
+        elif hasattr(exec_res, "scalar_one_or_none"):
+            s_one = exec_res.scalar_one_or_none()
+            return [s_one] if s_one is not None else []
+        return []
+
+    @staticmethod
+    def _evaluate_outcome_status_and_confidence(
+        *,
+        obs_class: ObservabilityClass,
+        discrepancies: list[str],
+        effective_postconditions: dict[str, Any],
+        is_simulated: bool,
+        success_indicated: bool,
+        observation: Any | None,
+        deadline_passed: bool,
+        reconciliation_notes: list[str],
+    ) -> tuple[OutcomeStatus, float]:
+        """Compute authoritative Gate 5 OutcomeStatus and epistemic confidence.
+
+        Preserves strict epistemic outcome independence:
+        - OBS_BLIND yields strictly UNOBSERVABLE (confidence 0.0)
+        - OBS_INFERRED yields ACKNOWLEDGED_UNVERIFIED (confidence 0.50)
+        - Void postconditions cannot produce verified success
+        - Simulated probes cannot satisfy production SUCCESS_CONFIRMED
+        - Expired verification deadlines downgrade tentative success to UNKNOWN
+        """
+        if obs_class == ObservabilityClass.OBS_BLIND:
+            reconciliation_notes.append(
+                "Target resource is OBS_BLIND (write-only sink). No readback channel exists. "
+                "Epistemic confidence is strictly 0.0."
+            )
+            outcome_status = OutcomeStatus.UNOBSERVABLE
+            epistemic_confidence = 0.0
+
+        elif obs_class == ObservabilityClass.OBS_INFERRED:
+            reconciliation_notes.append(
+                "Target resource is OBS_INFERRED (transport-acknowledged only). "
+                "Actual postconditions at destination sink cannot be directly inspected by MIRAGE."
+            )
+            outcome_status = OutcomeStatus.ACKNOWLEDGED_UNVERIFIED
+            epistemic_confidence = 0.50
+
+        elif obs_class == ObservabilityClass.OBS_DIRECT:
+            if len(effective_postconditions) == 0:
+                reconciliation_notes.append(
+                    "Void postcondition assertion: zero expected postconditions were specified. "
+                    "SUCCESS_CONFIRMED requires authoritative postcondition state verification. "
+                    "Status downgraded to ACKNOWLEDGED_UNVERIFIED."
+                )
+                outcome_status = OutcomeStatus.ACKNOWLEDGED_UNVERIFIED
+                epistemic_confidence = 0.50
+            elif is_simulated:
+                if discrepancies:
+                    outcome_status = OutcomeStatus.FAILED
+                    epistemic_confidence = 0.95
+                else:
+                    reconciliation_notes.append(
+                        "Probe executed using SimulatedTestAdapter; physical reality unverified. "
+                        "Cannot be awarded SUCCESS_CONFIRMED."
+                    )
+                    outcome_status = OutcomeStatus.ACKNOWLEDGED_UNVERIFIED
+                    epistemic_confidence = 0.50
+            elif discrepancies:
+                if len(discrepancies) < len(effective_postconditions) and len(effective_postconditions) > 1:
+                    outcome_status = (
+                        OutcomeStatus.PARTIAL_ACHIEVEMENT
+                        if observation
+                        else OutcomeStatus.PARTIAL
+                    )
+                    raw_conf = observation.epistemic_confidence if observation else 0.85
+                    epistemic_confidence = min(raw_conf, 0.70)
+                else:
+                    outcome_status = (
+                        OutcomeStatus.VERIFIED_FAILURE
+                        if observation
+                        else OutcomeStatus.FAILED
+                    )
+                    epistemic_confidence = 0.95
+            else:
+                outcome_status = (
+                    OutcomeStatus.VERIFIED_SUCCESS
+                    if observation
+                    else OutcomeStatus.SUCCESS_CONFIRMED
+                )
+                epistemic_confidence = (
+                    observation.epistemic_confidence
+                    if observation
+                    else 1.00
+                )
+
+        elif obs_class == ObservabilityClass.OBS_EVENTUAL:
+            if len(effective_postconditions) == 0:
+                reconciliation_notes.append(
+                    "Void postcondition assertion: zero expected postconditions were specified. "
+                    "Cannot award SUCCESS_EVENTUALLY_OBSERVED without verified postconditions."
+                )
+                outcome_status = OutcomeStatus.ACKNOWLEDGED_UNVERIFIED
+                epistemic_confidence = 0.50
+            elif success_indicated and not discrepancies:
+                outcome_status = OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED
+                epistemic_confidence = 0.95
+            elif "timed out" in " ".join(discrepancies).lower():
+                reconciliation_notes.append(
+                    "Eventual consistency polling timed out without observing stable target state."
+                )
+                outcome_status = OutcomeStatus.UNKNOWN
+                epistemic_confidence = 0.0
+            else:
+                outcome_status = OutcomeStatus.FAILED
+                epistemic_confidence = 0.90
+
+        else:
+            outcome_status = OutcomeStatus.UNKNOWN
+            epistemic_confidence = 0.0
+
+        if deadline_passed:
+            if outcome_status in (
+                OutcomeStatus.VERIFIED_SUCCESS,
+                OutcomeStatus.SUCCESS_CONFIRMED,
+                OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED,
+            ):
+                outcome_status = OutcomeStatus.UNKNOWN
+                epistemic_confidence = 0.0
+                reconciliation_notes.append(
+                    "Verification deadline expired. "
+                    "Late observation cannot convert an expired action into verified success."
+                )
+            elif observation is None and not success_indicated:
+                outcome_status = OutcomeStatus.UNKNOWN
+                epistemic_confidence = 0.0
+                reconciliation_notes.append(
+                    "Verification deadline expired without independent confirmation. Downgraded to UNKNOWN."
+                )
+
+        return outcome_status, epistemic_confidence
+
+    async def _append_audit_trail_entry(
+        self,
+        *,
+        session: Any,
+        auth: AuthContext,
+        request: OutcomeVerificationRequest,
+        action: ActionContract,
+        record: OutcomeVerificationRecord,
+        outcome_status: OutcomeStatus,
+        epistemic_confidence: float,
+        probe_result: AdapterProbeResult,
+        obs_class: ObservabilityClass,
+        target_env: str,
+        idempotency_key: str,
+        effective_postconditions: dict[str, Any],
+        verification_hash: str,
+        verified_at_dt: datetime,
+        verified_at_iso: str,
+        discrepancies: list[str],
+    ) -> None:
+        """Append verified Gate 5 outcome event to tenant cryptographic audit ledger."""
+        app_settings = get_settings()
+        ledger_head_row = None
+        is_live_postgres = False
+        bind = getattr(session, "bind", None)
+        if bind is None and hasattr(session, "get_bind"):
+            try:
+                bind = session.get_bind()
+            except Exception:
+                bind = None
+
+        dialect = getattr(bind, "dialect", None) if bind is not None else None
+        dialect_name = getattr(dialect, "name", None) if dialect is not None else None
+        if isinstance(dialect_name, str) and dialect_name == "postgresql":
+            is_live_postgres = True
+        else:
+            sync_session = getattr(session, "sync_session", None)
+            sync_bind = getattr(sync_session, "bind", None) if sync_session is not None else None
+            sync_dialect = getattr(sync_bind, "dialect", None) if sync_bind is not None else None
+            sync_dialect_name = getattr(sync_dialect, "name", None) if sync_dialect is not None else None
+            if isinstance(sync_dialect_name, str) and sync_dialect_name == "postgresql":
+                is_live_postgres = True
+
+        if app_settings.environment == EnvironmentType.PRODUCTION and not is_live_postgres:
+            raise RuntimeError(
+                "Production invariant violation: authoritative audit ledger append requires PostgreSQL dialect"
+            )
+
+        if is_live_postgres:
+            # A. Transaction-scoped PostgreSQL advisory lock serializes concurrent transactions per tenant
+            await session.execute(
+                text("SELECT pg_advisory_xact_lock(hashtext('tenant_audit_ledger:' || :tenant_id))"),
+                {"tenant_id": auth.tenant_id},
+            )
+
+            # B. Ensure persistent tenant ledger head row exists
+            await session.execute(
+                text(
+                    """
+                    INSERT INTO tenant_audit_ledgers (
+                        tenant_id, head_chain_hash, sequence_number, created_at, updated_at
+                    )
+                    VALUES (:tenant_id, :genesis_hash, 0, :now, :now)
+                    ON CONFLICT (tenant_id) DO NOTHING
+                    """
+                ),
+                {"tenant_id": auth.tenant_id, "genesis_hash": GENESIS_ROOT_HASH, "now": verified_at_dt},
+            )
+
+            # C. Row-level lock on the persistent tenant ledger head
+            ledger_head_stmt = (
+                select(TenantAuditLedger)
+                .where(TenantAuditLedger.tenant_id == auth.tenant_id)
+                .with_for_update()
+            )
+            ledger_res = await session.execute(ledger_head_stmt)
+            ledger_head_row = ledger_res.scalar_one_or_none()
+            if ledger_head_row is None:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Authoritative tenant audit ledger head missing for tenant '{auth.tenant_id}'",
+                )
+
+            # Monotonically link to the latest audit log entry if present
+            latest_audit_stmt = (
+                select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
+                .where(AuditLogRecord.tenant_id == auth.tenant_id)
+                .order_by(AuditLogRecord.sequence_number.desc(), AuditLogRecord.created_at.desc())
+                .limit(1)
+            )
+            latest_audit_row = (await session.execute(latest_audit_stmt)).first()
+
+            if latest_audit_row and latest_audit_row[0]:
+                prev_chain_hash = latest_audit_row[0]
+                current_seq = max(ledger_head_row.sequence_number or 0, latest_audit_row[1] or 0)
+            else:
+                prev_chain_hash = ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH
+                current_seq = ledger_head_row.sequence_number or 0
+
+            new_sequence = current_seq + 1
+        else:
+            # Narrowly scoped fallback for non-PostgreSQL unit test mocks (e.g. SQLite in test env)
+            try:
+                latest_audit = await session.execute(
+                    select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
+                    .where(AuditLogRecord.tenant_id == auth.tenant_id)
+                    .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
+                    .limit(1)
+                )
+                scalar_fn = getattr(latest_audit, "scalar_one_or_none", None)
+                scalar_val = scalar_fn() if callable(scalar_fn) else None
+                if isinstance(scalar_val, str):
+                    prev_chain_hash = scalar_val
+                    new_sequence = 1
+                else:
+                    first_fn = getattr(latest_audit, "first", None)
+                    latest_row = first_fn() if callable(first_fn) else None
+                    if latest_row and type(latest_row).__name__ != "MagicMock":
+                        prev_chain_hash = latest_row[0] if latest_row[0] is not None else GENESIS_ROOT_HASH
+                        new_sequence = (latest_row[1] or 0) + 1
+                    else:
+                        prev_chain_hash = GENESIS_ROOT_HASH
+                        new_sequence = 1
+            except (Exception, StopAsyncIteration):
+                prev_chain_hash = GENESIS_ROOT_HASH
+                new_sequence = 1
+
+        entry_id = f"aud_{uuid.uuid4().hex}"
+        chain_hash = compute_sha256(f"{prev_chain_hash}:{entry_id}:{outcome_status.value}:{verified_at_iso}")
+
+        audit_entry = AuditLogRecord(
+            entry_id=entry_id,
+            tenant_id=auth.tenant_id,
+            sequence_number=new_sequence,
+            session_id=request.transaction_id,
+            trace_id="gate5-outcome",
+            prompt_hash="0" * 64,
+            response_hash=verification_hash,
+            hrs_score=round(1.0 - epistemic_confidence, 4),
+            risk_tier="LOW" if epistemic_confidence > 0.8 else "MEDIUM",
+            claims_count=len(effective_postconditions),
+            claims_summary=[],
+            correction_applied=False,
+            event_type="GATE5_OUTCOME_VERIFIED",
+            actor_identity_id=auth.identity_id or "system_actor",
+            transaction_id=request.transaction_id,
+            decision=outcome_status.value,
+            policy_reference=None,
+            capability_id=action.required_capability,
+            reason=f"Observability: {obs_class.value}, Adapter: {probe_result.adapter_name}",
+            event_payload={
+                "outcome_id": record.id,
+                "action_id": request.action_id,
+                "transaction_id": request.transaction_id,
+                "sequence_number": new_sequence,
+                "observability_class": obs_class.value,
+                "outcome_status": outcome_status.value,
+                "epistemic_confidence": epistemic_confidence,
+                "adapter": probe_result.adapter_name,
+                "is_simulated": probe_result.is_simulated,
+                "discrepancies": discrepancies,
+                "target_environment": target_env,
+                "idempotency_key": idempotency_key,
+                "verified_at": verified_at_iso,
+            },
+            prev_hash=prev_chain_hash,
+            chain_hash=chain_hash,
+            created_at=verified_at_dt,
+        )
+        session.add(audit_entry)
+
+        if isinstance(ledger_head_row, TenantAuditLedger):
+            ledger_head_row.head_entry_id = entry_id
+            ledger_head_row.head_chain_hash = chain_hash
+            ledger_head_row.sequence_number = new_sequence
+            ledger_head_row.updated_at = verified_at_dt
+
     async def verify_record_against_audit_trail(
         self,
         session: Any,
@@ -1305,50 +1679,9 @@ class RealityVerifierService:
             )
 
         matching_audit = matching_audits[0]
-        payload = matching_audit.event_payload or {}
 
         # 4. Unambiguous 4-way correlation check: outcome_id, action_id, tenant_id, transaction_id
-        if payload.get("outcome_id") != record.id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
-                    f"outcome_id '{payload.get('outcome_id')}' does not match record '{record.id}'."
-                ),
-            )
-        if not payload.get("action_id") or payload.get("action_id") != record.action_id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
-                    f"action_id '{payload.get('action_id')}' does not match record '{record.action_id}'."
-                ),
-            )
-        if matching_audit.tenant_id != record.tenant_id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Audit anchor correlation mismatch: AuditLogRecord '{matching_audit.entry_id}' "
-                    f"tenant_id '{matching_audit.tenant_id}' does not match record '{record.tenant_id}'."
-                ),
-            )
-        # Strict transaction_id check on both record column and payload
-        if matching_audit.transaction_id != record.transaction_id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Audit anchor correlation mismatch: AuditLogRecord column transaction_id "
-                    f"'{matching_audit.transaction_id}' does not match record '{record.transaction_id}'."
-                ),
-            )
-        if payload.get("transaction_id") != record.transaction_id:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail=(
-                    f"Audit anchor correlation mismatch: AuditLogRecord payload transaction_id "
-                    f"'{payload.get('transaction_id')}' does not match record '{record.transaction_id}'."
-                ),
-            )
+        self._validate_audit_correlation(record, matching_audit)
 
         # 5. Hash and Decision verification against audit record
         if matching_audit.response_hash != record.verification_hash:
@@ -1407,24 +1740,7 @@ class RealityVerifierService:
                 .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
             )
             exec_res = await session.execute(pred_stmt)
-            pred_records: list[Any] = []
-            if hasattr(exec_res, "scalars"):
-                scalars_call = exec_res.scalars()
-                if hasattr(scalars_call, "all"):
-                    res_all = scalars_call.all()
-                    if isinstance(res_all, list):
-                        pred_records = res_all
-                    elif hasattr(exec_res, "scalar_one_or_none"):
-                        s_one = exec_res.scalar_one_or_none()
-                        pred_records = [s_one] if s_one is not None else []
-                    else:
-                        pred_records = list(res_all)
-                elif hasattr(exec_res, "scalar_one_or_none"):
-                    s_one = exec_res.scalar_one_or_none()
-                    pred_records = [s_one] if s_one is not None else []
-            elif hasattr(exec_res, "scalar_one_or_none"):
-                s_one = exec_res.scalar_one_or_none()
-                pred_records = [s_one] if s_one is not None else []
+            pred_records: list[Any] = self._extract_result_records(exec_res)
 
             if not pred_records:
                 raise HTTPException(
@@ -1775,119 +2091,16 @@ class RealityVerifierService:
                     "authoritatively downgraded to OBS_BLIND."
                 )
 
-            if obs_class == ObservabilityClass.OBS_BLIND:
-                outcome_status = OutcomeStatus.UNOBSERVABLE
-                epistemic_confidence = 0.0
-                reconciliation_notes.append(
-                    "Target resource is OBS_BLIND (write-only sink). No readback channel exists. "
-                    "Epistemic confidence is strictly 0.0."
-                )
-
-            elif obs_class == ObservabilityClass.OBS_INFERRED:
-                outcome_status = OutcomeStatus.ACKNOWLEDGED_UNVERIFIED
-                epistemic_confidence = 0.50
-                reconciliation_notes.append(
-                    "Target resource is OBS_INFERRED (transport-acknowledged only). "
-                    "Actual postconditions at destination sink cannot be directly inspected by MIRAGE."
-                )
-
-            elif obs_class == ObservabilityClass.OBS_DIRECT:
-                # Epistemic Invariant: void postconditions assertion CANNOT produce SUCCESS_CONFIRMED
-                if len(effective_postconditions) == 0:
-                    outcome_status = OutcomeStatus.ACKNOWLEDGED_UNVERIFIED
-                    epistemic_confidence = 0.50
-                    reconciliation_notes.append(
-                        "Void postcondition assertion: zero expected postconditions were specified. "
-                        "SUCCESS_CONFIRMED requires authoritative postcondition state verification. "
-                        "Status downgraded to ACKNOWLEDGED_UNVERIFIED."
-                    )
-                elif probe_result.is_simulated:
-                    # Simulation evidence NEVER satisfies production SUCCESS_CONFIRMED!
-                    if discrepancies:
-                        outcome_status = OutcomeStatus.FAILED
-                        epistemic_confidence = 0.95
-                    else:
-                        outcome_status = OutcomeStatus.ACKNOWLEDGED_UNVERIFIED
-                        epistemic_confidence = 0.50
-                        reconciliation_notes.append(
-                            "Probe executed using SimulatedTestAdapter; physical reality unverified. "
-                            "Cannot be awarded SUCCESS_CONFIRMED."
-                        )
-                elif discrepancies:
-                    if len(discrepancies) < len(effective_postconditions) and len(effective_postconditions) > 1:
-                        outcome_status = (
-                            OutcomeStatus.PARTIAL_ACHIEVEMENT
-                            if request.observation
-                            else OutcomeStatus.PARTIAL
-                        )
-                        raw_conf = (
-                            request.observation.epistemic_confidence
-                            if request.observation
-                            else 0.85
-                        )
-                        epistemic_confidence = min(raw_conf, 0.70)
-                    else:
-                        outcome_status = (
-                            OutcomeStatus.VERIFIED_FAILURE
-                            if request.observation
-                            else OutcomeStatus.FAILED
-                        )
-                        epistemic_confidence = 0.95
-                else:
-                    outcome_status = (
-                        OutcomeStatus.VERIFIED_SUCCESS
-                        if request.observation
-                        else OutcomeStatus.SUCCESS_CONFIRMED
-                    )
-                    epistemic_confidence = (
-                        request.observation.epistemic_confidence
-                        if request.observation
-                        else 1.00
-                    )
-
-            elif obs_class == ObservabilityClass.OBS_EVENTUAL:
-                if len(effective_postconditions) == 0:
-                    outcome_status = OutcomeStatus.ACKNOWLEDGED_UNVERIFIED
-                    epistemic_confidence = 0.50
-                    reconciliation_notes.append(
-                        "Void postcondition assertion: zero expected postconditions were specified. "
-                        "Cannot award SUCCESS_EVENTUALLY_OBSERVED without verified postconditions."
-                    )
-                elif probe_result.success_indicated and not discrepancies:
-                    outcome_status = OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED
-                    epistemic_confidence = 0.95
-                elif "timed out" in " ".join(discrepancies).lower():
-                    outcome_status = OutcomeStatus.UNKNOWN
-                    epistemic_confidence = 0.0
-                    reconciliation_notes.append(
-                        "Eventual consistency polling timed out without observing stable target state."
-                    )
-                else:
-                    outcome_status = OutcomeStatus.FAILED
-                    epistemic_confidence = 0.90
-
-            else:
-                outcome_status = OutcomeStatus.UNKNOWN
-                epistemic_confidence = 0.0
-
-            if deadline_passed:
-                if outcome_status in (
-                    OutcomeStatus.VERIFIED_SUCCESS,
-                    OutcomeStatus.SUCCESS_CONFIRMED,
-                    OutcomeStatus.SUCCESS_EVENTUALLY_OBSERVED,
-                ):
-                    outcome_status = OutcomeStatus.UNKNOWN
-                    epistemic_confidence = 0.0
-                    reconciliation_notes.append(
-                        "Verification deadline expired. "
-                        "Late observation cannot convert an expired action into verified success."
-                    )
-                elif request.observation is None and not probe_result.success_indicated:
-                    outcome_status = OutcomeStatus.UNKNOWN
-                    epistemic_confidence = 0.0
-                    reconciliation_notes.append(
-                        "Verification deadline expired without independent confirmation. Downgraded to UNKNOWN."
-                    )
+            outcome_status, epistemic_confidence = self._evaluate_outcome_status_and_confidence(
+                obs_class=obs_class,
+                discrepancies=discrepancies,
+                effective_postconditions=effective_postconditions,
+                is_simulated=probe_result.is_simulated,
+                success_indicated=probe_result.success_indicated,
+                observation=request.observation,
+                deadline_passed=deadline_passed,
+                reconciliation_notes=reconciliation_notes,
+            )
 
             # 10. Monotonic state transition enforcement against existing record
             if existing_record:
@@ -1993,161 +2206,24 @@ class RealityVerifierService:
                 action.state = ActionState.FAILED.value
 
             # 13. Audit Trail Recording with PostgreSQL engine serialization and row locking
-            app_settings = get_settings()
-            ledger_head_row = None
-            is_live_postgres = False
-            bind = getattr(session, "bind", None)
-            if bind is None and hasattr(session, "get_bind"):
-                try:
-                    bind = session.get_bind()
-                except Exception:
-                    bind = None
-
-            dialect = getattr(bind, "dialect", None) if bind is not None else None
-            dialect_name = getattr(dialect, "name", None) if dialect is not None else None
-            if isinstance(dialect_name, str) and dialect_name == "postgresql":
-                is_live_postgres = True
-            else:
-                sync_session = getattr(session, "sync_session", None)
-                sync_bind = getattr(sync_session, "bind", None) if sync_session is not None else None
-                sync_dialect = getattr(sync_bind, "dialect", None) if sync_bind is not None else None
-                sync_dialect_name = getattr(sync_dialect, "name", None) if sync_dialect is not None else None
-                if isinstance(sync_dialect_name, str) and sync_dialect_name == "postgresql":
-                    is_live_postgres = True
-
-            if app_settings.environment == EnvironmentType.PRODUCTION and not is_live_postgres:
-                raise RuntimeError(
-                    "Production invariant violation: authoritative audit ledger append requires PostgreSQL dialect"
-                )
-
-            if is_live_postgres:
-                # A. Transaction-scoped PostgreSQL advisory lock serializes concurrent transactions per tenant
-                await session.execute(
-                    text("SELECT pg_advisory_xact_lock(hashtext('tenant_audit_ledger:' || :tenant_id))"),
-                    {"tenant_id": auth.tenant_id},
-                )
-
-                # B. Ensure persistent tenant ledger head row exists
-                await session.execute(
-                    text(
-                        """
-                        INSERT INTO tenant_audit_ledgers (
-                            tenant_id, head_chain_hash, sequence_number, created_at, updated_at
-                        )
-                        VALUES (:tenant_id, :genesis_hash, 0, :now, :now)
-                        ON CONFLICT (tenant_id) DO NOTHING
-                        """
-                    ),
-                    {"tenant_id": auth.tenant_id, "genesis_hash": GENESIS_ROOT_HASH, "now": verified_at_dt},
-                )
-
-                # C. Row-level lock on the persistent tenant ledger head
-                ledger_head_stmt = (
-                    select(TenantAuditLedger)
-                    .where(TenantAuditLedger.tenant_id == auth.tenant_id)
-                    .with_for_update()
-                )
-                ledger_res = await session.execute(ledger_head_stmt)
-                ledger_head_row = ledger_res.scalar_one_or_none()
-                if ledger_head_row is None:
-                    raise HTTPException(
-                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        detail=f"Authoritative tenant audit ledger head missing for tenant '{auth.tenant_id}'",
-                    )
-
-                # Monotonically link to the latest audit log entry if present
-                latest_audit_stmt = (
-                    select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
-                    .where(AuditLogRecord.tenant_id == auth.tenant_id)
-                    .order_by(AuditLogRecord.sequence_number.desc(), AuditLogRecord.created_at.desc())
-                    .limit(1)
-                )
-                latest_audit_row = (await session.execute(latest_audit_stmt)).first()
-
-                if latest_audit_row and latest_audit_row[0]:
-                    prev_chain_hash = latest_audit_row[0]
-                    current_seq = max(ledger_head_row.sequence_number or 0, latest_audit_row[1] or 0)
-                else:
-                    prev_chain_hash = ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH
-                    current_seq = ledger_head_row.sequence_number or 0
-
-                new_sequence = current_seq + 1
-            else:
-                # Narrowly scoped fallback for non-PostgreSQL unit test mocks (e.g. SQLite in test env)
-                try:
-                    latest_audit = await session.execute(
-                        select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
-                        .where(AuditLogRecord.tenant_id == auth.tenant_id)
-                        .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
-                        .limit(1)
-                    )
-                    scalar_fn = getattr(latest_audit, "scalar_one_or_none", None)
-                    scalar_val = scalar_fn() if callable(scalar_fn) else None
-                    if isinstance(scalar_val, str):
-                        prev_chain_hash = scalar_val
-                        new_sequence = 1
-                    else:
-                        first_fn = getattr(latest_audit, "first", None)
-                        latest_row = first_fn() if callable(first_fn) else None
-                        if latest_row and type(latest_row).__name__ != "MagicMock":
-                            prev_chain_hash = latest_row[0] if latest_row[0] is not None else GENESIS_ROOT_HASH
-                            new_sequence = (latest_row[1] or 0) + 1
-                        else:
-                            prev_chain_hash = GENESIS_ROOT_HASH
-                            new_sequence = 1
-                except (Exception, StopAsyncIteration):
-                    prev_chain_hash = GENESIS_ROOT_HASH
-                    new_sequence = 1
-
-            entry_id = f"aud_{uuid.uuid4().hex}"
-            chain_hash = compute_sha256(f"{prev_chain_hash}:{entry_id}:{outcome_status.value}:{verified_at_iso}")
-
-            audit_entry = AuditLogRecord(
-                entry_id=entry_id,
-                tenant_id=auth.tenant_id,
-                sequence_number=new_sequence,
-                session_id=request.transaction_id,
-                trace_id="gate5-outcome",
-                prompt_hash="0" * 64,
-                response_hash=verification_hash,
-                hrs_score=round(1.0 - epistemic_confidence, 4),
-                risk_tier="LOW" if epistemic_confidence > 0.8 else "MEDIUM",
-                claims_count=len(effective_postconditions),
-                claims_summary=[],
-                correction_applied=False,
-                event_type="GATE5_OUTCOME_VERIFIED",
-                actor_identity_id=auth.identity_id or "system_actor",
-                transaction_id=request.transaction_id,
-                decision=outcome_status.value,
-                policy_reference=None,
-                capability_id=action.required_capability,
-                reason=f"Observability: {obs_class.value}, Adapter: {probe_result.adapter_name}",
-                event_payload={
-                    "outcome_id": record.id,
-                    "action_id": request.action_id,
-                    "transaction_id": request.transaction_id,
-                    "sequence_number": new_sequence,
-                    "observability_class": obs_class.value,
-                    "outcome_status": outcome_status.value,
-                    "epistemic_confidence": epistemic_confidence,
-                    "adapter": probe_result.adapter_name,
-                    "is_simulated": probe_result.is_simulated,
-                    "discrepancies": discrepancies,
-                    "target_environment": target_env,
-                    "idempotency_key": idempotency_key,
-                    "verified_at": verified_at_iso,
-                },
-                prev_hash=prev_chain_hash,
-                chain_hash=chain_hash,
-                created_at=verified_at_dt,
+            await self._append_audit_trail_entry(
+                session=session,
+                auth=auth,
+                request=request,
+                action=action,
+                record=record,
+                outcome_status=outcome_status,
+                epistemic_confidence=epistemic_confidence,
+                probe_result=probe_result,
+                obs_class=obs_class,
+                target_env=target_env,
+                idempotency_key=idempotency_key,
+                effective_postconditions=effective_postconditions,
+                verification_hash=verification_hash,
+                verified_at_dt=verified_at_dt,
+                verified_at_iso=verified_at_iso,
+                discrepancies=discrepancies,
             )
-            session.add(audit_entry)
-
-            if isinstance(ledger_head_row, TenantAuditLedger):
-                ledger_head_row.head_entry_id = entry_id
-                ledger_head_row.head_chain_hash = chain_hash
-                ledger_head_row.sequence_number = new_sequence
-                ledger_head_row.updated_at = verified_at_dt
 
             logger.info(
                 "Gate 5 Outcome Verification completed",

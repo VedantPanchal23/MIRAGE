@@ -390,14 +390,6 @@ class ActionExecutionResult(BaseModel):
     )
 
 
-class BatchExecutionResult(BaseModel):
-    """Result of atomic batch execution."""
-
-    transaction_id: str
-    results: list[ActionExecutionResult]
-    all_completed: bool
-
-
 class ToolRegistrationRequest(BaseModel):
     """Registration contract for managed native, MCP, or HTTP tools."""
 

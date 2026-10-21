@@ -126,17 +126,6 @@ class TransactionState(StrEnum):
     PARTIAL = "PARTIAL"
 
 
-class PolicyRule(BaseModel):
-    """Declarative typed rules within an active Policy."""
-
-    effect: Decision = Decision.ALLOW
-    max_risk: int = Field(default=100, ge=0, le=100)
-    require_approval: bool = False
-    deny_indicators: list[str] = Field(default_factory=list)
-    disallowed_taints: list[str] = Field(default_factory=list)
-    allowed_roles: list[str] = Field(default_factory=list)
-
-
 class PolicyDecision(BaseModel):
     """Auditable deterministic policy result."""
 

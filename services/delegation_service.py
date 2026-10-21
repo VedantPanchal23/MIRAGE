@@ -97,30 +97,6 @@ _NUMERIC_CEILING_KEYS: Final[set[str]] = {
 }
 
 
-class DelegationError(Exception):
-    """Base exception for delegation domain failures."""
-
-    pass
-
-
-class DelegationAttenuationError(DelegationError):
-    """Raised when a requested delegation widens authority beyond parent/ancestor bounds."""
-
-    pass
-
-
-class DelegationConflictError(DelegationError):
-    """Raised on state or idempotency conflict."""
-
-    pass
-
-
-class DelegationNotFoundError(DelegationError):
-    """Raised when a referenced delegation, agent, or transaction does not exist."""
-
-    pass
-
-
 # ---------------------------------------------------------------------------
 # Scope & Constraint Attenuation Helpers
 # ---------------------------------------------------------------------------

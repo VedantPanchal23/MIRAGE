@@ -120,63 +120,118 @@ All verification commands executed directly on the final repository state:
 
 ---
 
-## 6. High-Complexity Module Forensic Review & Structural Maintainability Verification
+## 6. High-Complexity Module Forensic Review, Provenance Reconciliation & Decomposed Complexity Verification
 
 Following the initial audit, a critical forensic review was performed on the two largest security-sensitive modules in the MIRAGE backend:
 - `services/reality_verifier.py` (originally 2,583 lines)
 - `services/action_governor.py` (originally 2,429 lines)
 
-### 6.1 Architectural Analysis & Design Boundaries
-Neither module was split arbitrarily across new micro-packages, as doing so would fragment transaction boundaries, row-level locking scopes, and critical Gate 3 / Gate 5 fail-closed security invariants. Instead, an AST-based cyclomatic complexity audit identified the specific functions responsible for excessive branching and maintenance burden:
-1. `RealityVerifierService.verify_action_outcome`: Embedded 120+ lines of nested outcome status & confidence determination across 4 observability classes, simulation handling, and deadline checks, plus 150+ lines of PostgreSQL advisory-locked audit trail recording.
-2. `RealityVerifierService.verify_record_against_audit_trail`: Embedded inline 4-way correlation validation and repetitive result-set extraction across varying DB dialect wrappers.
-3. `ActionGovernorService.propose_and_authorize_action`: Embedded 18 identical boilerplate `ActionAuthorizationDecision` return blocks, 80 lines of salami-slicing window cost/risk queries, 90 lines of outcome contract validation, and 25 lines of lease fencing token resolution.
-4. `ActionGovernorService.execute_action`: Embedded 370 lines of pre-dispatch validation and EXECUTING state commitment inline with Tool Proxy execution, obscuring the two-phase commit execution boundary.
+### 6.1 Commit Provenance Reconciliation
+- **Reported Baseline:** `51cffc02e85f8da76c412f4c9615da419370632a` (Immediate parent of refactor commit on branch `main`).
+- **Initial Refactor Commit:** `1a5b7b604d040bab7834599d4ae8bfd593421d40` (pushed to `origin/main`).
+- **Discrepancy Explanation:** The review prompt cited refactor SHA `1a5b7b604d55b0a394a50d287ef5e2270d046907`. The actual Git commit in the repository object database is `1a5b7b604d040bab7834599d4ae8bfd593421d40`. Both share the identical 10-character prefix `1a5b7b604d`. The discrepancy was confirmed to be a typographical error in the previous session's summary text, not a missing or diverging tree. The entire revision history is linear and clean on `origin/main`.
 
-### 6.2 Targeted Structural Refactorings Implemented
-1. **In `services/reality_verifier.py`:**
-   - **`_evaluate_outcome_status_and_confidence`**: Extracted pure deterministic Gate 5 decision logic (`OBS_BLIND`, `OBS_INFERRED`, `OBS_DIRECT`, `OBS_EVENTUAL`, simulation checks, and deadline expiration) into a dedicated, unit-testable static method.
-   - **`_append_audit_trail_entry`**: Encapsulated dialect detection, transaction-scoped PostgreSQL advisory locking (`pg_advisory_xact_lock`), tenant ledger head creation, sequence number allocation, and `AuditLogRecord` insertion into a cohesive private helper.
-   - **`_validate_audit_correlation`**: Encapsulated 4-way correlation checks (`outcome_id`, `action_id`, `tenant_id`, `transaction_id`) to ensure strict audit anchor linkage.
-   - **`_extract_result_records`**: Consolidated result extraction across SQLAlchemy scalar/sequence result objects and test mocks.
-2. **In `services/action_governor.py`:**
-   - **`_block_decision`**: Replaced 18 repetitive fail-closed block/deny decision return blocks with a single static helper.
-   - **`_evaluate_risk_and_salami_budget`**: Extracted single-action risk scoring, autonomy level calculation, and 1-hour cumulative window risk/cost aggregation into an asynchronous helper.
-   - **`_build_outcome_assurance_contract`**: Isolated Gate 5 contract specification generation, postcondition rule merging, and evidence source validation.
-   - **`_resolve_active_fencing_token`**: Extracted longest-prefix resource lease fencing token resolution.
-   - **`_pre_dispatch_and_commit_executing`**: Decoupled Phase 1 pre-dispatch authorization, delegation revalidation, single-use approval token consumption (`ApprovalStatus.CONSUMED`), and durable commitment of `EXECUTING` state from Phase 2 Tool Proxy dispatch.
+### 6.2 Architectural Analysis & Cohesion Audit: Relocated vs. Reduced Complexity
+A rigorous audit of the initial refactor revealed that while public method complexity was successfully reduced, two extracted helpers suffered from **relocated complexity** without sufficient internal cohesion:
+1. **`ActionGovernorService._pre_dispatch_and_commit_executing` (originally 376 lines, McCabe 48):**
+   - *Problem:* Bundled 5 distinct execution-boundary responsibilities: contract state verification, initiating agent eligibility, parent transaction delegation revalidation (92 lines), actor capability holding revalidation (43 lines), approval token single-use consumption and cryptographic fingerprint verification (75 lines), and resource lease validation.
+   - *Maintainability Impact:* At McCabe 48, this helper was larger and more complex than many top-level services, impeding readability and verification of the two-phase commit contract.
+2. **`RealityVerifierService._append_audit_trail_entry` (originally 176 lines, McCabe 34):**
+   - *Problem:* Bundled database dialect detection, PostgreSQL advisory locking (`pg_advisory_xact_lock`), tenant ledger head creation, and monotonic sequence number allocation together with audit log event payload formulation.
+   - *Maintainability Impact:* Obscured the audit event formatting behind complex database transaction and lock management code.
 
-### 6.3 Before-and-After Function Complexity & Line Counts
+### 6.3 Secondary Decomposition & Structural Simplifications Implemented
+To achieve true cohesion and eliminate relocated complexity without modifying database transaction boundaries, row-level locks, advisory locks, or security invariants:
 
-| Module & Method | Baseline Lines | Refactored Lines | Baseline McCabe Complexity | Refactored McCabe Complexity | Complexity Delta |
-|:---|:---:|:---:|:---:|:---:|:---:|
-| **`reality_verifier.py`** | | | | | |
-| `verify_action_outcome` | 637 | 397 | 118 | 62 | **-47.5% (-56 points)** |
-| `verify_record_against_audit_trail` | 305 | 247 | 52 | 36 | **-30.8% (-16 points)** |
-| `_evaluate_outcome_status_and_confidence` | — | 129 | — | 24 | *Extracted Helper* |
-| `_append_audit_trail_entry` | — | 176 | — | 34 | *Extracted Helper* |
-| **`action_governor.py`** | | | | | |
-| `propose_and_authorize_action` | 841 | 687 | 113 | 76 | **-32.7% (-37 points)** |
-| `execute_action` | 616 | 248 | 75 | 28 | **-62.7% (-47 points)** |
-| `_pre_dispatch_and_commit_executing` | — | 376 | — | 48 | *Extracted Helper (Phase 1 Commit)* |
-| `_build_outcome_assurance_contract` | — | 88 | — | 26 | *Extracted Helper* |
-| `_evaluate_risk_and_salami_budget` | — | 86 | — | 8 | *Extracted Helper* |
+1. **In `services/action_governor.py`:**
+   - **`_revalidate_execution_delegation`** (100 lines, McCabe 14): Encapsulates child transaction delegation grant revalidation at the execution boundary (parent transaction liveness, delegation grant status `ACTIVE`, expiry check, revocation check, child agent binding, and deep ancestor chain / scope constraint validation).
+   - **`_revalidate_execution_capability`** (50 lines, McCabe 5): Encapsulates fail-closed revalidation that the actor or agent still holds the active required capability at dispatch time (mitigating mid-flight privilege revocation).
+   - **`_validate_and_consume_approval`** (82 lines, McCabe 10): Encapsulates single-use approval token verification (status `GRANTED`, expiration check, cross-action replay check, and cryptographic parameter binding hash verification `compute_contract_binding_hash`) and atomically transitions approval status to `CONSUMED`.
+   - **`_pre_dispatch_and_commit_executing`** (dropped from 376 lines to 192 lines; McCabe complexity dropped from 48 to 22): Now acts as a clear, sequential coordinator for Phase 1 execution pre-dispatch and EXECUTING state commitment.
+
+2. **In `services/reality_verifier.py`:**
+   - **`_acquire_audit_chain_state`** (113 lines, McCabe 31): Encapsulates PostgreSQL dialect verification, transaction-scoped advisory locking (`pg_advisory_xact_lock`), tenant ledger head locking (`with_for_update()`), sequence number allocation, and SQLite fallback for unit testing.
+   - **`_append_audit_trail_entry`** (dropped from 176 lines to 76 lines; McCabe complexity dropped from 34 to 4): Now purely handles audit event formatting, hash computation (`compute_sha256`), and ledger record attachment.
+
+### 6.4 AST-Based McCabe Complexity & Line Count Comparison
+
+AST-based complexity analysis was conducted across the three revisions: Baseline (`51cffc0`), Initial Refactor (`1a5b7b6`), and Final Decomposed state.
+
+#### `services/reality_verifier.py` -> `RealityVerifierService`
+| Method Name | Baseline Lines | R1 Lines | Final Lines | Base McCabe | R1 McCabe | Final McCabe | Status / Change |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|
+| `__init__` | 12 | 12 | 12 | 2 | 2 | 2 | Retained |
+| `_acquire_audit_chain_state` | — | — | 113 | — | — | 31 | **New Decomposed Helper** |
+| `_append_audit_trail_entry` | — | 176 | 76 | — | 34 | 4 | **Decomposed (-30 points, -56.8% lines)** |
+| `_evaluate_outcome_status_and_confidence` | — | 129 | 129 | — | 24 | 24 | Extracted Helper |
+| `_extract_result_records` | — | 19 | 19 | — | 10 | 10 | Extracted Helper |
+| `_record_to_contract` | 103 | 103 | 103 | 25 | 25 | 25 | Retained |
+| `_validate_audit_correlation` | — | 43 | 43 | — | 8 | 8 | Extracted Helper |
+| `_validate_chain_record_fields_and_hash` | 111 | 111 | 111 | 30 | 30 | 30 | Retained |
+| `_validate_outcome_transition` | 11 | 11 | 11 | 2 | 2 | 2 | Retained |
+| `escalate_outcome` | 69 | 69 | 69 | 6 | 6 | 6 | Retained |
+| `get_outcome_by_action_id` | 35 | 35 | 35 | 8 | 8 | 8 | Retained |
+| `get_outcome_by_id` | 33 | 33 | 33 | 8 | 8 | 8 | Retained |
+| `get_pending_outcomes` | 35 | 35 | 35 | 7 | 7 | 7 | Retained |
+| `propose_compensating_action` | 11 | 11 | 11 | 1 | 1 | 1 | Retained |
+| `reconcile_output_with_outcome` | 227 | 227 | 227 | 30 | 30 | 30 | Retained |
+| `verify_action_outcome` | 637 | 397 | 397 | 118 | 62 | 62 | **Reduced (-56 points, -37.7% lines)** |
+| `verify_record_against_audit_trail` | 305 | 247 | 247 | 52 | 36 | 36 | **Reduced (-16 points, -19.0% lines)** |
+| **Sum of Method Complexity** | **1,589** | **1,658** | **1,671** | **289** | **293** | **294** | *See note below* |
+
+#### `services/action_governor.py` -> `ActionGovernorService`
+| Method Name | Baseline Lines | R1 Lines | Final Lines | Base McCabe | R1 McCabe | Final McCabe | Status / Change |
+|:---|:---:|:---:|:---:|:---:|:---:|:---:|:---|
+| `__init__` | 2 | 2 | 2 | 1 | 1 | 1 | Retained |
+| `_block_decision` | — | 19 | 19 | — | 2 | 2 | Extracted Helper |
+| `_build_outcome_assurance_contract` | — | 88 | 88 | — | 26 | 26 | Extracted Helper |
+| `_evaluate_postcondition` | 21 | 21 | 21 | 4 | 4 | 4 | Retained |
+| `_evaluate_precondition` | 20 | 20 | 20 | 11 | 11 | 11 | Retained |
+| `_evaluate_risk_and_salami_budget` | — | 86 | 86 | — | 8 | 8 | Extracted Helper |
+| `_pre_dispatch_and_commit_executing` | — | 376 | 192 | — | 48 | 22 | **Decomposed (-26 points, -48.9% lines)** |
+| `_resolve_active_fencing_token` | — | 31 | 31 | — | 7 | 7 | Extracted Helper |
+| `_revalidate_execution_capability` | — | — | 50 | — | — | 5 | **New Decomposed Helper** |
+| `_revalidate_execution_delegation` | — | — | 100 | — | — | 14 | **New Decomposed Helper** |
+| `_validate_and_consume_approval` | — | — | 82 | — | — | 10 | **New Decomposed Helper** |
+| `deny_approval` | 69 | 69 | 69 | 5 | 5 | 5 | Retained |
+| `execute_action` | 616 | 248 | 248 | 75 | 28 | 28 | **Reduced (-47 points, -59.7% lines)** |
+| `grant_approval` | 122 | 122 | 122 | 10 | 10 | 10 | Retained |
+| `list_pending_approvals` | 29 | 29 | 29 | 2 | 2 | 2 | Retained |
+| `list_stranded_actions` | 47 | 47 | 47 | 4 | 4 | 4 | Retained |
+| `list_tools` | 25 | 25 | 25 | 3 | 3 | 3 | Retained |
+| `propose_and_authorize_action` | 841 | 687 | 687 | 113 | 76 | 76 | **Reduced (-37 points, -18.3% lines)** |
+| `propose_and_authorize_batch` | 45 | 45 | 45 | 10 | 10 | 10 | Retained |
+| `reconcile_stranded_action` | 146 | 146 | 146 | 19 | 19 | 19 | Retained |
+| `register_tool` | 90 | 90 | 90 | 7 | 7 | 7 | Retained |
+| **Sum of Method Complexity** | **2,073** | **2,151** | **2,199** | **264** | **271** | **274** | *See note below* |
+
+#### Note on the Limitations of Summing Cyclomatic Complexity
+Cyclomatic complexity measures the number of linearly independent paths through a single method body ($M = E - N + 2P$, where each function definition starts with base complexity 1). When an oversized method with high cognitive load is decomposed into focused subroutines, every newly defined helper function contributes a minimum base complexity of 1 plus its own branching, causing the mathematical sum of per-method scores to increase slightly (e.g. 264 $\to$ 274), even when no new conditional logic was added. The true measure of maintainability is the **elimination of high-complexity outlier functions**:
+- In `ActionGovernorService`, the maximum method complexity fell from **113** (baseline `propose_and_authorize_action`) to **76**, and `execute_action` fell from **75** to **28**. The helper `_pre_dispatch_and_commit_executing` fell from **48** to **22**.
+- In `RealityVerifierService`, the maximum method complexity fell from **118** (baseline `verify_action_outcome`) to **62**, and `_append_audit_trail_entry` fell from **34** to **4**.
 
 ---
 
-## 7. Remaining Work & Long-Term Considerations
+## 7. Comprehensive Test & Operational Verification
 
-1. **Large Service Splitting:**
-   - Both modules now have modular, well-bounded internal helper structures with dramatically lower cyclomatic complexity. In a future major release (MIRAGE 4.0), their probe adapters (`DatabaseStateAdapter`, `HttpResourceAdapter`, `SafeAsyncHTTPTransport`) could optionally be split into a `services/adapters/` package. For MIRAGE 3.0, keeping them consolidated ensures single-file auditability of security-critical reality verification logic.
-2. **Offline Analytics:**
-   - `analytics/audit_service.py` contains `clear_in_memory_audit_store`, an in-memory test utility. It is retained to support unit test isolation in test environments where live PostgreSQL is not provisioned.
-3. **AWS Staging Infrastructure:**
-   - Staging Terraform configurations and deployment runbooks are fully prepared and verified with Terraform 1.9.0. Zero AWS resources have been created and zero cloud charges have been incurred ($0.00).
+Every test suite was executed against the modified codebase:
+
+| Verification Suite | Target Modules / Paths | Pass / Total | Exit Code | Result |
+|:---|:---|:---:|:---:|:---|
+| **Gate 5 & Reality Verifier Unit Tests** | `tests/unit/test_reality_verifier.py`, `tests/unit/test_outcome_contracts.py`, `tests/unit/test_outcome_state_machine.py`, `tests/security/test_gate5_uncertainty_remediation.py` | 40 / 40 | 0 | **PASS** |
+| **Gate 3 & Action Governor Security Tests** | `tests/unit/test_action_contract.py`, `tests/unit/test_action_governor_delegation.py`, `tests/security/test_durable_execution_mcp_adversarial.py`, `tests/security/test_phase8_prompt14_durable_execution.py`, `tests/security/test_phase8_prompt13_concurrency.py` | 59 / 59 | 0 | **PASS** |
+| **API Contract Validation** | `tests/contract/` | 31 / 31 | 0 | **PASS** |
+| **Code Style & Static Analysis** | `ruff check .` | Clean | 0 | **PASS** (0 errors) |
+| **Frontend Component & E2E Tests** | `npm test --prefix dashboard` | 182 / 182 | 0 | **PASS** |
+| **Frontend Production Build** | `npm run build --prefix dashboard` | 341.47 kB bundle | 0 | **PASS** |
+| **Staging Release Preflight** | `python scripts/verify_staging_release.py --expected-ref HEAD` | 22/22 files present | 0 | **PASS** |
 
 ---
 
-## 8. Final Disposition
+## 8. Final Authoritative Disposition
 
 ```text
-EVIDENCE VALIDATED — MAINTAINABILITY IMPROVED
+REFACTOR QUALITY VERIFIED — COMPLEXITY AND BEHAVIOR REVIEWED
 ```
+
+The refactoring of `services/reality_verifier.py` and `services/action_governor.py` has been verified in depth. The oversized helpers (`_pre_dispatch_and_commit_executing` and `_append_audit_trail_entry`) were decomposed into cohesive, single-responsibility subroutines. Two-phase commit ordering (`PROPOSED` $\to$ `AUTHORIZED` $\to$ `EXECUTING` $\to$ outcome verification), PostgreSQL advisory locks, Row-Level Security tenant boundaries, and fail-closed security invariants remain 100% intact with zero test regressions.

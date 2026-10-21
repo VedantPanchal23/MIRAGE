@@ -678,6 +678,244 @@ class ActionGovernorService:
             return None
         return None
 
+    @staticmethod
+    async def _revalidate_execution_delegation(
+        session: Any,
+        auth: AuthContext,
+        transaction: AITransaction,
+        contract: ActionContract,
+        now: datetime,
+    ) -> AgentDelegation | None:
+        """Re-verify delegation grant and parent transaction at execution boundary for child transactions."""
+        if transaction.parent_transaction_id is None:
+            return None
+
+        parent_stmt = select(AITransaction).where(
+            AITransaction.id == transaction.parent_transaction_id,
+            AITransaction.tenant_id == auth.tenant_id,
+        )
+        parent_res = await session.execute(parent_stmt)
+        parent_txn = parent_res.scalar_one_or_none()
+        if (
+            not parent_txn
+            or parent_txn.state
+            in (
+                "COMPLETED",
+                "FAILED",
+                "BLOCKED",
+                "CANCELLED",
+                "TIMEOUT",
+                "PARTIAL",
+                "TERMINATED",
+            )
+            or parent_txn.final_disposition in ("BLOCKED", "FAILED", "CANCELLED", "TIMEOUT")
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Execution blocked: Parent transaction '{transaction.parent_transaction_id}' "
+                    f"is not active (state: {parent_txn.state if parent_txn else 'NOT_FOUND'}, "
+                    f"disposition: {parent_txn.final_disposition if parent_txn else 'NONE'})."
+                ),
+            )
+
+        del_stmt = (
+            select(AgentDelegation)
+            .where(
+                AgentDelegation.tenant_id == auth.tenant_id,
+                AgentDelegation.child_transaction_id == transaction.id,
+            )
+            .with_for_update()
+        )
+        del_res = await session.execute(del_stmt)
+        delegation = del_res.scalar_one_or_none()
+        if not delegation:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Execution blocked: Child transaction '{transaction.id}' has no bound delegation grant.",
+            )
+        if delegation.status != DelegationStatus.ACTIVE.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Execution blocked: Delegation grant '{delegation.id}' "
+                    f"is not ACTIVE (current: {delegation.status})."
+                ),
+            )
+        if delegation.expires_at <= now:
+            delegation.status = DelegationStatus.EXPIRED.value
+            await session.flush()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Execution blocked: Delegation grant '{delegation.id}' has expired.",
+            )
+        if delegation.revoked_at is not None:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Execution blocked: Delegation grant '{delegation.id}' is revoked.",
+            )
+        if delegation.child_agent_id != contract.agent_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    f"Execution blocked: Delegation child agent '{delegation.child_agent_id}' "
+                    f"does not match contract agent '{contract.agent_id}'."
+                ),
+            )
+
+        # Execution-time delegation revalidation (ancestor chain, scope, constraints)
+        val_res = await delegation_service.validate_delegation_for_operation(
+            auth=auth,
+            delegation_id=delegation.id,
+            capability_type=contract.required_capability,
+            resource={"target_resource": contract.target_resource, **(contract.normalized_parameters or {})},
+            requested_autonomy_level=min(4, contract.risk_score // 20),
+            session=session,
+        )
+        if val_res.decision != Decision.ALLOW:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Execution blocked by delegation revalidation: {val_res.reason}",
+            )
+
+        return delegation
+
+    @staticmethod
+    async def _revalidate_execution_capability(
+        session: Any,
+        auth: AuthContext,
+        transaction: AITransaction,
+        contract: ActionContract,
+        delegation: AgentDelegation | None,
+        now: datetime,
+    ) -> None:
+        """Re-verify Actor still holds the required capability (Fail-closed on runtime revocation)."""
+        cap_stmt = select(Capability).where(
+            Capability.tenant_id == auth.tenant_id,
+            Capability.capability_type == contract.required_capability,
+            Capability.revoked_at.is_(None),
+            (Capability.expires_at.is_(None) | (Capability.expires_at > now)),
+        )
+        if transaction.agent_id:
+            cap_stmt = cap_stmt.where(
+                (Capability.agent_id == transaction.agent_id) | (Capability.identity_id == auth.identity_id)
+            )
+        else:
+            cap_stmt = cap_stmt.where(Capability.identity_id == auth.identity_id)
+
+        cap_res = await session.execute(cap_stmt)
+        active_caps = cap_res.scalars().all()
+        if not active_caps:
+            if delegation is not None:
+                delegated_cap_dict = next(
+                    (
+                        c
+                        for c in delegation.delegated_capabilities
+                        if c.get("capability_type") == contract.required_capability
+                    ),
+                    None,
+                )
+                if not delegated_cap_dict:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail=(
+                            f"Capability revoked or expired for required scope '{contract.required_capability}'. "
+                            "Execution blocked."
+                        ),
+                    )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail=(
+                        f"Capability revoked or expired for required scope '{contract.required_capability}'. "
+                        "Execution blocked."
+                    ),
+                )
+
+    @staticmethod
+    async def _validate_and_consume_approval(
+        session: Any,
+        auth: AuthContext,
+        contract: ActionContract,
+        now: datetime,
+    ) -> None:
+        """Validate single-use approval token and consume it atomically at execution boundary."""
+        if not contract.approval_id:
+            return
+
+        appr_stmt = (
+            select(ActionApproval)
+            .where(
+                ActionApproval.tenant_id == auth.tenant_id,
+                ActionApproval.id == contract.approval_id,
+            )
+            .with_for_update()
+        )
+        appr_res = await session.execute(appr_stmt)
+        approval = appr_res.scalar_one_or_none()
+        if not approval:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Execution forbidden: Required L4 approval was not found",
+            )
+        if approval.status == ApprovalStatus.CONSUMED.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Approval replay attack detected: Approval token has already been consumed.",
+            )
+        if approval.status != ApprovalStatus.GRANTED.value:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Execution forbidden: Approval is in status '{approval.status}'",
+            )
+        if approval.expires_at < now:
+            approval.status = ApprovalStatus.EXPIRED.value
+            await session.flush()
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Execution forbidden: Approval token has expired.",
+            )
+
+        # Cross-transaction & cross-action replay defense:
+        if approval.action_id != contract.id or approval.transaction_id != contract.transaction_id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Approval replay attack detected: Approval token does not belong to this "
+                    "action/transaction."
+                ),
+            )
+
+        # Recompute and verify contract binding hash
+        cost_val = (
+            float(contract.blast_radius.get("estimated_dollar_cost", 0.0))
+            if isinstance(contract.blast_radius, dict)
+            else 0.0
+        )
+        recomputed_hash = compute_contract_binding_hash(
+            tenant_id=contract.tenant_id,
+            transaction_id=contract.transaction_id,
+            action_id=contract.id,
+            tool_name=contract.tool_name,
+            action_type=contract.action_type,
+            target_resource=contract.target_resource,
+            parameters_hash=compute_parameters_hash(contract.normalized_parameters),
+            required_capability=contract.required_capability,
+            estimated_dollar_cost=cost_val,
+            taint_flags=contract.taint_flags,
+        )
+        if recomputed_hash != approval.parameters_hash:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=(
+                    "Parameter tampering detected: cryptographic binding fingerprint mismatch "
+                    "between contract and approval."
+                ),
+            )
+
+        # Transition approval to CONSUMED (single-use defense)
+        approval.status = ApprovalStatus.CONSUMED.value
+
     async def _pre_dispatch_and_commit_executing(
         self,
         auth: AuthContext,
@@ -816,215 +1054,31 @@ class ActionGovernorService:
                 )
 
             # Re-verify Delegation Grant and Parent Transaction at Execution Boundary for Child Transactions
-            delegation: AgentDelegation | None = None
-            if transaction.parent_transaction_id is not None:
-                parent_stmt = select(AITransaction).where(
-                    AITransaction.id == transaction.parent_transaction_id,
-                    AITransaction.tenant_id == auth.tenant_id,
-                )
-                parent_res = await session.execute(parent_stmt)
-                parent_txn = parent_res.scalar_one_or_none()
-                if (
-                    not parent_txn
-                    or parent_txn.state
-                    in (
-                        "COMPLETED",
-                        "FAILED",
-                        "BLOCKED",
-                        "CANCELLED",
-                        "TIMEOUT",
-                        "PARTIAL",
-                        "TERMINATED",
-                    )
-                    or parent_txn.final_disposition in ("BLOCKED", "FAILED", "CANCELLED", "TIMEOUT")
-                ):
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Execution blocked: Parent transaction '{transaction.parent_transaction_id}' "
-                            f"is not active (state: {parent_txn.state if parent_txn else 'NOT_FOUND'}, "
-                            f"disposition: {parent_txn.final_disposition if parent_txn else 'NONE'})."
-                        ),
-                    )
-
-                del_stmt = (
-                    select(AgentDelegation)
-                    .where(
-                        AgentDelegation.tenant_id == auth.tenant_id,
-                        AgentDelegation.child_transaction_id == transaction.id,
-                    )
-                    .with_for_update()
-                )
-                del_res = await session.execute(del_stmt)
-                delegation = del_res.scalar_one_or_none()
-                if not delegation:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Execution blocked: Child transaction '{transaction.id}' has no bound delegation grant."
-                        ),
-                    )
-                if delegation.status != DelegationStatus.ACTIVE.value:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Execution blocked: Delegation grant '{delegation.id}' "
-                            f"is not ACTIVE (current: {delegation.status})."
-                        ),
-                    )
-                if delegation.expires_at <= now:
-                    delegation.status = DelegationStatus.EXPIRED.value
-                    await session.flush()
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Execution blocked: Delegation grant '{delegation.id}' has expired.",
-                    )
-                if delegation.revoked_at is not None:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Execution blocked: Delegation grant '{delegation.id}' is revoked.",
-                    )
-                if delegation.child_agent_id != contract.agent_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Execution blocked: Delegation child agent '{delegation.child_agent_id}' "
-                            f"does not match contract agent '{contract.agent_id}'."
-                        ),
-                    )
-
-                # Execution-time delegation revalidation (ancestor chain, scope, constraints)
-                val_res = await delegation_service.validate_delegation_for_operation(
-                    auth=auth,
-                    delegation_id=delegation.id,
-                    capability_type=contract.required_capability,
-                    resource={"target_resource": contract.target_resource, **(contract.normalized_parameters or {})},
-                    requested_autonomy_level=min(4, contract.risk_score // 20),
-                    session=session,
-                )
-                if val_res.decision != Decision.ALLOW:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Execution blocked by delegation revalidation: {val_res.reason}",
-                    )
+            delegation = await self._revalidate_execution_delegation(
+                session=session,
+                auth=auth,
+                transaction=transaction,
+                contract=contract,
+                now=now,
+            )
 
             # Re-verify Actor still holds the required capability (Fail-closed on runtime revocation)
-            cap_stmt = select(Capability).where(
-                Capability.tenant_id == auth.tenant_id,
-                Capability.capability_type == contract.required_capability,
-                Capability.revoked_at.is_(None),
-                (Capability.expires_at.is_(None) | (Capability.expires_at > now)),
+            await self._revalidate_execution_capability(
+                session=session,
+                auth=auth,
+                transaction=transaction,
+                contract=contract,
+                delegation=delegation,
+                now=now,
             )
-            if transaction.agent_id:
-                cap_stmt = cap_stmt.where(
-                    (Capability.agent_id == transaction.agent_id) | (Capability.identity_id == auth.identity_id)
-                )
-            else:
-                cap_stmt = cap_stmt.where(Capability.identity_id == auth.identity_id)
-
-            cap_res = await session.execute(cap_stmt)
-            active_caps = cap_res.scalars().all()
-            if not active_caps:
-                if delegation is not None:
-                    delegated_cap_dict = next(
-                        (
-                            c
-                            for c in delegation.delegated_capabilities
-                            if c.get("capability_type") == contract.required_capability
-                        ),
-                        None,
-                    )
-                    if not delegated_cap_dict:
-                        raise HTTPException(
-                            status_code=status.HTTP_403_FORBIDDEN,
-                            detail=(
-                                f"Capability revoked or expired for required scope '{contract.required_capability}'. "
-                                "Execution blocked."
-                            ),
-                        )
-                else:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            f"Capability revoked or expired for required scope '{contract.required_capability}'. "
-                            "Execution blocked."
-                        ),
-                    )
 
             # Approval Replay & Tamper Defense:
-            if contract.approval_id:
-                appr_stmt = (
-                    select(ActionApproval)
-                    .where(
-                        ActionApproval.tenant_id == auth.tenant_id,
-                        ActionApproval.id == contract.approval_id,
-                    )
-                    .with_for_update()
-                )
-                appr_res = await session.execute(appr_stmt)
-                approval = appr_res.scalar_one_or_none()
-                if not approval:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Execution forbidden: Required L4 approval was not found",
-                    )
-                if approval.status == ApprovalStatus.CONSUMED.value:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Approval replay attack detected: Approval token has already been consumed.",
-                    )
-                if approval.status != ApprovalStatus.GRANTED.value:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=f"Execution forbidden: Approval is in status '{approval.status}'",
-                    )
-                if approval.expires_at < now:
-                    approval.status = ApprovalStatus.EXPIRED.value
-                    await session.flush()
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail="Execution forbidden: Approval token has expired.",
-                    )
-
-                # Cross-transaction & cross-action replay defense:
-                if approval.action_id != contract.id or approval.transaction_id != contract.transaction_id:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            "Approval replay attack detected: Approval token does not belong to this "
-                            "action/transaction."
-                        ),
-                    )
-
-                # Recompute and verify contract binding hash
-                cost_val = (
-                    float(contract.blast_radius.get("estimated_dollar_cost", 0.0))
-                    if isinstance(contract.blast_radius, dict)
-                    else 0.0
-                )
-                recomputed_hash = compute_contract_binding_hash(
-                    tenant_id=contract.tenant_id,
-                    transaction_id=contract.transaction_id,
-                    action_id=contract.id,
-                    tool_name=contract.tool_name,
-                    action_type=contract.action_type,
-                    target_resource=contract.target_resource,
-                    parameters_hash=compute_parameters_hash(contract.normalized_parameters),
-                    required_capability=contract.required_capability,
-                    estimated_dollar_cost=cost_val,
-                    taint_flags=contract.taint_flags,
-                )
-                if recomputed_hash != approval.parameters_hash:
-                    raise HTTPException(
-                        status_code=status.HTTP_403_FORBIDDEN,
-                        detail=(
-                            "Parameter tampering detected: cryptographic binding fingerprint mismatch "
-                            "between contract and approval."
-                        ),
-                    )
-
-                # Transition approval to CONSUMED (single-use defense)
-                approval.status = ApprovalStatus.CONSUMED.value
+            await self._validate_and_consume_approval(
+                session=session,
+                auth=auth,
+                contract=contract,
+                now=now,
+            )
 
             # Concurrency & Fencing Token Execution Boundary Revalidation
             lease_val = await concurrency_service.validate_lease_for_action(

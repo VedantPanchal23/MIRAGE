@@ -1416,27 +1416,13 @@ class RealityVerifierService:
 
         return outcome_status, epistemic_confidence
 
-    async def _append_audit_trail_entry(
-        self,
-        *,
+    @staticmethod
+    async def _acquire_audit_chain_state(
         session: Any,
-        auth: AuthContext,
-        request: OutcomeVerificationRequest,
-        action: ActionContract,
-        record: OutcomeVerificationRecord,
-        outcome_status: OutcomeStatus,
-        epistemic_confidence: float,
-        probe_result: AdapterProbeResult,
-        obs_class: ObservabilityClass,
-        target_env: str,
-        idempotency_key: str,
-        effective_postconditions: dict[str, Any],
-        verification_hash: str,
+        tenant_id: str,
         verified_at_dt: datetime,
-        verified_at_iso: str,
-        discrepancies: list[str],
-    ) -> None:
-        """Append verified Gate 5 outcome event to tenant cryptographic audit ledger."""
+    ) -> tuple[str, int, TenantAuditLedger | None]:
+        """Acquire serialized tenant audit chain state and compute monotonically increasing sequence number."""
         app_settings = get_settings()
         ledger_head_row = None
         is_live_postgres = False
@@ -1468,7 +1454,7 @@ class RealityVerifierService:
             # A. Transaction-scoped PostgreSQL advisory lock serializes concurrent transactions per tenant
             await session.execute(
                 text("SELECT pg_advisory_xact_lock(hashtext('tenant_audit_ledger:' || :tenant_id))"),
-                {"tenant_id": auth.tenant_id},
+                {"tenant_id": tenant_id},
             )
 
             # B. Ensure persistent tenant ledger head row exists
@@ -1482,13 +1468,13 @@ class RealityVerifierService:
                     ON CONFLICT (tenant_id) DO NOTHING
                     """
                 ),
-                {"tenant_id": auth.tenant_id, "genesis_hash": GENESIS_ROOT_HASH, "now": verified_at_dt},
+                {"tenant_id": tenant_id, "genesis_hash": GENESIS_ROOT_HASH, "now": verified_at_dt},
             )
 
             # C. Row-level lock on the persistent tenant ledger head
             ledger_head_stmt = (
                 select(TenantAuditLedger)
-                .where(TenantAuditLedger.tenant_id == auth.tenant_id)
+                .where(TenantAuditLedger.tenant_id == tenant_id)
                 .with_for_update()
             )
             ledger_res = await session.execute(ledger_head_stmt)
@@ -1496,13 +1482,13 @@ class RealityVerifierService:
             if ledger_head_row is None:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                    detail=f"Authoritative tenant audit ledger head missing for tenant '{auth.tenant_id}'",
+                    detail=f"Authoritative tenant audit ledger head missing for tenant '{tenant_id}'",
                 )
 
             # Monotonically link to the latest audit log entry if present
             latest_audit_stmt = (
                 select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
-                .where(AuditLogRecord.tenant_id == auth.tenant_id)
+                .where(AuditLogRecord.tenant_id == tenant_id)
                 .order_by(AuditLogRecord.sequence_number.desc(), AuditLogRecord.created_at.desc())
                 .limit(1)
             )
@@ -1521,7 +1507,7 @@ class RealityVerifierService:
             try:
                 latest_audit = await session.execute(
                     select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
-                    .where(AuditLogRecord.tenant_id == auth.tenant_id)
+                    .where(AuditLogRecord.tenant_id == tenant_id)
                     .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
                     .limit(1)
                 )
@@ -1542,6 +1528,35 @@ class RealityVerifierService:
             except (Exception, StopAsyncIteration):
                 prev_chain_hash = GENESIS_ROOT_HASH
                 new_sequence = 1
+
+        return prev_chain_hash, new_sequence, ledger_head_row
+
+    async def _append_audit_trail_entry(
+        self,
+        *,
+        session: Any,
+        auth: AuthContext,
+        request: OutcomeVerificationRequest,
+        action: ActionContract,
+        record: OutcomeVerificationRecord,
+        outcome_status: OutcomeStatus,
+        epistemic_confidence: float,
+        probe_result: AdapterProbeResult,
+        obs_class: ObservabilityClass,
+        target_env: str,
+        idempotency_key: str,
+        effective_postconditions: dict[str, Any],
+        verification_hash: str,
+        verified_at_dt: datetime,
+        verified_at_iso: str,
+        discrepancies: list[str],
+    ) -> None:
+        """Append verified Gate 5 outcome event to tenant cryptographic audit ledger."""
+        prev_chain_hash, new_sequence, ledger_head_row = await self._acquire_audit_chain_state(
+            session=session,
+            tenant_id=auth.tenant_id,
+            verified_at_dt=verified_at_dt,
+        )
 
         entry_id = f"aud_{uuid.uuid4().hex}"
         chain_hash = compute_sha256(f"{prev_chain_hash}:{entry_id}:{outcome_status.value}:{verified_at_iso}")

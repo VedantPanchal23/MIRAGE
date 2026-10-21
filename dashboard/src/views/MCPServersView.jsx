@@ -2,7 +2,6 @@ import React, { useState, useEffect, useCallback, useContext } from "react";
 import {
   Server,
   ShieldCheck,
-  ShieldAlert,
   AlertTriangle,
   CheckCircle,
   XCircle,
@@ -15,7 +14,6 @@ import {
   Clock,
   Layers,
   X,
-  Play,
   RotateCw,
 } from "lucide-react";
 import {

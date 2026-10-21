@@ -32,6 +32,10 @@ export {
 } from "./health";
 
 export {
+  getIdentity,
+} from "./auth";
+
+export {
   generateReport,
   getReportById,
   getReportPdf,

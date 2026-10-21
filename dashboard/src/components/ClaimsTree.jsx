@@ -1,5 +1,5 @@
 import React from "react";
-import { CheckCircle2, XCircle, AlertCircle, FileText, Sparkles } from "lucide-react";
+import { CheckCircle2, XCircle, AlertCircle, Sparkles } from "lucide-react";
 
 /**
  * ClaimsTree Component

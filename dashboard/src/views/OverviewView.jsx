@@ -8,7 +8,6 @@ import {
   Database,
   BarChart2,
   RefreshCw,
-  Building,
 } from "lucide-react";
 import { getDashboardStats, getHealth } from "../api";
 import { MetricCard } from "../components/MetricCard";

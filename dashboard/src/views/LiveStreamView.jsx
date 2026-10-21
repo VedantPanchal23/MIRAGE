@@ -10,7 +10,6 @@ import {
   AlertTriangle,
   Layers,
   Activity,
-  ShieldAlert,
   ShieldCheck,
   Cpu,
   Clock,

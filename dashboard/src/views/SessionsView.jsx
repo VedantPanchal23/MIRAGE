@@ -1,17 +1,10 @@
 import React, { useEffect, useState, useCallback } from "react";
 import {
-  ListFilter,
-  Search,
   ChevronLeft,
   ChevronRight,
   Database,
   AlertCircle,
   RefreshCw,
-  ShieldCheck,
-  Activity,
-  Layers,
-  Sparkles,
-  ExternalLink,
 } from "lucide-react";
 import { getDashboardSessions, getSessionById } from "../api";
 import { ClaimsTree } from "../components/ClaimsTree";

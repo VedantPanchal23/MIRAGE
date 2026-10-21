@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { BarChart2, Table, Eye, EyeOff } from "lucide-react";
+import { BarChart2, Table } from "lucide-react";
 
 /**
  * 10 Uniform probability bins across [0.0, 1.0] for HRS distribution comparison.

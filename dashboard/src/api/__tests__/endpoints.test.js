@@ -14,6 +14,9 @@ import {
   getReadiness,
 } from "../health";
 import {
+  getIdentity,
+} from "../auth";
+import {
   generateReport,
   getReportById,
   getReportPdf,
@@ -148,6 +151,22 @@ describe("Domain API Bindings (endpoints.test.js)", () => {
       expect(res.status).toBe("ready");
       const [url] = global.fetch.mock.calls[0];
       expect(url).toBe("/v1/ready");
+    });
+  });
+
+  describe("Auth Endpoints", () => {
+    it("getIdentity calls GET /v1/auth/me", async () => {
+      global.fetch.mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "content-type": "application/json" }),
+        json: async () => ({ tenant_id: "tenant_alpha", role: "operator", user_id: "op_1" }),
+      });
+
+      const res = await getIdentity();
+      expect(res.tenant_id).toBe("tenant_alpha");
+      const [url] = global.fetch.mock.calls[0];
+      expect(url).toBe("/v1/auth/me");
     });
   });
 

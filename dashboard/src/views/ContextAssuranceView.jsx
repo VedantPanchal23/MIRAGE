@@ -9,13 +9,8 @@ import {
   RefreshCw,
   AlertTriangle,
   Lock,
-  FileText,
   Terminal,
-  Key,
-  Search,
-  Tag,
   Clock,
-  Archive,
   AlertOctagon,
   CheckCircle2,
 } from "lucide-react";

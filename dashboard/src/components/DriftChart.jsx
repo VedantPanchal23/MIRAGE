@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { LineChart, Calendar, Table } from "lucide-react";
+import { LineChart, Table } from "lucide-react";
 
 /**
  * Standard selectable time-series windows in days.

@@ -4,24 +4,16 @@ import {
   Network,
   GitBranch,
   Key,
-  ShieldAlert,
-  ShieldCheck,
   CheckCircle,
   XCircle,
   AlertTriangle,
   Clock,
   RefreshCw,
   Plus,
-  Play,
   X,
-  ExternalLink,
-  ChevronRight,
-  ChevronDown,
   Layers,
   ArrowRight,
-  Database,
   Lock,
-  Unlock,
   AlertCircle,
   Copy,
   Check,
@@ -49,7 +41,7 @@ import {
   renewLease,
   getTransactionHierarchy,
 } from "../api/multiagent";
-import { AuthContext, ROLES } from "../context/AuthContext";
+import { AuthContext } from "../context/AuthContext";
 
 /**
  * Phase 8 Governed Multi-Agent Governance & Assurance View.

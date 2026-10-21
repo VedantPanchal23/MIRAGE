@@ -52,8 +52,14 @@ variable "admin_cidrs" {
 
 variable "enable_public_edge" {
   type        = bool
-  description = "Whether to assign a public IPv4 address to the staging host. Set to false for 100% private SSM-only bastionless access"
+  description = "Whether to assign a public IPv4 address to the staging host for direct outbound egress (SSM, Secrets Manager, LLM APIs). When true, security groups strictly enforce zero inbound rules (no public ports). When false, requires enable_vpc_endpoints or NAT Gateway for SSM connectivity"
   default     = true
+}
+
+variable "enable_vpc_endpoints" {
+  type        = bool
+  description = "Provision AWS PrivateLink VPC endpoints for SSM, Secrets Manager, KMS, and S3 Gateway when public edge is disabled"
+  default     = false
 }
 
 variable "enable_audit_s3_bucket" {

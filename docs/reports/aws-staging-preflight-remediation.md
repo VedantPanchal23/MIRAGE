@@ -1,124 +1,107 @@
-# MIRAGE 3.0 — AWS Staging Pre-Provisioning Blocker Remediation Report
+# MIRAGE 3.0 — AWS Staging Pre-Plan Hardening and Evidence Gate Report
 
-> **Platform:** MIRAGE 3.0 — AI Execution Assurance Platform  
-> **Repository:** `VedantPanchal23/MIRAGE`  
-> **Branch:** `main`  
-> **Baseline Commit:** `1181e33fb4c90448a45ec29cf5c500959b8f6f29`  
-> **Target Environment:** AWS Private Staging (`us-east-1`)  
-> **Governing Invariant:** *“Control AI before it acts. Verify AI after it acts.”*  
-> **Scope:** Cloud Pre-Provisioning Remediation & Artifact Hardening (Zero AWS cloud resources created; zero charges incurred)
-
----
-
-## 1. Executive Summary
-
-Prior to initiating live cloud infrastructure provisioning for MIRAGE 3.0 private staging, an architectural and source code security review identified seven concrete deployment blockers. These blockers spanned release revision pinning, database privilege separation, document store identity wiring, S3 audit immutability alignment, network perimeter ingress enforcement, fail-closed startup validation on placeholder secrets, and automated CI Terraform validation.
-
-All seven blockers have been remediated in place, validated across local Docker and Python test harnesses, and aligned with the canonical architecture specifications and operational runbooks.
+> **Platform:** MIRAGE 3.0 — AI Execution Assurance Platform<br>
+> **Repository:** `VedantPanchal23/MIRAGE`<br>
+> **Branch:** `main`<br>
+> **Baseline Commit:** `2d7b8aa081e6b81d77a0ba1396b79720077c5c0c`<br>
+> **Target Environment:** AWS Private Staging (`us-east-1`)<br>
+> **Governing Invariant:** *“Control AI before it acts. Verify AI after it acts.”*<br>
+> **Cloud Incurrence Policy:** **Zero AWS cloud resources created; zero cloud charges incurred.**
 
 ---
 
-## 2. Remediated Blockers & Verification Evidence
+## 1. Executive Summary & Verification Baseline
 
-### Blocker 1: Deployment Revision Selection & Release Preflight Verification
-- **Vulnerability / Defect:** Staging documentation and operational runbooks hardcoded checkout of a stale commit (`144556e...`), risking silent deployment of unintended or unverified code revisions.
-- **Remediation:**
-  1. Authoring of `scripts/verify_staging_release.py`: An automated preflight verification utility that validates that the active checkout matches the reviewed release target (`--expected-ref` or `MIRAGE_RELEASE_REF`), verifies all 22 required topology and IaC artifacts, confirms clean working-tree status, and checks security invariants.
-  2. Updated `docs/deployment/aws-private-staging.md` to require explicit specification of `MIRAGE_RELEASE_REF` and execution of preflight verification prior to any container launch.
-- **Verification Evidence:**
-  - Tested against mismatched commit `144556e...`: Preflight aborted fail-closed with exit code `1`.
-  - Tested against current revision `HEAD`: Passed with exit code `0`.
+This report documents the resolution of pre-plan deployment blockers, bootstrap secret handling hardening, network mode validation, and S3 Object Lock lifecycle verification prior to preparing a reviewed Terraform plan.
+
+All validations were executed in reproducible local environments (Docker `hashicorp/terraform:1.9.0`, Python 3.13, Docker Compose 2.x). No AWS infrastructure was provisioned, no real secrets were exposed, and no cloud charges were incurred.
 
 ---
 
-### Blocker 2: Privileged Database Migration Credentials Stripped from Application Runtime
-- **Vulnerability / Defect:** `docker-compose.staging.yml` provided `DATABASE_SYNC_URL` and `POSTGRES_PASSWORD` (belonging to migration DDL owner `mirage`) directly to `mirage-gateway` and `mirage-worker`, violating least privilege and risking schema manipulation by runtime processes.
-- **Remediation:**
-  1. Updated `shared/config/settings.py` to make `database_sync_url: str | None = Field(default=None)` optional for runtime application services.
-  2. Updated `db/migrations/env.py` to safely fall back to normalized `database_url` if `database_sync_url` is omitted.
-  3. Stripped `DATABASE_SYNC_URL` and `POSTGRES_PASSWORD` from `mirage-gateway` and `mirage-worker` in `docker-compose.staging.yml`.
-  4. Preserved migration credentials strictly for the ephemeral `mirage-migration` container.
-- **Verification Evidence:**
-  - Regression test `test_database_sync_url_optional_for_runtime` passed (exit code `0`).
-  - Staging compose inspection test `test_staging_compose_identity_and_credentials_hygiene` confirmed omission of migration credentials from gateway and worker blocks.
+## 2. Pre-Plan Hardening & Architectural Invariants
+
+### 2.1 Fail-Closed Bootstrap Secret Handling
+- **Previous Vulnerability:** `infra/terraform/ec2.tf` generated a shell script that piped raw Secrets Manager JSON through `jq -r` directly into `/opt/mirage/.env`. This approach risked partial file writes on failure, had no quote or dollar-sign escaping for Docker Compose, did not validate mandatory secrets, and did not reject placeholder values.
+- **Hardened Architecture:**
+  1. Replaced the raw `jq` pipeline in `infra/terraform/ec2.tf` with the canonical, tested [`scripts/fetch_secrets.py`](file:///scripts/fetch_secrets.py) utility.
+  2. Packaged `fetch_secrets.py` inside `infra/terraform/scripts/` to ensure self-contained, reproducible Terraform distribution across both local Docker mounts and remote CI runners.
+  3. Enforced atomic writes in `write_env_file_secure`: secrets are written to a temporary PID-scoped file (`.{filename}.tmp.{pid}`), flushed and synced (`os.fsync`), assigned restrictive permissions (`0600`), and atomically renamed (`os.replace`). If an error occurs, the temporary file is unlinked and no partially written `.env` is ever left on disk.
+  4. Enforced strict validation: Fails closed on missing mandatory secrets (10 platform keys), while keeping optional LLM provider keys optional when empty/unset. Any placeholder values (`REPLACE_WITH_*`, `your_*`, `changeme`, or default dev passwords) abort startup immediately with exit code `2`.
+  5. Implemented comprehensive special character escaping: Single quotes, double quotes, backslashes (`\\`), dollar signs (`$$` interpolation prevention), Unicode characters, whitespace, and newlines (`\n`) are preserved safely for Docker Compose.
+
+### 2.2 Network Modes & Egress Isolation
+- **Mode A: Cost-Optimized Private Staging with Direct Egress (Default)**:
+  - Configuration: `enable_public_edge = true`, `enable_vpc_endpoints = false`
+  - Egress: Outbound HTTPS (443) via Internet Gateway to AWS Systems Manager, Secrets Manager, S3, Docker Hub, package repositories, and LLM APIs.
+  - Ingress: Host security group strictly enforces **zero public inbound rules** (`ingress = []`). All unsolicited inbound connections are dropped at the hypervisor level.
+  - Access: Exclusively via authenticated AWS SSM Session Manager port forwarding tunnels (Gateway: 8000, Dashboard: 8080, Grafana: 3001).
+  - Cost: Public IPv4 address fee of \$0.005/hr (~\$3.60/month in `us-east-1`). Zero NAT Gateway costs (\$0/mo) and zero VPC endpoint fees (\$0/mo).
+- **Mode B: Strict Private Subnet Mode with PrivateLink Endpoints**:
+  - Configuration: `enable_public_edge = false`, `enable_vpc_endpoints = true`
+  - Egress: Disables public IPv4 address assignment. Provisions PrivateLink Interface Endpoints for SSM, SSMMessages, EC2Messages, Secrets Manager, and KMS, plus a free S3 Gateway Endpoint (`infra/terraform/vpc_endpoints.tf`).
+  - Cost: \$0.01/hr per interface endpoint AZ (5 endpoints * \$7.20/mo = ~\$36.00/month). Public IPv4 fee is eliminated (\$0.00). Direct egress to external LLM APIs requires an outbound proxy or NAT Gateway.
+- **Safety Assertion**: Added a Terraform `check "network_mode_safety"` block verifying `var.enable_public_edge || var.enable_vpc_endpoints`, preventing accidental creation of a stranded instance with no route to SSM.
+
+### 2.3 S3 Object Lock Lifecycle & Teardown Realities
+- **Storage WORM vs Application Audit Hash Chaining**:
+  - S3 Object Lock provides physical storage-layer Write-Once-Read-Many (WORM) immutability.
+  - The MIRAGE audit ledger engine provides application-layer cryptographic proof via SHA-256 hash chaining of audit anchor proofs.
+  - External notary anchoring provides third-party cryptographic attestation. S3 Object Lock provides durable cold storage but does not substitute for application-level hash chain verification.
+- **GOVERNANCE Mode (Staging Default, 90-Day Retention)**:
+  - Objects cannot be overwritten or deleted by non-privileged roles.
+  - Teardown requires the operator principal to possess `s3:BypassGovernanceRetention` permission. Updated [`scripts/teardown_aws_staging.sh`](file:///scripts/teardown_aws_staging.sh) to query locked versions and purge them using `--bypass-governance-retention` prior to `terraform destroy`.
+- **COMPLIANCE Mode (Production Invariant)**:
+  - AWS mathematically prohibits object deletion and bucket destruction by **any** IAM identity (including the AWS root account) until the retention period expires.
+  - In Compliance mode, `force_destroy` is unconditionally disabled (`force_destroy = false`). Standard automated teardown **cannot delete** a compliance-locked bucket while retained versions exist.
+
+### 2.4 Release Preflight Hardening
+- [`scripts/verify_staging_release.py`](file:///scripts/verify_staging_release.py) strictly requires an explicit reviewed release reference (`--expected-ref` or `MIRAGE_RELEASE_REF`), verifies the checked-out commit matches it, and rejects dirty trees by default.
+- Verifies substantive security invariants:
+  - Zero `0.0.0.0/0` ingress rules in security groups.
+  - Absence of `DATABASE_SYNC_URL` and `POSTGRES_PASSWORD` from gateway and worker compose definitions.
+  - Correct wiring of `MONGO_APP_USER` in MongoDB compose configuration.
+  - IMDSv2 enforcement (`http_tokens = "required"`) in EC2 instance configuration.
+  - Elimination of raw `jq` piping to `.env` in user data.
+  - TLS-only transport enforcement (`aws:SecureTransport = "false"` deny) and public access block on the S3 audit bucket.
 
 ---
 
-### Blocker 3: MongoDB Least-Privilege Identity & Dynamic Initialization
-- **Vulnerability / Defect:** `docker-compose.staging.yml` erroneously referenced `POSTGRES_APP_USER` in `mirage-mongodb`, and `docker/mongo-init.js` contained hardcoded credentials unable to adapt to environment-driven secrets.
-- **Remediation:**
-  1. Corrected `docker-compose.staging.yml` to supply `MONGO_APP_USER` and `MONGO_APP_PASSWORD`.
-  2. Added `MONGO_APP_USER` and `MONGO_APP_PASSWORD` environment mappings to `mongodb` in `docker-compose.yml`.
-  3. Refactored `docker/mongo-init.js` to dynamically read `process.env.MONGO_APP_USER`, `process.env.MONGO_APP_PASSWORD`, and `process.env.MONGO_DB`, creating the unprivileged application user with scoped `readWrite` role on `mirage_traces`.
-- **Verification Evidence:**
-  - Validated Docker Compose configuration via `docker compose -f docker-compose.yml -f docker-compose.staging.yml config --quiet` (exit code `0`).
-  - Unit test `test_staging_compose_identity_and_credentials_hygiene` verified `POSTGRES_APP_USER` is absent and `MONGO_APP_USER` is correctly bound.
+## 3. Comprehensive Itemized Cost Inventory (`us-east-1`)
+
+| Cost Category | AWS Resource | Pricing Basis (`us-east-1`) | 24/7 Monthly Estimate | On-Demand (40 hrs/mo) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Compute** | EC2 `t3.large` (2 vCPU, 8 GB RAM) | \$0.0832 / hour | \$59.90 | \$3.33 |
+| **Block Storage** | GP3 Root EBS (50 GB, 3000 IOPS, 125 MB/s) | \$0.08 / GB-month | \$4.00 | \$4.00 (persists when stopped) |
+| **Public IPv4** | In-use Public IPv4 (Outbound Egress Only, Mode A) | \$0.005 / hour | \$3.60 | \$0.20 |
+| **Encryption** | KMS Customer Managed Key (`alias/mirage-staging`) | \$1.00 / month + \$0.03 / 10k requests | \$1.05 | \$1.05 |
+| **Secrets** | AWS Secrets Manager (1 Secret) | \$0.40 / secret-month + \$0.05 / 10k API calls | \$0.45 | \$0.45 |
+| **Audit Storage** | S3 Standard (Audit Proofs & Backups ~5 GB) | \$0.023 / GB-month + PUT/GET requests | \$0.20 | \$0.05 |
+| **Data Transfer** | Outbound Internet Egress (SSM, LLM APIs) | First 100 GB/month free from AWS | \$0.00 | \$0.00 |
+| **Network Endpoints**| NAT Gateway & VPC Endpoints (Mode A) | Not provisioned in Mode A | \$0.00 | \$0.00 |
+| **TOTAL** | **Full 12-Container Stack** | — | **~\$69.20 / month** | **~\$9.08 / month** |
 
 ---
 
-### Blocker 4: S3 Audit Immutability & Object Lock Teardown Alignment
-- **Vulnerability / Defect:** S3 bucket configuration and deployment runbooks contained conflicting claims regarding Object Lock compliance mode and simple bucket teardown. In AWS, an S3 bucket in `COMPLIANCE` mode cannot be deleted by any IAM principal (including root) until the retention period expires.
-- **Remediation:**
-  1. Added `enable_s3_object_lock` (default `true`), `s3_object_lock_mode` (default `"GOVERNANCE"` for staging), and `s3_object_lock_retention_days` (default `90`) to `infra/terraform/variables.tf`.
-  2. Added `aws_s3_bucket_object_lock_configuration` to `infra/terraform/s3.tf` enforcing WORM retention on audit proofs.
-  3. Configured `force_destroy` to be conditionally disabled when `s3_object_lock_mode == "COMPLIANCE"`.
-  4. Updated `docs/deployment/aws-private-staging.md` to document that `GOVERNANCE` mode allows controlled teardown with `s3:BypassGovernanceRetention`, while `COMPLIANCE` mode provides mathematical immutability suitable for production.
-- **Verification Evidence:**
-  - `terraform validate` executed via Docker `hashicorp/terraform:1.9.0` succeeded (exit code `0`).
+## 4. Verification Evidence & Command Log
 
----
-
-### Blocker 5: Zero Unsolicited Public Inbound Access via Security Groups
-- **Vulnerability / Defect:** The staging host security group defined dynamic public ingress rules allowing inbound connections from `0.0.0.0/0` on application ports.
-- **Remediation:**
-  1. Stripped dynamic public ingress rules from `infra/terraform/security_groups.tf`. The staging host security group now strictly enforces `ingress = []` (zero open inbound ports).
-  2. All ingress access to the Gateway (8000), Dashboard (8080), and Grafana (3001) is routed exclusively through authenticated AWS Systems Manager Session Manager (SSM) port forwarding tunnels or shell sessions.
-  3. Outbound egress is restricted to HTTPS (port 443) for AWS endpoints, upstream model providers, and verified package repositories.
-- **Verification Evidence:**
-  - `terraform validate` passed cleanly.
-  - `scripts/verify_staging_release.py` enforces zero `0.0.0.0/0` ingress rules in `security_groups.tf`.
-
----
-
-### Blocker 6: Fail-Closed Placeholder Secret Rejection & Safe Dotenv Serialization
-- **Vulnerability / Defect:** Deployments using unfilled placeholder values (`REPLACE_WITH_*`, `your_*`, `changeme`, or development default credentials) could silently start with degraded security postures. Furthermore, JSON secrets from Secrets Manager containing quotes, backslashes, or `$` characters risked corruption during shell expansion.
-- **Remediation:**
-  1. Implemented `is_insecure_placeholder()` in `shared/config/settings.py` checking for empty values, development defaults (`mirage_dev_secret`, `mirage_redis_secret`, etc.), and placeholder prefixes (`replace_with_`, `your_`, `placeholder`, `changeme`).
-  2. Updated `validate_staging_configuration()` and `validate_production_configuration()` to fail closed at startup if mandatory credentials or configured provider API keys contain placeholders.
-  3. Authored `scripts/fetch_secrets.py`: A dedicated utility that retrieves AWS Secrets Manager JSON, safely serializes values to Docker Compose `.env` format (escaping `\`, `"`, and `$` to prevent unwanted variable interpolation), validates values against placeholder rules, and sets POSIX file permissions to `0600` (root read/write only).
-- **Verification Evidence:**
-  - Unit tests `test_placeholder_secrets_rejected_in_staging` and `test_secret_serializer_handles_special_characters` passed.
-
----
-
-### Blocker 7: CI Automation for Terraform Formatting and Validation
-- **Vulnerability / Defect:** The continuous integration workflow (`.github/workflows/ci.yml`) ran `terraform fmt -check`, but lacked `terraform init -backend=false` and `terraform validate` steps to catch syntax or provider configuration errors on pull requests.
-- **Remediation:**
-  1. Updated `.github/workflows/ci.yml` `infra-validate` job to add `terraform init -backend=false` and `terraform validate` targeting `infra/terraform`.
-  2. Pinned Terraform version to `1.9.0` via `hashicorp/setup-terraform@v3`.
-  3. Created `.terraform.lock.hcl` and updated `.gitignore` to track provider checksums while ignoring local state and crash logs.
-- **Verification Evidence:**
-  - Executed identical commands locally inside `hashicorp/terraform:1.9.0` container; all checks exited with code `0`.
-
----
-
-## 3. Comprehensive Validation Matrix
-
-| Validation Phase | Command Executed | Exit Code | Result |
-| :--- | :--- | :--- | :--- |
-| **Terraform Formatting** | `docker run --rm -v "${PWD}/infra/terraform:/workspace" -w /workspace hashicorp/terraform:1.9.0 fmt -check -diff` | `0` | **CLEAN** (Formatted per standard) |
-| **Terraform Init** | `docker run --rm -v "${PWD}/infra/terraform:/workspace" -w /workspace hashicorp/terraform:1.9.0 init -backend=false` | `0` | **SUCCESS** (AWS 5.100.0 & Random 3.9.1 initialized) |
+| Validation Target | Exact Command Executed | Exit Code | Result |
+| :--- | :--- | :---: | :--- |
+| **Terraform Format** | `docker run --rm -v "${PWD}/infra/terraform:/workspace" -w /workspace hashicorp/terraform:1.9.0 fmt -check -diff` | `0` | **CLEAN** |
 | **Terraform Validate** | `docker run --rm -v "${PWD}/infra/terraform:/workspace" -w /workspace hashicorp/terraform:1.9.0 validate` | `0` | **SUCCESS** (`Success! The configuration is valid.`) |
-| **Base Compose Config** | `docker compose -f docker-compose.yml config --quiet` | `0` | **VALID** (12 services structurally sound) |
-| **Staging Compose Config** | `docker compose -f docker-compose.yml -f docker-compose.staging.yml config --quiet` | `0` | **VALID** (Overrides validated without syntax errors) |
-| **Security Test Suite** | `pytest tests/security/test_staging_configuration.py tests/security/test_deployment_hardening.py tests/security/test_cors_configuration.py -v` | `0` | **33 PASSED / 0 FAILED** |
-| **Code Linting** | `ruff check shared/ scripts/ tests/security/` | `0` | **CLEAN** (All rules compliant) |
-| **Release Preflight** | `python scripts/verify_staging_release.py --allow-dirty` | `0` | **PASS** (22 required artifacts & invariants verified) |
+| **Base Compose Config** | `docker compose -f docker-compose.yml config --quiet` | `0` | **VALID** |
+| **Staging Compose Config** | `docker compose -f docker-compose.yml -f docker-compose.staging.yml config --quiet` | `0` | **VALID** |
+| **Compose Round-Trip** | `docker compose --env-file <complex_secrets.env> -f docker-compose.yml -f docker-compose.staging.yml config --quiet` | `0` | **VALID** (Special characters, quotes, dollar signs parsed correctly) |
+| **Secret Serializer Unit Tests** | `pytest tests/unit/test_fetch_secrets.py -v` | `0` | **22 passed**, 0 failed |
+| **Staging Security Tests** | `pytest tests/security/test_staging_configuration.py tests/security/test_deployment_hardening.py tests/security/test_cors_configuration.py -v` | `0` | **33 passed**, 0 failed |
+| **Full Staging Test Suite** | `pytest tests/unit/test_fetch_secrets.py tests/security/test_staging_configuration.py tests/security/test_deployment_hardening.py tests/security/test_cors_configuration.py -v` | `0` | **55 passed**, 0 failed |
+| **Code Linting** | `ruff check shared/ scripts/ tests/unit/ tests/security/ db/ infra/` | `0` | **CLEAN** (All rules compliant) |
+| **Release Preflight (No Ref)** | `python scripts/verify_staging_release.py --allow-dirty` | `1` | **FAIL-CLOSED** (Explicit release reference required) |
+| **Release Preflight (Dirty Tree)**| `python scripts/verify_staging_release.py --expected-ref HEAD` | `1` | **FAIL-CLOSED** (Rejects uncommitted modifications) |
 
 ---
 
-## 4. Final Disposition
+## 5. Concluding Disposition
 
 ```
-AWS PRE-PROVISIONING BLOCKERS RESOLVED — READY FOR COST AND PLAN REVIEW
+READY FOR COST AND PLAN REVIEW — NO AWS RESOURCES CREATED
 ```

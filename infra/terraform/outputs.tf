@@ -32,6 +32,11 @@ output "audit_s3_bucket_name" {
   value       = var.enable_audit_s3_bucket ? aws_s3_bucket.audit_ledger[0].id : null
 }
 
+output "audit_bucket_id" {
+  description = "Bucket ID / name of the S3 audit bucket"
+  value       = var.enable_audit_s3_bucket ? aws_s3_bucket.audit_ledger[0].id : null
+}
+
 output "kms_key_arn" {
   description = "ARN of the Customer Managed KMS Key"
   value       = aws_kms_key.mirage.arn

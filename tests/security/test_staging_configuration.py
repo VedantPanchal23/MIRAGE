@@ -288,15 +288,24 @@ class TestStagingBlockerRemediation:
         assert serialized_complex.startswith('"')
         assert "\\\\" in serialized_complex
 
-        # Test dictionary serialization
+        # Test dictionary serialization with placeholder detection in staging
         secrets = {
-            "SECRET_KEY": "valid-long-secret-key-at-least-32-chars",
+            "SECRET_KEY": "valid-long-secret-key-at-least-48-chars-for-staging-environment",
+            "POSTGRES_PASSWORD": "strong_db_password_123456",
+            "POSTGRES_APP_PASSWORD": "strong_app_password_123456",
+            "REDIS_PASSWORD": "strong_redis_password_123456",
+            "RABBITMQ_PASSWORD": "strong_rabbit_password_123456",
+            "CELERY_REDIS_PASSWORD": "strong_celery_password_123456",
+            "MONGO_INITDB_ROOT_PASSWORD": "strong_mongo_root_123456",
+            "MONGO_APP_PASSWORD": "strong_mongo_app_123456",
+            "QDRANT_API_KEY": "strong_qdrant_key_123456",
+            "GRAFANA_ADMIN_PASSWORD": "strong_grafana_password_123456",
             "PLACEHOLDER_KEY": "REPLACE_WITH_VALUE",
         }
         content, defects = serialize_secrets_to_env(secrets, environment="staging")
         assert len(defects) == 1
         assert "PLACEHOLDER_KEY" in defects[0]
-        assert "SECRET_KEY=valid-long-secret-key-at-least-32-chars" in content
+        assert "SECRET_KEY=valid-long-secret-key-at-least-48-chars-for-staging-environment" in content
 
     def test_staging_compose_identity_and_credentials_hygiene(self) -> None:
         """Verify staging compose does not leak sync credentials to app services or miswire Mongo."""

@@ -58,7 +58,7 @@ resource "aws_instance" "staging_host" {
 
               # 1. Update OS & install dependencies
               dnf update -y
-              dnf install -y docker git jq
+              dnf install -y docker git python3
 
               # 2. Enable & start Docker Engine
               systemctl enable --now docker
@@ -69,20 +69,27 @@ resource "aws_instance" "staging_host" {
               chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
 
               # 4. Create root-only MIRAGE runtime directory
-              mkdir -p /opt/mirage
-              chmod 700 /opt/mirage
+              mkdir -p /opt/mirage /opt/mirage/scripts
+              chmod 700 /opt/mirage /opt/mirage/scripts
               cd /opt/mirage
 
-              # 5. Bootstrap secret fetcher utility
-              cat << 'SECRET_EOF' > /opt/mirage/fetch_secrets.sh
+              # 5. Bootstrap canonical secret serializer utility
+              cat << 'PY_EOF' > /opt/mirage/scripts/fetch_secrets.py
+              ${file("${path.module}/scripts/fetch_secrets.py")}
+              PY_EOF
+              chmod 700 /opt/mirage/scripts/fetch_secrets.py
+
+              # 6. Bootstrap executable secret fetcher wrapper
+              cat << 'RUNNER_EOF' > /opt/mirage/fetch_secrets.sh
               #!/bin/bash
               set -euo pipefail
-              SECRET_JSON=$(aws secretsmanager get-secret-value --region ${var.aws_region} --secret-id ${aws_secretsmanager_secret.application_secrets.id} --query SecretString --output text)
-              echo "# Auto-generated MIRAGE staging environment" > /opt/mirage/.env
-              echo "$SECRET_JSON" | jq -r 'to_entries[] | "\(.key)=\(.value)"' >> /opt/mirage/.env
-              chmod 600 /opt/mirage/.env
-              echo "Secrets securely synced from AWS Secrets Manager."
-              SECRET_EOF
+              echo "Fetching and validating secrets from AWS Secrets Manager..."
+              python3 /opt/mirage/scripts/fetch_secrets.py \
+                --secret-id "${aws_secretsmanager_secret.application_secrets.id}" \
+                --region "${var.aws_region}" \
+                --environment "${var.environment}" \
+                --output /opt/mirage/.env
+              RUNNER_EOF
               chmod 700 /opt/mirage/fetch_secrets.sh
 
               echo "MIRAGE staging host initialization complete. Connect via AWS Systems Manager."

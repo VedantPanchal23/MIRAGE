@@ -18,6 +18,45 @@ cd "${TERRAFORM_DIR}"
 if [[ ! -f "terraform.tfstate" ]]; then
   echo "No local terraform.tfstate found in ${TERRAFORM_DIR}. Checking for remote/orphaned resources..."
 else
+  # 0. S3 Object Lock Audit & Governance Bypass Preparation
+  AUDIT_BUCKET=$(terraform output -raw audit_bucket_id 2>/dev/null || echo "")
+  if [[ -n "$AUDIT_BUCKET" && "$AUDIT_BUCKET" != *"No output"* ]]; then
+    echo "Inspecting S3 Audit Bucket: ${AUDIT_BUCKET} for Object Lock status..."
+    LOCK_MODE=$(aws s3api get-object-lock-configuration --bucket "${AUDIT_BUCKET}" --query "ObjectLockConfiguration.Rule.DefaultRetention.Mode" --output text 2>/dev/null || echo "NONE")
+
+    if [[ "$LOCK_MODE" == "COMPLIANCE" ]]; then
+      LOCKED_COUNT=$(aws s3api list-object-versions --bucket "${AUDIT_BUCKET}" --query "length(Versions[])" --output text 2>/dev/null || echo "0")
+      if [[ "$LOCKED_COUNT" != "0" && "$LOCKED_COUNT" != "None" ]]; then
+        echo "=============================================================================="
+        echo "BLOCKER: S3 bucket ${AUDIT_BUCKET} contains objects in COMPLIANCE lock mode!"
+        echo "AWS mathematically prohibits deletion of Compliance-locked objects until"
+        echo "their retention period expires. Standard teardown cannot delete this bucket."
+        echo "=============================================================================="
+      fi
+    elif [[ "$LOCK_MODE" == "GOVERNANCE" ]]; then
+      echo "S3 Bucket is in GOVERNANCE lock mode. Purging object versions with administrative bypass..."
+      # Delete all object versions and delete markers using bypass-governance-retention
+      VERSIONS=$(aws s3api list-object-versions --bucket "${AUDIT_BUCKET}" --output json 2>/dev/null || echo "{}")
+      # Delete versions if any exist
+      python3 -c "
+import json, subprocess, sys
+try:
+    data = json.loads('''$VERSIONS''')
+    objects = []
+    for v in data.get('Versions', []):
+        objects.append({'Key': v['Key'], 'VersionId': v['VersionId']})
+    for m in data.get('DeleteMarkers', []):
+        objects.append({'Key': m['Key'], 'VersionId': m['VersionId']})
+    if objects:
+        payload = json.dumps({'Objects': objects, 'Quiet': True})
+        subprocess.run(['aws', 's3api', 'delete-objects', '--bucket', '${AUDIT_BUCKET}', '--delete', payload, '--bypass-governance-retention'], check=True)
+        print(f'Successfully purged {len(objects)} object versions via governance bypass.')
+except Exception as e:
+    print(f'Note: Object version purge check completed: {e}')
+" || true
+    fi
+  fi
+
   echo "1. Destroying Terraform-managed staging infrastructure..."
   terraform destroy -auto-approve
   echo "Terraform destroy completed successfully."

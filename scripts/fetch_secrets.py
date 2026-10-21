@@ -7,9 +7,11 @@ and safely serializes keys and values into a production-safe, properly quoted
 
 Security Invariants:
 1. Rejects unfilled placeholder values (REPLACE_WITH_*, placeholder, changeme) in staging/production.
-2. Escapes special characters (quotes, backslashes, dollar signs) safely for Docker Compose.
-3. Sets restrictive POSIX file permissions (0600 - owner read/write only) on the destination file.
-4. Redacts secret values from console logs, diagnostic output, and tracebacks.
+2. Enforces presence of all mandatory platform credentials for staging/production.
+3. Keeps optional LLM provider credentials strictly optional when empty/unset.
+4. Escapes special characters (quotes, backslashes, dollar signs, Unicode) safely for Docker Compose.
+5. Writes .env atomically with restrictive POSIX file permissions (0600 - owner read/write only).
+6. Redacts secret values from console logs, diagnostic output, and tracebacks.
 
 Usage:
     python scripts/fetch_secrets.py --secret-id <SECRET_NAME> --region <AWS_REGION> --output .env
@@ -26,6 +28,28 @@ import stat
 import subprocess
 import sys
 from pathlib import Path
+
+MANDATORY_STAGING_SECRETS: list[str] = [
+    "SECRET_KEY",
+    "POSTGRES_PASSWORD",
+    "POSTGRES_APP_PASSWORD",
+    "REDIS_PASSWORD",
+    "RABBITMQ_PASSWORD",
+    "CELERY_REDIS_PASSWORD",
+    "MONGO_INITDB_ROOT_PASSWORD",
+    "MONGO_APP_PASSWORD",
+    "QDRANT_API_KEY",
+    "GRAFANA_ADMIN_PASSWORD",
+]
+
+OPTIONAL_PROVIDER_KEYS: list[str] = [
+    "GROQ_API_KEY",
+    "OPENROUTER_API_KEY",
+    "HUGGINGFACE_API_KEY",
+    "OPENAI_API_KEY",
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+]
 
 
 def is_insecure_placeholder(val: str | None) -> bool:
@@ -54,10 +78,13 @@ def serialize_env_value(val: str) -> str:
     r"""Safely escape and quote a string value for Docker Compose .env files.
 
     Rules:
-    - If value contains no whitespace, quotes, backslashes, or dollar signs, return as-is.
-    - If value contains single quotes, double-quote it and escape " and \.
-      Also escape $ to $$ to prevent accidental compose variable interpolation.
-    - Otherwise single-quote it for literal interpretation.
+    - Empty string: returns '""'.
+    - Simple alphanumeric strings (+ safe chars `_-.:/`): returns unquoted.
+    - If value contains newlines, carriage returns, or single quotes:
+      double-quote and escape backslashes (\\), double quotes (\"), dollar signs ($$),
+      and newlines (\n, \r) for Docker Compose variable interpolation safety.
+    - Otherwise (spaces, double quotes, dollar signs, Unicode, tabs):
+      single-quote for strictly literal interpretation without variable expansion.
     """
     if val == "":
         return '""'
@@ -66,15 +93,14 @@ def serialize_env_value(val: str) -> str:
     if re.fullmatch(r"^[a-zA-Z0-9_\-\.\:\/]+$", val):
         return val
 
-    # If there are no single quotes, single quoting is strictly literal in dotenv/Compose
-    if "'" not in val and "\n" not in val and "\r" not in val:
-        return f"'{val}'"
+    # If it contains single quotes or newlines, we MUST use double quotes with escaping
+    if "'" in val or "\n" in val or "\r" in val:
+        escaped = val.replace("\\", "\\\\").replace('"', '\\"').replace("$", "$$")
+        escaped = escaped.replace("\r", "\\r").replace("\n", "\\n")
+        return f'"{escaped}"'
 
-    # Otherwise double-quote and escape backslashes, double quotes, and dollar signs
-    escaped = val.replace("\\", "\\\\").replace('"', '\\"').replace("$", "$$")
-    # Escape newlines
-    escaped = escaped.replace("\r", "\\r").replace("\n", "\\n")
-    return f'"{escaped}"'
+    # Otherwise, single-quoting is strictly literal in dotenv/Compose (protects $ and \)
+    return f"'{val}'"
 
 
 def serialize_secrets_to_env(
@@ -95,11 +121,34 @@ def serialize_secrets_to_env(
         "",
     ]
 
+    is_hardened_env = environment in ("staging", "production")
+
+    # 1. Enforce mandatory secrets in hardened environments
+    if is_hardened_env and not allow_placeholders:
+        for mandatory_key in MANDATORY_STAGING_SECRETS:
+            if mandatory_key not in secrets:
+                defects.append(f"Mandatory secret '{mandatory_key}' is missing from configuration")
+            elif not str(secrets[mandatory_key]).strip():
+                defects.append(f"Mandatory secret '{mandatory_key}' is empty")
+            elif is_insecure_placeholder(secrets[mandatory_key]):
+                defects.append(
+                    f"Mandatory secret '{mandatory_key}' contains an unfilled placeholder or default development value"
+                )
+
+    # 2. Process all present secrets
     for key, raw_val in sorted(secrets.items()):
         val_str = str(raw_val) if raw_val is not None else ""
-        if not allow_placeholders and environment in ("staging", "production"):
-            if is_insecure_placeholder(val_str):
-                defects.append(f"Secret '{key}' contains an unfilled placeholder or default development value")
+
+        # Validate non-mandatory keys
+        if is_hardened_env and not allow_placeholders:
+            if key in OPTIONAL_PROVIDER_KEYS:
+                # Optional provider keys may be empty (provider unconfigured)
+                # But if non-empty, they MUST not be placeholder values
+                if val_str.strip() and is_insecure_placeholder(val_str):
+                    defects.append(f"Optional provider key '{key}' contains an unfilled placeholder value")
+            elif key not in MANDATORY_STAGING_SECRETS:
+                if is_insecure_placeholder(val_str):
+                    defects.append(f"Secret '{key}' contains an unfilled placeholder or default development value")
 
         quoted = serialize_env_value(val_str)
         lines.append(f"{key}={quoted}")
@@ -136,14 +185,38 @@ def fetch_secret_from_aws(secret_id: str, region: str) -> dict[str, str]:
 
 
 def write_env_file_secure(path: Path, content: str) -> None:
-    """Write content to file and set 0600 permissions where supported."""
-    path.write_text(content, encoding="utf-8")
-    # On POSIX systems, restrict permissions to owner read/write only
-    if os.name == "posix":
-        try:
-            path.chmod(stat.S_IRUSR | stat.S_IWUSR)
-        except OSError:
-            pass
+    """Write content atomically to destination path with 0600 permissions where supported.
+
+    Invariant: Uses temporary file in the same directory and atomic rename (os.replace)
+    to ensure destination is never left partially written or corrupted upon failure.
+    """
+    path = path.resolve()
+    temp_path = path.with_name(f".{path.name}.tmp.{os.getpid()}")
+    try:
+        # Open with restrictive permissions on POSIX
+        if os.name == "posix":
+            flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC
+            if hasattr(os, "O_NOFOLLOW"):
+                flags |= os.O_NOFOLLOW
+            mode = stat.S_IRUSR | stat.S_IWUSR  # 0600
+            fd = os.open(temp_path, flags, mode)
+            with open(fd, "w", encoding="utf-8") as f:
+                f.write(content)
+                f.flush()
+                os.fsync(fd)
+            os.chmod(temp_path, stat.S_IRUSR | stat.S_IWUSR)
+        else:
+            temp_path.write_text(content, encoding="utf-8")
+
+        # Atomic replacement over destination
+        os.replace(temp_path, path)
+    except Exception:
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except OSError:
+                pass
+        raise
 
 
 def main() -> int:
@@ -160,8 +233,14 @@ def main() -> int:
 
     # Load secrets
     if args.input_json_file:
-        raw_text = Path(args.input_json_file).read_text(encoding="utf-8")
-        secrets_dict = json.loads(raw_text)
+        try:
+            raw_text = Path(args.input_json_file).read_text(encoding="utf-8")
+            secrets_dict = json.loads(raw_text)
+            if not isinstance(secrets_dict, dict):
+                raise ValueError("JSON payload must be a key-value object")
+        except Exception as exc:
+            print(f"ERROR: Malformed or unreadable secrets JSON file: {exc}", file=sys.stderr)
+            return 1
     elif args.secret_id:
         try:
             secrets_dict = fetch_secret_from_aws(args.secret_id, args.region)
@@ -189,7 +268,12 @@ def main() -> int:
         return 0
 
     out_path = Path(args.output).resolve()
-    write_env_file_secure(out_path, content)
+    try:
+        write_env_file_secure(out_path, content)
+    except Exception as exc:
+        print(f"ERROR: Failed to write destination environment file atomically: {exc}", file=sys.stderr)
+        return 1
+
     print(f"Successfully generated secure environment file: {out_path} ({len(secrets_dict)} keys)")
     return 0
 

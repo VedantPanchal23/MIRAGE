@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -71,28 +72,35 @@ def check_git_revision(repo_root: Path, expected_ref: str | None) -> tuple[bool,
         info["branch"] = current_branch
         info["dirty"] = "true" if porcelain_status else "false"
 
-        if expected_ref:
-            # Check if expected_ref matches SHA prefix or tag
-            try:
-                resolved_expected = run_git(["rev-parse", expected_ref], repo_root)
-                info["expected_sha"] = resolved_expected
-                if current_sha != resolved_expected:
-                    return (
-                        False,
-                        f"Current HEAD ({current_sha[:10]}) does not match expected revision "
-                        f"{expected_ref} ({resolved_expected[:10]})",
-                        info,
-                    )
-            except subprocess.CalledProcessError:
-                # If ref cannot be resolved via git rev-parse, check if expected_ref is prefix of current SHA
-                if not current_sha.startswith(expected_ref):
-                    return (
-                        False,
-                        f"Current HEAD ({current_sha}) does not match expected ref ({expected_ref})",
-                        info,
-                    )
+        if not expected_ref:
+            return (
+                False,
+                "Deployment requires an explicit reviewed release reference (--expected-ref or "
+                "MIRAGE_EXPECTED_RELEASE_REF). Deploying unpinned revisions is prohibited.",
+                info,
+            )
 
-        return True, f"HEAD is at {current_sha[:10]} ({current_branch})", info
+        # Check if expected_ref matches SHA prefix or tag
+        try:
+            resolved_expected = run_git(["rev-parse", expected_ref], repo_root)
+            info["expected_sha"] = resolved_expected
+            if current_sha != resolved_expected:
+                return (
+                    False,
+                    f"Current HEAD ({current_sha[:10]}) does not match expected revision "
+                    f"{expected_ref} ({resolved_expected[:10]})",
+                    info,
+                )
+        except subprocess.CalledProcessError:
+            # If ref cannot be resolved via git rev-parse, check if expected_ref is prefix of current SHA
+            if not current_sha.startswith(expected_ref):
+                return (
+                    False,
+                    f"Current HEAD ({current_sha}) does not match expected ref ({expected_ref})",
+                    info,
+                )
+
+        return True, f"HEAD is at {current_sha[:10]} ({current_branch}) matches expected ref {expected_ref}", info
     except Exception as exc:
         return False, f"Git verification error: {exc}", info
 
@@ -151,6 +159,26 @@ def check_security_invariants(repo_root: Path) -> tuple[bool, list[str]]:
                 "security_groups.tf contains 0.0.0.0/0 ingress — "
                 "unsolicited public inbound traffic is strictly forbidden"
             )
+
+    # 3. EC2 host must enforce IMDSv2 and safe secret deserialization
+    ec2_tf = repo_root / "infra" / "terraform" / "ec2.tf"
+    if ec2_tf.exists():
+        ec2_content = ec2_tf.read_text(encoding="utf-8")
+        if not re.search(r'http_tokens\s*=\s*"required"', ec2_content):
+            violations.append("ec2.tf does not enforce IMDSv2 (http_tokens must be required)")
+        if "jq -r" in ec2_content and ".env" in ec2_content:
+            violations.append("ec2.tf uses raw jq pipe to create .env instead of canonical fetch_secrets.py utility")
+
+    # 4. S3 Bucket must enforce TLS requests only and block public access
+    s3_tf = repo_root / "infra" / "terraform" / "s3.tf"
+    if s3_tf.exists():
+        s3_content = s3_tf.read_text(encoding="utf-8")
+        if not re.search(r'"aws:SecureTransport"\s*=\s*"false"', s3_content):
+            violations.append("s3.tf does not enforce TLS-only transport in bucket policy")
+        if not re.search(r"block_public_acls\s*=\s*true", s3_content):
+            violations.append("s3.tf does not block public access on audit bucket")
+        if not re.search(r"object_lock_enabled\s*=\s*var\.enable_s3_object_lock", s3_content):
+            violations.append("s3.tf does not configure S3 Object Lock capability")
 
     return (len(violations) == 0), violations
 

@@ -30,12 +30,36 @@ The MIRAGE 3.0 platform operates 12 integrated services across 3 network tiers:
 | Dimension | Option A: ECS Fargate Multi-Task | Option B: Compact Hardened EC2 with Docker Compose (Selected) |
 | :--- | :--- | :--- |
 | **Footprint** | 12 separate Task Definitions, 12 target groups, complex service discovery. | Exact 12-container Compose topology proven in local staging. |
-| **Staging Cost** | **\$180–\$280 / month**: Fargate vCPU/RAM pricing + ALB (\$22/mo) + NAT Gateways (\$64/mo for 2 AZs). | **~\$60 / month** running 24/7 on `t3.large` (\$0.0832/hr), or **cents per hour** on-demand when testing. Zero NAT Gateway charges. |
+| **Staging Cost** | **\$180–\$280 / month**: Fargate vCPU/RAM pricing + ALB (\$22/mo) + NAT Gateways (\$64/mo for 2 AZs). | **~\$69 / month** running 24/7 on `t3.large` (\$0.0832/hr) + public IPv4 (\$0.005/hr), or **cents per hour** on-demand when testing. Zero NAT Gateway charges. |
 | **Security Boundary** | Cloud IAM + ECS security groups. | Dedicated VPC, IMDSv2, EBS encryption via KMS CMK, zero open inbound ports (AWS SSM Session Manager). |
 | **Parity with Local** | Divergent networking, task storage limitations, custom configuration. | **100% environment parity** with local reliability, chaos, and smoke test suites. |
 | **Operational Friction** | High complexity for ephemeral staging tests and demos. | Fast, single-command bootstrapping, preflight checks, and teardown. |
 
 **Architectural Decision:** We select **Option B (Compact Hardened EC2 Staging Host with Docker Compose)** for private AWS staging. It eliminates unnecessary cloud overhead, prevents expensive NAT gateway and load balancer fees, preserves exact local container topology parity, and enables private access via AWS Systems Manager Session Manager with zero public inbound ports.
+
+### 1.2 Private-Staging Network Modes & Egress Architecture
+
+The infrastructure supports two distinct network modes configured in `infra/terraform/variables.tf`:
+
+#### Mode A: Cost-Optimized Private Staging with Direct Egress (Default)
+- **Configuration**: `enable_public_edge = true`, `enable_vpc_endpoints = false`
+- **Network Path**:
+  - The staging EC2 host receives a dynamic public IPv4 address (`associate_public_ip_address = true`).
+  - The host resides in a public subnet with a default route (`0.0.0.0/0 -> igw`) to an AWS Internet Gateway.
+  - **Inbound Security Boundary**: The security group strictly enforces **ZERO public inbound rules** (`ingress = []`). All unsolicited inbound packets from the internet are dropped at the AWS hypervisor stateful firewall. No ports (8000, 8080, 5432, 27017, 3001, 22) are open to the internet.
+  - **Outbound Egress**: Direct HTTPS (TCP port 443) to AWS Systems Manager (`ssm.us-east-1.amazonaws.com`, `ssmmessages`, `ec2messages`), AWS Secrets Manager, S3, Docker Hub, Amazon Linux package repositories, and external model provider APIs (Groq, OpenRouter, HuggingFace, OpenAI, Anthropic, Gemini).
+  - **Access Model**: Administrative shell and operator dashboard access operate **exclusively** through authenticated AWS Systems Manager Session Manager port forwarding tunnels over outbound TLS.
+  - **Cost Profile**: Public IPv4 address fee of \$0.005 / hour (~\$3.60 / month in `us-east-1`). Zero NAT Gateway costs (\$0/mo) and zero VPC Endpoint costs (\$0/mo).
+
+#### Mode B: Strict Private Subnet Mode with PrivateLink Endpoints
+- **Configuration**: `enable_public_edge = false`, `enable_vpc_endpoints = true`
+- **Network Path**:
+  - The EC2 host receives only a private RFC-1918 IP address (`associate_public_ip_address = false`).
+  - Outbound internet access via Internet Gateway is disabled.
+  - **Internal Connectivity**: Terraform provisions PrivateLink VPC Interface Endpoints for SSM, SSMMessages, EC2Messages, Secrets Manager, and KMS, plus a free S3 Gateway Endpoint.
+  - **Egress Boundary**: The host reaches AWS services internally via PrivateLink. However, direct connections to external LLM provider APIs (OpenAI, Anthropic, Groq) and public package repositories are blocked unless a corporate proxy or NAT Gateway is attached.
+  - **Cost Profile**: \$0.01 / hour per interface endpoint AZ (5 endpoints * \$7.20/mo = ~\$36.00 / month) + S3 Gateway Endpoint (\$0.00). Eliminates public IPv4 fee (\$0.00).
+- **Safety Enforcement**: A Terraform `check "network_mode_safety"` block statically validates that `var.enable_public_edge || var.enable_vpc_endpoints` is true, preventing accidental configuration of a stranded host with no route to SSM.
 
 ---
 
@@ -264,32 +288,71 @@ Once containers are active, execute the acceptance checklist:
 
 ---
 
-## 8. Backup & S3 Audit Retention Realities
+## 8. Backup, S3 Object Lock Lifecycle & Audit Integrity
 
-- **PostgreSQL**: Daily binary `pg_dump` snapshots stored in KMS-encrypted S3 (`aws s3 cp s3://mirage-staging-audit-.../backups/`).
-- **Audit Anchor Proofs**: Appended to immutable local directory `/app/data/audit_anchors` and mirrored to private S3 audit bucket.
-- **S3 Object Lock Architecture**:
-  - **Staging Default**: Configured with `GOVERNANCE` mode (`enable_s3_object_lock = true`, `s3_object_lock_mode = "GOVERNANCE"`, retention: 90 days). In `GOVERNANCE` mode, objects are protected against accidental mutation or deletion by non-privileged roles, but can be bypassed during controlled staging teardown by principals with `s3:BypassGovernanceRetention` permission.
-  - **Production Invariant**: In `COMPLIANCE` mode, AWS mathematically prevents object deletion and bucket destruction by **any** IAM identity (including the AWS root account) until the retention duration expires. For production compliance, `force_destroy` is unconditionally disabled.
-- **Rollback**: If a deployment defect is detected, rollback is triggered via `docker compose -f docker-compose.yml -f docker-compose.staging.yml down`, reverting Git commit, and restoring Postgres snapshot per `docs/runbooks/05_database_backup_and_restore.md`.
+### 8.1 S3 Object Lock Lifecycle and Teardown Realities
+- **Storage-Level WORM Protection**: When `enable_s3_object_lock = true`, the S3 audit bucket enforces Write-Once-Read-Many (WORM) storage. Uploaded audit objects and database backups cannot be overwritten, updated, or prematurely deleted.
+- **GOVERNANCE Mode (Staging Default, 90-Day Retention)**:
+  - In `GOVERNANCE` mode, objects are protected against accidental mutation or deletion by non-privileged roles.
+  - **Teardown Reality**: `terraform destroy` will fail to delete a bucket with active objects unless the objects are first purged using the `x-amz-bypass-governance-retention: true` header. The operator principal must possess explicit `s3:BypassGovernanceRetention` IAM permission. The [`scripts/teardown_aws_staging.sh`](file:///scripts/teardown_aws_staging.sh) script automatically performs this purge when authorized.
+- **COMPLIANCE Mode (Production Invariant)**:
+  - In `COMPLIANCE` mode, AWS mathematically prohibits object deletion and bucket destruction by **any** IAM identity (including the AWS root account) until the retention period expires.
+  - **Teardown Reality**: `force_destroy` is unconditionally disabled (`force_destroy = false`). Standard automated teardown **cannot delete** a compliance-locked bucket while retained versions exist. This constraint is an intentional regulatory compliance safeguard.
+- **Distinction Between Storage WORM and Application Audit Verification**:
+  - **S3 Object Lock** provides cloud storage-layer immutability (WORM) against disk-level tampering or deletion.
+  - **MIRAGE Audit Ledger Engine** provides application-level cryptographic proof via SHA-256 hash chaining of audit anchor proofs.
+  - **External Notary Anchoring** provides third-party cryptographic attestation via external notary signatures. S3 Object Lock alone does not prove audit chain continuity; independent mathematical verification is performed by MIRAGE audit validation suites.
 
 ---
 
-## 9. Cost Controls & Controlled Teardown
+## 9. Comprehensive Cost Inventory & Controlled Teardown
 
-### Billable Resources Inventory
-- **EC2 Instance (`t3.large`)**: ~\$0.0832 / hour (~\$2.00 / day).
-- **GP3 EBS Root Storage (50 GB)**: ~\$4.00 / month (\$0.08 / GB-mo).
-- **KMS Customer Managed Key**: ~\$1.00 / month + \$0.03 per 10,000 requests.
-- **S3 Storage & Data Transfer**: < \$0.50 / month for staging volumes.
-- **Zero Billable Items**: NAT Gateways (\$0), Application Load Balancers (\$0), Zero public open ports.
+### 9.1 Itemized Staging Cost Estimate (Region: `us-east-1`)
 
-### Teardown Procedure
+The following inventory details monthly and on-demand expenses under the selected **Mode A (Cost-Optimized Private Staging)**:
+
+| Cost Category | AWS Resource | Pricing Basis (`us-east-1`) | 24/7 Monthly Estimate | On-Demand (40 hrs/mo) |
+| :--- | :--- | :--- | :--- | :--- |
+| **Compute** | EC2 `t3.large` (2 vCPU, 8 GB RAM) | \$0.0832 / hour | \$59.90 | \$3.33 |
+| **Block Storage** | GP3 Root EBS (50 GB, 3000 IOPS, 125 MB/s) | \$0.08 / GB-month | \$4.00 | \$4.00 (persists when stopped) |
+| **Public IPv4** | In-use Public IPv4 (Outbound Egress Only) | \$0.005 / hour | \$3.60 | \$0.20 |
+| **Encryption** | KMS Customer Managed Key (`alias/mirage-staging`) | \$1.00 / month + \$0.03 / 10k requests | \$1.05 | \$1.05 |
+| **Secrets** | AWS Secrets Manager (1 Secret) | \$0.40 / secret-month + \$0.05 / 10k API calls | \$0.45 | \$0.45 |
+| **Audit Storage** | S3 Standard (Audit Proofs & Backups ~5 GB) | \$0.023 / GB-month + PUT/GET requests | \$0.20 | \$0.05 |
+| **Data Transfer** | Outbound Internet Egress (SSM, LLM APIs) | First 100 GB/month free from AWS | \$0.00 | \$0.00 |
+| **Network Endpoints**| NAT Gateway & VPC Endpoints (Mode A) | Not provisioned in Mode A | \$0.00 | \$0.00 |
+| **TOTAL** | **Full 12-Container Stack** | — | **~\$69.20 / month** | **~\$9.08 / month** |
+
+*Note: In Mode B (Strict Private Subnet with VPC Endpoints), add \$36.00/month for 5 PrivateLink interface endpoints and subtract \$3.60/month for public IPv4 (Net total: ~\$101.60/month).*
+
+### 9.2 Safe Zero-Cost Plan Review Protocol
+
+Operators can generate and inspect the complete Terraform execution plan without provisioning AWS resources or incurring cloud spending:
+
+```bash
+cd infra/terraform
+
+# 1. Initialize without cloud backend
+terraform init -backend=false
+
+# 2. Generate plan file safely (requires read-only AWS credentials)
+terraform plan -out=staging.tfplan
+
+# 3. Inspect plan contents without applying
+terraform show staging.tfplan
+
+# 4. Alternatively inspect machine-readable plan JSON
+terraform show -json staging.tfplan | jq '.resource_changes[] | {type: .type, name: .name, actions: .change.actions}'
+```
+
+**Guardrail:** Operators must never run `terraform apply` until the plan has been reviewed and authorized.
+
+### 9.3 Teardown Procedure
 To completely eliminate all ongoing charges:
 ```bash
 ./scripts/teardown_aws_staging.sh
 ```
-This script runs `terraform destroy`, verifies zero active EC2 instances, confirms no unattached EBS volumes, and audits for unassociated Elastic IPs. When Object Lock is configured in `GOVERNANCE` mode, the operator IAM identity must include `s3:BypassGovernanceRetention` to allow bucket deletion during teardown.
+This script empties Object Lock governance-locked objects (if authorized), executes `terraform destroy`, verifies zero active EC2 instances, confirms no unattached EBS volumes, and audits for unassociated Elastic IPs.
 
 ---
 
@@ -302,10 +365,12 @@ This script runs `terraform destroy`, verifies zero active EC2 instances, confir
 | Database Migration Privilege Separation | `docker/postgres-init.sql` & Compose | **Validated Locally** (`mirage_app` unprivileged, `mirage` migration owner) |
 | MongoDB Identity Dynamic Initialization | `docker/mongo-init.js` & Compose | **Validated Locally** (`MONGO_APP_USER` / `mirage_app` least privilege) |
 | Terraform IaC Templates | `infra/terraform/*.tf` | **Validated Locally** (Zero inbound SG, S3 Governance Lock, KMS, IAM) |
-| Release Preflight Verifier | `scripts/verify_staging_release.py` | **Tested & Passed** (Validates files, revisions, security invariants) |
-| Safe Secret Serializer | `scripts/fetch_secrets.py` | **Tested & Passed** (Escapes special chars, enforces 0600 permissions) |
+| PrivateLink VPC Endpoints Configuration | `infra/terraform/vpc_endpoints.tf` | **Validated Locally** (SSM, Secrets Manager, KMS, S3 Gateway) |
+| Release Preflight Verifier | `scripts/verify_staging_release.py` | **Tested & Passed** (Enforces ref, clean tree, security checks) |
+| Safe Secret Serializer | `scripts/fetch_secrets.py` | **Tested & Passed** (Atomic write, 0600 permissions, Compose round-trip) |
 | Cost Control & Budget Alerts | `scripts/setup_aws_budget_alerts.sh` | **Prepared** |
-| Teardown & Orphan Audit Script | `scripts/teardown_aws_staging.sh` | **Prepared** |
+| Teardown & Orphan Audit Script | `scripts/teardown_aws_staging.sh` | **Prepared** (Object Lock governance bypass supported) |
 | CI Infrastructure Validation | `.github/workflows/ci.yml` | **Updated** (Runs `terraform fmt`, `init`, and `validate`) |
-| Staging Security Test Suite | `tests/security/test_staging_configuration.py` | **Passed 16/16** (33/33 across suite) |
+| Secret Serializer & Staging Unit Tests | `tests/unit/test_fetch_secrets.py` | **Passed 22/22** |
+| Staging Security Test Suite | `tests/security/test_staging_configuration.py` | **Passed 16/16** (55/55 across all staging suites) |
 | Live AWS Staging Resources | AWS Cloud (`us-east-1`) | **NOT CREATED** (Pending User Review) |

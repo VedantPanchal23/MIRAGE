@@ -104,8 +104,11 @@ def live_postgres_database() -> Generator[Any, None, None]:
         from testcontainers.community.postgres import PostgresContainer
 
         with PostgresContainer("postgres:16-alpine") as pg:
-            sync_url = pg.get_connection_url().replace("+psycopg2", "")
-            async_url = sync_url.replace("postgresql://", "postgresql+asyncpg://")
+            raw_url = pg.get_connection_url()
+            sync_url = (
+                raw_url if "+psycopg2" in raw_url else raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+            )
+            async_url = sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
 
             settings.database_url = async_url
             settings.database_sync_url = sync_url

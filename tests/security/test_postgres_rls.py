@@ -41,7 +41,10 @@ class TestPostgresRowLevelSecurity:
     @pytest.fixture(scope="class", autouse=True)
     def setup_app_role_and_schema(self, pg_container: Any) -> Any:
         """Run migrations as admin, create unprivileged mirage_app role, grant explicit permissions."""
-        admin_sync_url = pg_container.get_connection_url().replace("+psycopg2", "")
+        raw_url = pg_container.get_connection_url()
+        admin_sync_url = (
+            raw_url if "+psycopg2" in raw_url else raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        )
 
         # 1. Run migrations as admin
         os.environ["DATABASE_SYNC_URL"] = admin_sync_url

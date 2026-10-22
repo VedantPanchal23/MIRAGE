@@ -57,8 +57,9 @@ class TestPostgresPersistence:
     @pytest.fixture(scope="class", autouse=True)
     def setup_database_schema(self, pg_container: Any) -> None:
         """Run two-way Alembic migration cycle on the live container."""
-        sync_url = pg_container.get_connection_url().replace("+psycopg2", "")
-        async_url = sync_url.replace("postgresql://", "postgresql+asyncpg://")
+        raw_url = pg_container.get_connection_url()
+        sync_url = raw_url if "+psycopg2" in raw_url else raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        async_url = sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
 
         # 1. Test two-way migration cycle (001 -> 002 -> 001 -> 002)
         os.environ["DATABASE_SYNC_URL"] = sync_url
@@ -179,8 +180,9 @@ class TestPostgresPersistence:
         await engine.dispose()
 
         # 2. Recreate brand new engine and sessionmaker pointing to same DB
-        sync_url = pg_container.get_connection_url().replace("+psycopg2", "")
-        async_url = sync_url.replace("postgresql://", "postgresql+asyncpg://")
+        raw_url = pg_container.get_connection_url()
+        sync_url = raw_url if "+psycopg2" in raw_url else raw_url.replace("postgresql://", "postgresql+psycopg2://", 1)
+        async_url = sync_url.replace("postgresql+psycopg2://", "postgresql+asyncpg://", 1)
         fresh_engine = create_app_engine(async_url, poolclass=NullPool)
         reset_sessionmaker(fresh_engine)
 

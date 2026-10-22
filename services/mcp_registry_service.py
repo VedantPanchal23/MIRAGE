@@ -153,6 +153,7 @@ class MCPRegistryService:
         session: AsyncSession | None = None,
     ) -> MCPServerResponse:
         """Retrieve MCP server details by ID under tenant isolation."""
+
         async def _execute(s: AsyncSession) -> MCPServerResponse:
             stmt = select(MCPServer).where(
                 MCPServer.tenant_id == auth.tenant_id,
@@ -185,6 +186,7 @@ class MCPRegistryService:
         session: AsyncSession | None = None,
     ) -> MCPServerListResponse:
         """List registered MCP servers for the tenant."""
+
         async def _execute(s: AsyncSession) -> MCPServerListResponse:
             total_stmt = select(func.count(MCPServer.id)).where(MCPServer.tenant_id == auth.tenant_id)
             total = (await s.execute(total_stmt)).scalar() or 0
@@ -231,10 +233,14 @@ class MCPRegistryService:
         now = datetime.now(UTC)
 
         async def _execute(s: AsyncSession) -> MCPServerResponse:
-            stmt = select(MCPServer).where(
-                MCPServer.tenant_id == auth.tenant_id,
-                MCPServer.id == server_id,
-            ).with_for_update()
+            stmt = (
+                select(MCPServer)
+                .where(
+                    MCPServer.tenant_id == auth.tenant_id,
+                    MCPServer.id == server_id,
+                )
+                .with_for_update()
+            )
             server = (await s.execute(stmt)).scalar_one_or_none()
             if not server:
                 raise HTTPException(
@@ -515,4 +521,3 @@ class MCPRegistryService:
 
 
 mcp_registry_service = MCPRegistryService()
-

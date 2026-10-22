@@ -37,8 +37,11 @@ GATEWAY_URL = "http://localhost:8000"
 def get_docker_stats() -> dict[str, dict[str, str]]:
     """Capture snapshot of container CPU and Memory utilization."""
     cmd = [
-        "docker", "stats", "--no-stream",
-        "--format", "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}",
+        "docker",
+        "stats",
+        "--no-stream",
+        "--format",
+        "{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}",
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     stats: dict[str, dict[str, str]] = {}
@@ -71,6 +74,7 @@ async def benchmark_endpoint(
     limits = httpx.Limits(max_keepalive_connections=concurrency * 2, max_connections=concurrency * 2)
 
     async with httpx.AsyncClient(base_url=GATEWAY_URL, timeout=15.0, limits=limits) as client:
+
         async def _single_request() -> None:
             async with sem:
                 t0 = time.perf_counter()
@@ -214,11 +218,11 @@ async def run_baseline() -> dict[str, Any]:
     print("\n" + "=" * 70)
     print("  PERFORMANCE BASELINE SUMMARY")
     print("=" * 70)
-    for r in results:
-        ep = r['endpoint']
+    for item in results:
+        ep = item["endpoint"]
         print(
-            f"{ep:<45} | RPS: {r['rps']:>5.1f} | p50: {r['p50_ms']:>6.1f}ms | "
-            f"p95: {r['p95_ms']:>6.1f}ms | Err: {r['error_rate_pct']}%"
+            f"{ep:<45} | RPS: {item['rps']:>5.1f} | p50: {item['p50_ms']:>6.1f}ms | "
+            f"p95: {item['p95_ms']:>6.1f}ms | Err: {item['error_rate_pct']}%"
         )
 
     with open("data/perf_baseline_results.json", "w", encoding="utf-8") as f:

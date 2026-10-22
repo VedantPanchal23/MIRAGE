@@ -192,4 +192,3 @@ class MemoryResponse(BaseModel):
     metadata_payload: dict[str, Any] = Field(default_factory=dict)
     created_at: datetime
     updated_at: datetime
-

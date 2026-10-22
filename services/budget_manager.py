@@ -275,9 +275,7 @@ class BudgetManagerService:
 
         async with db_session.get_tenant_session(request.tenant_id) as session:
             # 0. Acquire advisory lock on reservation key to serialize concurrent requests with the same key
-            await _acquire_advisory_lock(
-                session, f"budget_reservation:{request.tenant_id}:{request.reservation_key}"
-            )
+            await _acquire_advisory_lock(session, f"budget_reservation:{request.tenant_id}:{request.reservation_key}")
 
             # 1. Enforce strict reservation idempotency
             exist_stmt = (
@@ -565,8 +563,7 @@ class BudgetManagerService:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        f"Reservation '{request.reservation_id}' is in status '{res_rec.status}' "
-                        "and cannot be settled"
+                        f"Reservation '{request.reservation_id}' is in status '{res_rec.status}' and cannot be settled"
                     ),
                 )
 

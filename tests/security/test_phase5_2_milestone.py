@@ -77,6 +77,7 @@ from tests.auth_factory import AuthTestFactory
 @pytest.mark.asyncio
 async def test_ssrf_boundary_dns_rebinding_blocked() -> None:
     """Simulate DNS rebinding where host resolves to public IP initially, then rebinds to 127.0.0.1 at connect time."""
+
     # Custom resolver that simulates DNS rebinding returning a loopback IP at connect time
     def rebind_resolver(_h: str, p: int) -> list[tuple[int, int, int, str, tuple[str, int]]]:
         return [(2, 1, 6, "", ("127.0.0.1", p))]
@@ -331,10 +332,14 @@ def unprivileged_app_sessionmaker() -> async_sessionmaker[AsyncSession]:
     admin_engine.dispose()
 
     # Build connection URL using mirage_app credentials
-    app_async_url = make_url(settings.database_url).set(
-        username="mirage_app",
-        password="mirage_app_pw",
-    ).render_as_string(hide_password=False)
+    app_async_url = (
+        make_url(settings.database_url)
+        .set(
+            username="mirage_app",
+            password="mirage_app_pw",
+        )
+        .render_as_string(hide_password=False)
+    )
     app_engine = create_async_engine(app_async_url, pool_size=5, max_overflow=5)
     return async_sessionmaker(bind=app_engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -589,6 +594,7 @@ async def test_unpriced_model_excluded_from_routing() -> None:
 @pytest.mark.asyncio
 async def test_provider_invocation_tracking_in_proxy() -> None:
     """Verify that executing a request via /v1/chat/completions logs durable ProviderInvocationRecord."""
+
     class MockTrackedAdapter(BaseProviderAdapter):
         @property
         def provider_name(self) -> str:

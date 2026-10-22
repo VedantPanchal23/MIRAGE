@@ -247,10 +247,7 @@ class PostgresPersistenceService:
                         ),
                         {"tenant_id": tenant_id, "genesis_hash": "0" * 64, "now": created_at},
                     )
-                    ledger_stmt = (
-                        select(TenantAuditLedger)
-                        .where(TenantAuditLedger.tenant_id == tenant_id)
-                    )
+                    ledger_stmt = select(TenantAuditLedger).where(TenantAuditLedger.tenant_id == tenant_id)
                     if is_postgres:
                         ledger_stmt = ledger_stmt.with_for_update()
                     ledger_res = await session.execute(ledger_stmt)

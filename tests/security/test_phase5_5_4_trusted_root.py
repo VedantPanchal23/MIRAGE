@@ -141,6 +141,7 @@ def build_test_outcome(
 # PART 1: Missing and Empty Field Validation on Anchor (Fail-Closed HTTP 409)
 # =============================================================================
 
+
 @pytest.mark.security
 @pytest.mark.asyncio
 async def test_anchor_missing_verified_at_fails_closed():
@@ -372,6 +373,7 @@ async def test_anchor_column_payload_transaction_id_divergence_fails_closed():
 # =============================================================================
 # PART 2: Missing and Empty Field Validation on Ancestor (Fail-Closed HTTP 409)
 # =============================================================================
+
 
 @pytest.mark.security
 @pytest.mark.asyncio
@@ -631,6 +633,7 @@ async def test_ancestor_malformed_prev_hash_fails_closed():
 # PART 3: Authenticated Trust Anchors & Checkpoints
 # =============================================================================
 
+
 def test_trusted_checkpoint_registry_unit():
     """TrustedCheckpointRegistry enforces tenant scoping, lowercase canonicalization, and format."""
     registry = TrustedCheckpointRegistry()
@@ -681,9 +684,7 @@ async def test_trusted_root_malformed_format_raises_http_400():
     mock_session = AsyncMock()
 
     with pytest.raises(HTTPException) as exc_info:
-        await service.verify_record_against_audit_trail(
-            mock_session, rec, trusted_root_hash="not_a_valid_64_char_hash"
-        )
+        await service.verify_record_against_audit_trail(mock_session, rec, trusted_root_hash="not_a_valid_64_char_hash")
 
     assert exc_info.value.status_code == 400
     assert "Malformed trusted root hash" in exc_info.value.detail
@@ -700,9 +701,7 @@ async def test_unauthenticated_caller_selected_root_rejected_fails_closed():
     unauthenticated_root = "e" * 64  # valid format, but NOT registered
 
     with pytest.raises(HTTPException) as exc_info:
-        await service.verify_record_against_audit_trail(
-            mock_session, rec, trusted_root_hash=unauthenticated_root
-        )
+        await service.verify_record_against_audit_trail(mock_session, rec, trusted_root_hash=unauthenticated_root)
 
     assert exc_info.value.status_code == 409
     assert "Untrusted root hash" in exc_info.value.detail
@@ -721,9 +720,7 @@ async def test_cross_tenant_checkpoint_rejected_fails_closed():
     service.checkpoint_registry.register_checkpoint("tenant_other", checkpoint_hash)
 
     with pytest.raises(HTTPException) as exc_info:
-        await service.verify_record_against_audit_trail(
-            mock_session, rec, trusted_root_hash=checkpoint_hash
-        )
+        await service.verify_record_against_audit_trail(mock_session, rec, trusted_root_hash=checkpoint_hash)
 
     assert exc_info.value.status_code == 409
     assert "Untrusted root hash" in exc_info.value.detail
@@ -777,9 +774,7 @@ async def test_authenticated_custom_checkpoint_succeeds():
     mock_scalars = MagicMock(all=MagicMock(return_value=[aud_leaf]))
     mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
 
-    contract = await service.verify_record_against_audit_trail(
-        mock_session, rec, trusted_root_hash=checkpoint_root
-    )
+    contract = await service.verify_record_against_audit_trail(mock_session, rec, trusted_root_hash=checkpoint_root)
 
     assert contract.outcome_id == rec.id
     assert contract.outcome_status == OutcomeStatus.SUCCESS_CONFIRMED
@@ -788,6 +783,7 @@ async def test_authenticated_custom_checkpoint_succeeds():
 # =============================================================================
 # PART 4: Chain Structure, Database Ambiguity & Graph Traversal
 # =============================================================================
+
 
 @pytest.mark.security
 @pytest.mark.asyncio
@@ -1123,9 +1119,7 @@ async def test_audit_chain_depth_exhaustion_fails_closed():
     mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
 
     with pytest.raises(HTTPException) as exc_info:
-        await service.verify_record_against_audit_trail(
-            mock_session, rec, max_chain_depth=0
-        )
+        await service.verify_record_against_audit_trail(mock_session, rec, max_chain_depth=0)
 
     assert exc_info.value.status_code == 409
     assert "exceeded max depth 0" in exc_info.value.detail
@@ -1134,6 +1128,7 @@ async def test_audit_chain_depth_exhaustion_fails_closed():
 # =============================================================================
 # PART 5: Concurrency and Security Privilege Isolation
 # =============================================================================
+
 
 def test_source_code_serializes_audit_appends_with_for_update():
     """Verify source code includes .with_for_update() on latest_audit query."""

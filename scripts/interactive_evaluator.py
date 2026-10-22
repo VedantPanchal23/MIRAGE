@@ -18,6 +18,7 @@ import re
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 # Set environment before any service imports
 os.environ["ENVIRONMENT"] = "test"
@@ -97,12 +98,12 @@ def evaluate_pipeline(
     action_type: str | None = None,
     action_amount: float | None = None,
     claim_reality_success: bool = False,
-) -> dict:
+) -> dict[str, Any]:
     """Run the complete MIRAGE 5-gate assurance pipeline on any input prompt."""
     section_banner(f"EVALUATING: {scenario_title}", MAGENTA)
     log_kv("Inbound Prompt", f'"{prompt}"', CYAN)
 
-    results = {
+    results: dict[str, Any] = {
         "gate1_decision": "ALLOW",
         "risk_score": 0,
         "taints": ["TAINT_UNTRUSTED"],
@@ -440,26 +441,28 @@ def evaluate_pipeline(
     section_banner("EXECUTIVE ASSURANCE SUMMARY & VERDICT", CYAN)
     log_kv(
         "Gate 1 (Input)",
-        results["gate1_decision"],
+        str(results["gate1_decision"]),
         GREEN
         if results["gate1_decision"] == "ALLOW"
         else (YELLOW if results["gate1_decision"] == "TRANSFORM" else RED),
     )
-    log_kv("Gate 2 (Context)", results["gate2_containment"], GREEN)
+    log_kv("Gate 2 (Context)", str(results["gate2_containment"]), GREEN)
     log_kv(
         "Gate 3 (Action)",
-        results["gate3_action"],
+        str(results["gate3_action"]),
         GREEN if results["gate3_action"] in ("AUTHORIZED", "READ_ONLY") else YELLOW,
     )
     log_kv(
-        "Gate 4 (Output)", results["gate4_disposition"], GREEN if results["gate4_disposition"] == "EMITTED" else YELLOW
+        "Gate 4 (Output)",
+        str(results["gate4_disposition"]),
+        GREEN if results["gate4_disposition"] == "EMITTED" else YELLOW,
     )
     log_kv(
         "Gate 5 (Outcome)",
-        results["gate5_reality"],
+        str(results["gate5_reality"]),
         GREEN if results["gate5_reality"] in ("CONFIRMED", "N/A") else YELLOW,
     )
-    log_kv("WHAT MIRAGE DOES NEXT", results["next_step"], BOLD + CYAN)
+    log_kv("WHAT MIRAGE DOES NEXT", str(results["next_step"]), BOLD + CYAN)
 
     return results
 
@@ -559,9 +562,8 @@ def run_interactive_menu() -> None:
                 f"{DIM}(Optional) Enter candidate LLM response to evaluate, "
                 f"or press ENTER to let MIRAGE synthesize one:{RESET}"
             )
-            custom_response = input(f"{BOLD}Candidate response (optional): {RESET}").strip()
-            if not custom_response:
-                custom_response = None
+            raw_response = input(f"{BOLD}Candidate response (optional): {RESET}").strip()
+            custom_response = raw_response if raw_response else None
 
             evaluate_pipeline(
                 prompt=custom_prompt,

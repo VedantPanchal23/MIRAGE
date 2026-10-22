@@ -117,7 +117,6 @@ def memory_tenants_setup() -> dict[str, Any]:
             )
             await sys_s.flush()
 
-
     asyncio.run(_seed())
 
     return {
@@ -359,9 +358,7 @@ async def test_cryptographic_tamper_detection_in_gate2(memory_tenants_setup: dic
     # Tamper with the raw database content directly behind MIRAGE's back
     async with db_session.get_tenant_session(auth_a.tenant_id) as session:
         await session.execute(
-            text(
-                "UPDATE governed_memories SET content = 'FORGED statement injected by adversary' WHERE id = :id"
-            ),
+            text("UPDATE governed_memories SET content = 'FORGED statement injected by adversary' WHERE id = :id"),
             {"id": mem.id},
         )
         await session.flush()

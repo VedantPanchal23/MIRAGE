@@ -11,6 +11,7 @@ from typing import Any
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import session as db_session
 from db.models import (
@@ -543,9 +544,7 @@ class ActionGovernorService:
         )
         cost_contracts_res = await session.execute(cost_contracts_stmt)
         all_radii = cost_contracts_res.scalars().all()
-        window_cost = sum(
-            float(r.get("estimated_dollar_cost", 0.0) or 0.0) for r in all_radii if isinstance(r, dict)
-        )
+        window_cost = sum(float(r.get("estimated_dollar_cost", 0.0) or 0.0) for r in all_radii if isinstance(r, dict))
 
         is_salami_violation = bool(
             (window_risk + single_action_risk > MAX_WINDOW_CUMULATIVE_RISK)
@@ -594,8 +593,10 @@ class ActionGovernorService:
             return (
                 True,
                 None,
-                ("Outcome Assurance contract violation: "
-                "action requires outcome assurance but defines zero expected postconditions."),
+                (
+                    "Outcome Assurance contract violation: "
+                    "action requires outcome assurance but defines zero expected postconditions."
+                ),
             )
 
         # Criterion 2: Acceptable evidence sources
@@ -612,8 +613,10 @@ class ActionGovernorService:
             return (
                 True,
                 None,
-                ("Outcome Assurance contract violation: "
-                "acceptable_evidence_sources cannot be empty when outcome contract is specified."),
+                (
+                    "Outcome Assurance contract violation: "
+                    "acceptable_evidence_sources cannot be empty when outcome contract is specified."
+                ),
             )
 
         # Criterion 3: Verification deadline
@@ -680,7 +683,7 @@ class ActionGovernorService:
 
     @staticmethod
     async def _revalidate_execution_delegation(
-        session: Any,
+        session: AsyncSession,
         auth: AuthContext,
         transaction: AITransaction,
         contract: ActionContract,
@@ -880,10 +883,7 @@ class ActionGovernorService:
         if approval.action_id != contract.id or approval.transaction_id != contract.transaction_id:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Approval replay attack detected: Approval token does not belong to this "
-                    "action/transaction."
-                ),
+                detail=("Approval replay attack detected: Approval token does not belong to this action/transaction."),
             )
 
         # Recompute and verify contract binding hash
@@ -2148,9 +2148,10 @@ class ActionGovernorService:
                     .with_for_update()
                 )
                 res = await session.execute(stmt)
-                contract = res.scalar_one_or_none()
-                if not contract:
+                contract_record = res.scalar_one_or_none()
+                if not contract_record:
                     raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Action contract not found")
+                contract = contract_record
 
                 txn_stmt = (
                     select(AITransaction)

@@ -149,6 +149,7 @@ async def test_a2_orphan_reconciliation_drift_never_clamps_and_records_incident(
 
         # Backdate reservation expiry
         from db.models import BudgetReservationRecord
+
         stmt_r = select(BudgetReservationRecord).where(BudgetReservationRecord.id == res.id)
         r_rec = (await session.execute(stmt_r)).scalar_one()
         r_rec.expires_at = datetime.now(UTC) - timedelta(seconds=10)
@@ -165,6 +166,7 @@ async def test_a2_orphan_reconciliation_drift_never_clamps_and_records_incident(
         assert b_rec.reserved_micros == 2_000  # Unaltered; no silent masking
 
         from db.models import BudgetReservationRecord
+
         stmt_r = select(BudgetReservationRecord).where(BudgetReservationRecord.id == res.id)
         r_rec = (await session.execute(stmt_r)).scalar_one()
         assert r_rec.status == "RECONCILIATION_REQUIRED"

@@ -70,7 +70,7 @@ def _claims_from_access_token(
         ) from exc
 
     try:
-        payload = jwt.decode(
+        decoded = jwt.decode(
             token,
             key,
             algorithms=[algo],
@@ -80,6 +80,9 @@ def _claims_from_access_token(
                 "verify_aud": False,
             },
         )
+        if not isinstance(decoded, dict):
+            raise _unauthorized("Malformed JWT payload: expected object")
+        payload: dict[str, Any] = decoded
     except ExpiredSignatureError as exc:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

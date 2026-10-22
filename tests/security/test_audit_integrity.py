@@ -61,6 +61,7 @@ from shared.telemetry.metrics import (
 # 1. Canonical SHA-256 Hash Determinism and Field Sensitivity
 # =============================================================================
 
+
 def test_canonical_audit_hash_determinism_and_sensitivity() -> None:
     """Canonical audit hash is strictly deterministic and sensitive to every field."""
     base_params = {
@@ -116,6 +117,7 @@ def test_canonical_audit_hash_determinism_and_sensitivity() -> None:
 # =============================================================================
 # 2. In-Database Hash Chain Verification and Tampering Detection
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_audit_ledger_verify_chain_valid_and_tampered() -> None:
@@ -278,6 +280,7 @@ async def test_audit_ledger_verify_chain_valid_and_tampered() -> None:
 # 3. External Audit Anchor Backend (FileAuditAnchorBackend)
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_file_audit_anchor_backend_write_and_verify() -> None:
     """FileAuditAnchorBackend persists signed checkpoints, reads back proofs, and detects tampering."""
@@ -360,6 +363,7 @@ async def test_file_audit_anchor_backend_write_and_verify() -> None:
 # 4. Truncation Detection with External Anchors
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_audit_ledger_verify_with_anchor_truncation_detection() -> None:
     """verify_with_anchor detects database truncation when head sequence < external anchor sequence."""
@@ -393,8 +397,10 @@ async def test_audit_ledger_verify_with_anchor_truncation_detection() -> None:
         "total_records_verified": 40,
     }
 
-    with patch("services.audit_ledger.AuditLedgerService.verify_chain", new_callable=AsyncMock) as mock_vc, \
-         patch("services.audit_ledger.get_anchor_backend", return_value=mock_backend):
+    with (
+        patch("services.audit_ledger.AuditLedgerService.verify_chain", new_callable=AsyncMock) as mock_vc,
+        patch("services.audit_ledger.get_anchor_backend", return_value=mock_backend),
+    ):
         mock_vc.return_value = mock_chain_res
 
         report = await AuditLedgerService.verify_with_anchor(mock_session, tenant_id)
@@ -409,6 +415,7 @@ async def test_audit_ledger_verify_with_anchor_truncation_detection() -> None:
 # =============================================================================
 # 5. Header Sanitization, Log Injection Defense & ContextVar Propagation
 # =============================================================================
+
 
 def test_trace_headers_sanitization_and_log_injection_defense() -> None:
     """SecurityHeadersMiddleware sanitizes untrusted identity headers and protects against log injection."""
@@ -453,6 +460,7 @@ def test_trace_headers_sanitization_and_log_injection_defense() -> None:
 # =============================================================================
 # 6. Audit API Endpoints Scope & Role Authorization
 # =============================================================================
+
 
 def test_audit_api_endpoints_scope_enforcement() -> None:
     """Audit endpoints strictly enforce AUDIT_READ and AUDIT_EXPORT scopes."""
@@ -501,6 +509,7 @@ def test_audit_api_endpoints_scope_enforcement() -> None:
 # 7. Five-Gate Telemetry Metrics Recording
 # =============================================================================
 
+
 def test_telemetry_metrics_recording() -> None:
     """Five-gate telemetry metrics functions record labels and values without errors."""
     # 1. Gate decisions
@@ -517,10 +526,13 @@ def test_telemetry_metrics_recording() -> None:
 
     # 4. Gate 5 outcome verification
     record_outcome_verification(observability_class="read_write", outcome_status="verified_success")
-    assert OUTCOME_VERIFICATION_TOTAL.labels(
-        observability_class="read_write",
-        outcome_status="verified_success",
-    )._value.get() >= 1
+    assert (
+        OUTCOME_VERIFICATION_TOTAL.labels(
+            observability_class="read_write",
+            outcome_status="verified_success",
+        )._value.get()
+        >= 1
+    )
 
     # 5. Audit integrity checks
     record_audit_integrity_check(status="anchored")

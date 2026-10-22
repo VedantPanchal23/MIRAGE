@@ -98,9 +98,7 @@ In `services/reality_verifier.py`, Step 4 of `verify_action_outcome` enforces fa
 ```python
 # Step 4: Check Idempotency Key (FAIL CLOSED)
 if request.idempotency_key:
-    existing_record = await self.get_outcome_by_idempotency_key(
-        session, request.tenant_id, request.idempotency_key
-    )
+    existing_record = await self.get_outcome_by_idempotency_key(session, request.tenant_id, request.idempotency_key)
     if existing_record:
         if existing_record.action_id != request.action_id:
             raise HTTPException(
@@ -124,11 +122,7 @@ if not is_sqlite:
     )
 
 # 2. Lock tenant audit ledger head via SELECT ... FOR UPDATE
-ledger_stmt = (
-    select(TenantAuditLedger)
-    .where(TenantAuditLedger.tenant_id == record.tenant_id)
-    .with_for_update()
-)
+ledger_stmt = select(TenantAuditLedger).where(TenantAuditLedger.tenant_id == record.tenant_id).with_for_update()
 ledger_res = await session.execute(ledger_stmt)
 ledger_head_row = ledger_res.scalar_one_or_none()
 

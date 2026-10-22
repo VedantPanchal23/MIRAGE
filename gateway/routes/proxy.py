@@ -146,7 +146,9 @@ async def chat_completions_proxy(
     usage_info = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0, "cached_tokens": 0}
     actual_cost_micros = 0
 
-    candidates_to_try = [(routed_model, routed_provider, pricing_profile_id, 1)]
+    candidates_to_try: list[tuple[str, str | None, str | None, int]] = [
+        (routed_model, routed_provider, pricing_profile_id, 1)
+    ]
     for idx, fb_model in enumerate(routing_decision.fallback_ladder, start=2):
         candidates_to_try.append((fb_model, None, None, idx))
 
@@ -166,12 +168,16 @@ async def chat_completions_proxy(
                 effective_headroom = min(effective_headroom, routing_req.max_cost_micros)
 
             # Independently revalidate fallback candidate against all assurance constraints and budget
-            is_valid, reason, profile, est_fb_cost, fb_price_id = (
-                await model_router_service.revalidate_fallback_candidate(
-                    candidate_model_id=cand_model,
-                    request=routing_req,
-                    remaining_budget_micros=effective_headroom,
-                )
+            (
+                is_valid,
+                reason,
+                profile,
+                est_fb_cost,
+                fb_price_id,
+            ) = await model_router_service.revalidate_fallback_candidate(
+                candidate_model_id=cand_model,
+                request=routing_req,
+                remaining_budget_micros=effective_headroom,
             )
             if not is_valid or profile is None:
                 logger.warning("Fallback candidate disqualified", model=cand_model, reason=reason)
@@ -205,6 +211,7 @@ async def chat_completions_proxy(
 
         try:
             adapter = get_provider_adapter(cand_prov)
+
             async def _execute_provider(
                 _adapter: Any = adapter,
                 _model: str = cand_model,

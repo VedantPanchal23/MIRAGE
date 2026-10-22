@@ -400,13 +400,18 @@ async def test_complete_phase1_governed_react_lifecycle(phase1_setup: dict[str, 
     # 13. Verify Tamper-Evident SHA-256 Audit Chain in PostgreSQL
     async with db_session.get_tenant_session(tenant_id) as session:
         from sqlalchemy import select
+
         audit_records = (
-            await session.execute(
-                select(AuditLogRecord)
-                .where(AuditLogRecord.tenant_id == tenant_id)
-                .order_by(AuditLogRecord.sequence_number.asc())
+            (
+                await session.execute(
+                    select(AuditLogRecord)
+                    .where(AuditLogRecord.tenant_id == tenant_id)
+                    .order_by(AuditLogRecord.sequence_number.asc())
+                )
             )
-        ).scalars().all()
+            .scalars()
+            .all()
+        )
 
         assert len(audit_records) >= 10
         prev = "0" * 64

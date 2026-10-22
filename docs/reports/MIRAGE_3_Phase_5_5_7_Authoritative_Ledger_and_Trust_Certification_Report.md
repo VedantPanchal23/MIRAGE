@@ -98,18 +98,22 @@ Migration `011_audit_seq_not_null` enforces strict catalog constraints:
 def upgrade() -> None:
     conn = op.get_bind()
     # 1. Backfill NULL sequence numbers sequentially per tenant
-    conn.execute(sa.text("""
+    conn.execute(
+        sa.text("""
         WITH numbered AS (
             SELECT entry_id, ROW_NUMBER() OVER (PARTITION BY tenant_id ORDER BY created_at ASC, entry_id ASC) AS seq
             FROM audit_logs
             WHERE sequence_number IS NULL
         )
         UPDATE audit_logs SET sequence_number = numbered.seq FROM numbered WHERE audit_logs.entry_id = numbered.entry_id;
-    """))
+    """)
+    )
     # 2. Synchronize tenant_audit_ledgers head
     ...
     # 3. Apply schema constraint
-    op.alter_column("audit_logs", "sequence_number", existing_type=sa.BigInteger(), nullable=False, server_default=sa.text("1"))
+    op.alter_column(
+        "audit_logs", "sequence_number", existing_type=sa.BigInteger(), nullable=False, server_default=sa.text("1")
+    )
 ```
 
 ### 3.2. Mandatory PostgreSQL Lock and Append Execution Path
@@ -129,7 +133,9 @@ if is_postgres:
     ledger_res = await session.execute(ledger_stmt)
     ledger_head_row = ledger_res.scalar_one_or_none()
     if ledger_head_row is None:
-        raise RuntimeError(f"Critical ledger invariant violation: tenant_audit_ledgers row missing for tenant '{record.tenant_id}'.")
+        raise RuntimeError(
+            f"Critical ledger invariant violation: tenant_audit_ledgers row missing for tenant '{record.tenant_id}'."
+        )
 ```
 
 ### 3.3. Conservative Trust Level Semantics

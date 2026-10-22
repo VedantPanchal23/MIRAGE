@@ -27,8 +27,18 @@ GATEWAY_URL = "http://localhost:8000"
 def run_psql(sql: str, as_user: str = "mirage") -> tuple[int, str, str]:
     """Execute raw SQL in the running PostgreSQL container via psql."""
     cmd = [
-        "docker", "compose", "exec", "-T", "postgres",
-        "psql", "-U", as_user, "-d", "mirage_db", "-c", sql,
+        "docker",
+        "compose",
+        "exec",
+        "-T",
+        "postgres",
+        "psql",
+        "-U",
+        as_user,
+        "-d",
+        "mirage_db",
+        "-c",
+        sql,
     ]
     proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     return proc.returncode, proc.stdout.strip(), proc.stderr.strip()

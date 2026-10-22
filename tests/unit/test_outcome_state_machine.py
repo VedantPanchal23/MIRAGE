@@ -76,40 +76,24 @@ def _mock_action(action_id: str = "act_p6_sm_1", target: str = "postgres://order
 def test_monotonic_state_machine_transition_rules(reality_service: RealityVerifierService) -> None:
     """Verify monotonic transition rules: permitted advances vs illegal regressions."""
     # PENDING_VERIFICATION can transition to terminal and intermediate states
-    reality_service._validate_outcome_transition(
-        OutcomeStatus.PENDING_VERIFICATION, OutcomeStatus.VERIFIED_SUCCESS
-    )
-    reality_service._validate_outcome_transition(
-        OutcomeStatus.PENDING_VERIFICATION, OutcomeStatus.VERIFIED_FAILURE
-    )
-    reality_service._validate_outcome_transition(
-        OutcomeStatus.PENDING_VERIFICATION, OutcomeStatus.PARTIAL_ACHIEVEMENT
-    )
-    reality_service._validate_outcome_transition(
-        OutcomeStatus.PENDING_VERIFICATION, OutcomeStatus.UNKNOWN
-    )
-    reality_service._validate_outcome_transition(
-        OutcomeStatus.PENDING_VERIFICATION, OutcomeStatus.UNVERIFIABLE
-    )
+    reality_service._validate_outcome_transition(OutcomeStatus.PENDING_VERIFICATION, OutcomeStatus.VERIFIED_SUCCESS)
+    reality_service._validate_outcome_transition(OutcomeStatus.PENDING_VERIFICATION, OutcomeStatus.VERIFIED_FAILURE)
+    reality_service._validate_outcome_transition(OutcomeStatus.PENDING_VERIFICATION, OutcomeStatus.PARTIAL_ACHIEVEMENT)
+    reality_service._validate_outcome_transition(OutcomeStatus.PENDING_VERIFICATION, OutcomeStatus.UNKNOWN)
+    reality_service._validate_outcome_transition(OutcomeStatus.PENDING_VERIFICATION, OutcomeStatus.UNVERIFIABLE)
 
     # Terminal VERIFIED_SUCCESS cannot regress to PENDING_VERIFICATION or FAILED
     with pytest.raises(HTTPException) as exc_info:
-        reality_service._validate_outcome_transition(
-            OutcomeStatus.VERIFIED_SUCCESS, OutcomeStatus.PENDING_VERIFICATION
-        )
+        reality_service._validate_outcome_transition(OutcomeStatus.VERIFIED_SUCCESS, OutcomeStatus.PENDING_VERIFICATION)
     assert exc_info.value.status_code == 409
 
     with pytest.raises(HTTPException) as exc_info2:
-        reality_service._validate_outcome_transition(
-            OutcomeStatus.VERIFIED_SUCCESS, OutcomeStatus.FAILED
-        )
+        reality_service._validate_outcome_transition(OutcomeStatus.VERIFIED_SUCCESS, OutcomeStatus.FAILED)
     assert exc_info2.value.status_code == 409
 
     # Terminal VERIFIED_FAILURE cannot upgrade to VERIFIED_SUCCESS
     with pytest.raises(HTTPException) as exc_info3:
-        reality_service._validate_outcome_transition(
-            OutcomeStatus.VERIFIED_FAILURE, OutcomeStatus.VERIFIED_SUCCESS
-        )
+        reality_service._validate_outcome_transition(OutcomeStatus.VERIFIED_FAILURE, OutcomeStatus.VERIFIED_SUCCESS)
     assert exc_info3.value.status_code == 409
 
 

@@ -31,7 +31,7 @@ class DeBERTaNLIVerifier:
                 import torch
                 from transformers import AutoModelForSequenceClassification, AutoTokenizer
 
-                self._tokenizer = AutoTokenizer.from_pretrained(model_name)
+                self._tokenizer = AutoTokenizer.from_pretrained(model_name)  # type: ignore[no-untyped-call]
                 self._model = AutoModelForSequenceClassification.from_pretrained(model_name)
                 device = "cuda" if torch.cuda.is_available() else "cpu"
                 self._model.to(device)

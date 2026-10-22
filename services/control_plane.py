@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from db import session as db_session
 from db.models import (
@@ -482,18 +482,23 @@ async def transition_transaction(
                     .where(
                         ActionContract.transaction_id == transaction_id,
                         ActionContract.tenant_id == auth.tenant_id,
-                        ActionContract.updated_at > out_rec.created_at,
+                        or_(
+                            ActionContract.created_at > out_rec.created_at,
+                            ActionContract.completed_at > out_rec.created_at,
+                            ActionContract.executed_at > out_rec.created_at,
+                        ),
                     )
                     .limit(1)
                 )
                 post_action = (await session.execute(post_action_stmt)).scalar_one_or_none()
                 if post_action:
+                    post_action_time = post_action.completed_at or post_action.executed_at or post_action.created_at
                     raise HTTPException(
                         status_code=status.HTTP_409_CONFLICT,
                         detail=(
                             "Cannot complete transaction: Output assurance is stale. "
                             f"Action '{post_action.id}' was modified after output was evaluated "
-                            f"({post_action.updated_at} > {out_rec.created_at})."
+                            f"({post_action_time} > {out_rec.created_at})."
                         ),
                     )
 

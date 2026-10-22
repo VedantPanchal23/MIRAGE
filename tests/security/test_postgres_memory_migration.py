@@ -118,16 +118,12 @@ class TestPostgresMemoryMigration:
         with sync_engine.connect() as conn:
             # Seed tenant records
             conn.execute(
-                text(
-                    "INSERT INTO tenants (id, name, api_key_hash, created_at) "
-                    "VALUES (:t, 'Idem Test', :h, :now)"
-                ),
+                text("INSERT INTO tenants (id, name, api_key_hash, created_at) VALUES (:t, 'Idem Test', :h, :now)"),
                 {"t": tenant_id, "h": f"h_{tenant_id}", "now": now},
             )
             conn.execute(
                 text(
-                    "INSERT INTO tenants (id, name, api_key_hash, created_at) "
-                    "VALUES (:t, 'Other Idem Test', :h, :now)"
+                    "INSERT INTO tenants (id, name, api_key_hash, created_at) VALUES (:t, 'Other Idem Test', :h, :now)"
                 ),
                 {"t": other_tenant, "h": f"h_{other_tenant}", "now": now},
             )
@@ -276,9 +272,9 @@ class TestPostgresMemoryMigration:
                     .one()
                 )
                 assert class_info["relrowsecurity"] is True, "RLS not enabled on governed_memories in clean database"
-                assert (
-                    class_info["relforcerowsecurity"] is True
-                ), "RLS not FORCED on governed_memories in clean database"
+                assert class_info["relforcerowsecurity"] is True, (
+                    "RLS not FORCED on governed_memories in clean database"
+                )
 
                 policy_info = (
                     conn.execute(
@@ -346,8 +342,7 @@ class TestPostgresMemoryMigration:
                 )
                 conn.execute(
                     text(
-                        "INSERT INTO tenants (id, name, api_key_hash, created_at) "
-                        "VALUES (:t, 'TenantA', 'h_a', NOW())"
+                        "INSERT INTO tenants (id, name, api_key_hash, created_at) VALUES (:t, 'TenantA', 'h_a', NOW())"
                     ),
                     {"t": tenant_a},
                 )
@@ -379,8 +374,7 @@ class TestPostgresMemoryMigration:
                 )
                 conn.execute(
                     text(
-                        "INSERT INTO tenants (id, name, api_key_hash, created_at) "
-                        "VALUES (:t, 'TenantB', 'h_b', NOW())"
+                        "INSERT INTO tenants (id, name, api_key_hash, created_at) VALUES (:t, 'TenantB', 'h_b', NOW())"
                     ),
                     {"t": tenant_b},
                 )

@@ -98,9 +98,7 @@ async def test_end_to_end_output_assurance_api(phase4_setup: dict[str, str]) -> 
         )
         await session.flush()
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
 
     request_payload = {
         "transaction_id": txn_id,
@@ -164,9 +162,7 @@ async def test_unauthorized_and_cross_tenant_access_rejected(phase4_setup: dict[
     assert res.status_code == 401
 
     # 2. Call with VIEWER role (lacks VERIFY_WRITE permission) -> 403 Forbidden
-    viewer_headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.VIEWER
-    )
+    viewer_headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.VIEWER)
     res_viewer = client.post(
         "/v1/output/assure",
         json={"transaction_id": txn_id, "response_text": "hello"},
@@ -278,9 +274,7 @@ async def test_full_react_loop_gate1_through_gate4(phase4_setup: dict[str, str])
         )
         await session.flush()
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
 
     # Agent generates output reflecting the completed action
     agent_output = "I have successfully executed the database update for record 42."
@@ -365,9 +359,7 @@ async def test_contradicted_claims_trigger_correction_loop(phase4_setup: dict[st
         )
         await session.flush()
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
 
     # Claim is contradicted by evidence
     request_payload = {

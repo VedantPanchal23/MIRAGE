@@ -102,8 +102,8 @@ class RedisClientManager:
         self.max_connections = max_connections or settings.redis_max_connections
         self.socket_timeout = socket_timeout or settings.redis_socket_timeout
         self.socket_connect_timeout = socket_connect_timeout or settings.redis_socket_connect_timeout
-        self._pool: aioredis.ConnectionPool[Any] | None = None
-        self._client: aioredis.Redis[Any] | None = None
+        self._pool: aioredis.ConnectionPool | None = None
+        self._client: aioredis.Redis | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
 
     def _get_connection_kwargs(self) -> dict[str, Any]:
@@ -120,7 +120,7 @@ class RedisClientManager:
             kwargs["password"] = self.password
         return kwargs
 
-    def get_pool(self) -> aioredis.ConnectionPool[Any]:
+    def get_pool(self) -> aioredis.ConnectionPool:
         """Return or lazily initialize the connection pool bound to current event loop."""
         current_loop: asyncio.AbstractEventLoop | None = None
         try:
@@ -143,7 +143,7 @@ class RedisClientManager:
         assert self._pool is not None
         return self._pool
 
-    def get_client(self) -> aioredis.Redis[Any]:
+    def get_client(self) -> aioredis.Redis:
         """Return an async Redis client instance bound to current event loop."""
         pool = self.get_pool()
         if self._client is None:
@@ -305,9 +305,9 @@ class TokenBucketRateLimiter:
         client = self.client_manager.get_client()
         try:
             if self._script_sha is None:
-                self._script_sha = await client.script_load(TOKEN_BUCKET_LUA_SCRIPT)  # type: ignore[no-untyped-call]
+                self._script_sha = await client.script_load(TOKEN_BUCKET_LUA_SCRIPT)
             try:
-                raw_res = await client.evalsha(  # type: ignore[no-untyped-call]
+                raw_res = await client.evalsha(
                     self._script_sha,
                     1,
                     key,
@@ -318,8 +318,8 @@ class TokenBucketRateLimiter:
                 )
             except RedisError as script_err:
                 if "NOSCRIPT" in str(script_err):
-                    self._script_sha = await client.script_load(TOKEN_BUCKET_LUA_SCRIPT)  # type: ignore[no-untyped-call]
-                    raw_res = await client.evalsha(  # type: ignore[no-untyped-call]
+                    self._script_sha = await client.script_load(TOKEN_BUCKET_LUA_SCRIPT)
+                    raw_res = await client.evalsha(
                         self._script_sha,
                         1,
                         key,

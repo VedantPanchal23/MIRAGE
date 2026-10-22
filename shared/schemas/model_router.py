@@ -54,18 +54,14 @@ class ModelCapabilityProfile(BaseModel):
     privacy_attestation_revoked_at: datetime | None = Field(
         default=None, description="Revocation timestamp if attestation was revoked"
     )
-    privacy_policy_version: str | None = Field(
-        default="v1.0", description="Privacy policy or BAA agreement version"
-    )
+    privacy_policy_version: str | None = Field(default="v1.0", description="Privacy policy or BAA agreement version")
     attestation_issuer: str | None = Field(
         default=None, description="Trusted issuer or notary identity for privacy attestation"
     )
     attestation_signature: str | None = Field(
         default=None, description="Cryptographic signature or hash of privacy attestation"
     )
-    endpoint_url: str | None = Field(
-        default=None, description="Explicit execution endpoint URL"
-    )
+    endpoint_url: str | None = Field(default=None, description="Explicit execution endpoint URL")
     reliability_index: float = Field(
         default=0.85, ge=0.0, le=1.0, description="Historical accuracy and calibration score"
     )
@@ -82,9 +78,7 @@ class ModelCapabilityProfile(BaseModel):
     pricing_available: bool = Field(
         default=True, description="Whether active pricing profile was verified and available"
     )
-    pricing_profile_id: str | None = Field(
-        default=None, description="Authoritative pricing profile ID if available"
-    )
+    pricing_profile_id: str | None = Field(default=None, description="Authoritative pricing profile ID if available")
     active: bool = Field(default=True, description="Whether model is currently operational")
 
 
@@ -153,4 +147,3 @@ class RoutingDecision(BaseModel):
     pricing_profile_id: str = Field(default="", description="ID of authoritative active pricing profile used")
     reason: str = Field(..., description="Explanation of why this model was chosen")
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
-

@@ -78,7 +78,9 @@ During adversarial red-teaming in Phase 5.5.2, four (4) residual vulnerabilities
   ```python
   class SafeAsyncNetworkBackend(httpcore.AsyncNetworkBackend):
       async def connect_tcp(self, host: str, port: int, timeout=None, local_address=None, socket_options=None):
-          stream = await self._backend.connect_tcp(host, port, timeout=timeout, local_address=local_address, socket_options=socket_options)
+          stream = await self._backend.connect_tcp(
+              host, port, timeout=timeout, local_address=local_address, socket_options=socket_options
+          )
           server_addr = stream.get_extra_info("server_addr")
           if server_addr and not self._allow_local:
               peer_ip = str(server_addr[0])
@@ -102,10 +104,11 @@ During adversarial red-teaming in Phase 5.5.2, four (4) residual vulnerabilities
   async def verify_record_against_audit_trail(self, session, record):
       contract = self._record_to_contract(record)
       # Locate append-only AuditLogRecord for this outcome
-      audit_stmt = select(AuditLogRecord).where(
-          AuditLogRecord.tenant_id == record.tenant_id,
-          AuditLogRecord.event_type == "GATE5_OUTCOME_VERIFIED"
-      ).order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
+      audit_stmt = (
+          select(AuditLogRecord)
+          .where(AuditLogRecord.tenant_id == record.tenant_id, AuditLogRecord.event_type == "GATE5_OUTCOME_VERIFIED")
+          .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
+      )
       # Assert matching response_hash and decision
       if matching_audit is not None:
           if matching_audit.response_hash != record.verification_hash:
@@ -129,8 +132,7 @@ During adversarial red-teaming in Phase 5.5.2, four (4) residual vulnerabilities
           start_idx = max(0, m.start() - 30)
           preceding_context = response_text[start_idx : m.start()].lower()
           negated = any(
-              neg in preceding_context
-              for neg in ["not ", "never ", "failed to ", "unable to ", "could not ", "did not "]
+              neg in preceding_context for neg in ["not ", "never ", "failed to ", "unable to ", "could not ", "did not "]
           )
           if not negated:
               claims_completion = True

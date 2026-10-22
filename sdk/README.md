@@ -64,7 +64,9 @@ with MirageClient(api_key=api_key, base_url="http://localhost:8000") as client:
     print(f"Verified text: {response.verified_response}")
     print(f"Hallucination Risk Score (HRS): {response.hrs_result.hrs:.4f}")
     print(f"Risk Tier: {response.hrs_result.tier}")
-    print(f"95% Conformal Interval: [{response.hrs_result.conformal_interval.lower}, {response.hrs_result.conformal_interval.upper}]")
+    print(
+        f"95% Conformal Interval: [{response.hrs_result.conformal_interval.lower}, {response.hrs_result.conformal_interval.upper}]"
+    )
 ```
 
 ### 2. Asynchronous Client (`AsyncMirageClient`)
@@ -74,6 +76,7 @@ import asyncio
 import os
 from mirage_sdk import AsyncMirageClient
 
+
 async def main():
     api_key = os.environ["MIRAGE_API_KEY"]
     async with AsyncMirageClient(api_key=api_key, base_url="http://localhost:8000") as client:
@@ -82,6 +85,7 @@ async def main():
             response="2 + 2 = 4",
         )
         print("HRS:", resp.hrs_result.hrs)
+
 
 asyncio.run(main())
 ```

@@ -18,6 +18,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -47,12 +48,12 @@ class InMemoryDemoCache:
     """In-memory cache implementing RedisCacheService contract for live demonstration."""
 
     def __init__(self) -> None:
-        self._cache: dict[str, dict] = {}
+        self._cache: dict[str, dict[str, Any]] = {}
 
     def get_scs_cache_key(self, tenant_id: str, model_id: str, prompt: str) -> str:
         return f"scs:{tenant_id}:{abs(hash(prompt + model_id))}"
 
-    async def get_scs(self, tenant_id: str, model_id: str, prompt: str) -> tuple[dict | None, bool]:
+    async def get_scs(self, tenant_id: str, model_id: str, prompt: str) -> tuple[dict[str, Any] | None, bool]:
         key = self.get_scs_cache_key(tenant_id, model_id, prompt)
         if key in self._cache:
             return self._cache[key], True
@@ -76,7 +77,7 @@ class InMemoryDemoCache:
         }
         return True
 
-    async def check_health(self) -> dict:
+    async def check_health(self) -> dict[str, Any]:
         return {"status": "healthy", "mode": "in_memory_demo"}
 
 
@@ -123,9 +124,10 @@ async def run_scenario(
         crit = getattr(c.claim.criticality, "value", str(c.claim.criticality))
         status_val = getattr(c.status, "value", str(c.status))
         color = GREEN if status_val == "VERIFIED" else (RED if status_val == "CONTRADICTED" else YELLOW)
+        ent_prob = f"{c.nli_score * 100:.1f}%" if c.nli_score is not None else "N/A"
         print(f'  [{idx}] "{BOLD}{c.claim.text}{RESET}"')
         print(f"      - Criticality Tier : {crit.upper()} (Weight: {c.claim.criticality_weight:.2f})")
-        print(f"      - Entailment Prob  : {c.nli_score * 100:.1f}%")
+        print(f"      - Entailment Prob  : {ent_prob}")
         print(f"      - Retrieval Score  : {c.rav_score:.4f}")
         print(f"      - Claim Verdict    : {color}{BOLD}{status_val}{RESET}")
 
@@ -202,7 +204,7 @@ async def main() -> None:
 
     # SCS with in-memory cache to ensure instant deterministic demo responses
     cache_service = InMemoryDemoCache()
-    scs = SCSWorker(verifier=verifier, cache_service=cache_service)
+    scs = SCSWorker(verifier=verifier, cache_service=cache_service)  # type: ignore[arg-type]
     ics = ICSWorker(verifier=verifier)
 
     orchestrator = VerificationOrchestrator(

@@ -84,10 +84,14 @@ class TestPostgresMCPRLS:
             conn.commit()
         admin_engine.dispose()
 
-        app_async_url = make_url(settings.database_url).set(
-            username="mirage_app",
-            password="mirage_app_pw",
-        ).render_as_string(hide_password=False)
+        app_async_url = (
+            make_url(settings.database_url)
+            .set(
+                username="mirage_app",
+                password="mirage_app_pw",
+            )
+            .render_as_string(hide_password=False)
+        )
         app_engine = create_async_engine(app_async_url, pool_size=5, max_overflow=5)
         return async_sessionmaker(bind=app_engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -104,9 +108,7 @@ class TestPostgresMCPRLS:
         command.upgrade(cfg, "head")
 
     @pytest.mark.asyncio
-    async def test_postgresql_rls_isolation_on_mcp_servers(
-        self, unprivileged_sessionmaker: Any
-    ) -> None:
+    async def test_postgresql_rls_isolation_on_mcp_servers(self, unprivileged_sessionmaker: Any) -> None:
         """PostgreSQL RLS ensures tenant A session cannot read or mutate tenant B MCP servers."""
         suffix = uuid.uuid4().hex[:8]
         tenant_a = f"rls_mcp_a_{suffix}"
@@ -175,9 +177,7 @@ class TestPostgresMCPRLS:
                 servers_in_a = list(res_a.scalars().all())
                 server_ids_a = {srv.id for srv in servers_in_a}
                 assert server_a_id in server_ids_a
-                assert (
-                    server_b_id not in server_ids_a
-                ), "Tenant A MUST NOT see Tenant B's MCP server under RLS"
+                assert server_b_id not in server_ids_a, "Tenant A MUST NOT see Tenant B's MCP server under RLS"
 
         # 2. Query under unprivileged mirage_app role with app.current_tenant_id = tenant_b
         async with unprivileged_sessionmaker() as s_b:
@@ -190,16 +190,12 @@ class TestPostgresMCPRLS:
                 servers_in_b = list(res_b.scalars().all())
                 server_ids_b = {srv.id for srv in servers_in_b}
                 assert server_b_id in server_ids_b
-                assert (
-                    server_a_id not in server_ids_b
-                ), "Tenant B MUST NOT see Tenant A's MCP server under RLS"
+                assert server_a_id not in server_ids_b, "Tenant B MUST NOT see Tenant A's MCP server under RLS"
 
         # 3. Fail-closed: Query under unprivileged mirage_app role with NO tenant set (empty string)
         async with unprivileged_sessionmaker() as s_none:
             async with s_none.begin():
-                await s_none.execute(
-                    text("SELECT set_config('app.current_tenant_id', '', true)")
-                )
+                await s_none.execute(text("SELECT set_config('app.current_tenant_id', '', true)"))
                 res_none = await s_none.execute(select(MCPServer))
                 servers_none = list(res_none.scalars().all())
                 # Should not see any server belonging to tenant_a or tenant_b
@@ -332,10 +328,11 @@ class TestPostgresMCPRLS:
                 egress_allowlist=["analytics.example.com"],
                 timeout_seconds=25,
             )
-            with patch("services.mcp_registry_service.validate_safe_provider_url", return_value="https://analytics.example.com/mcp"):
-                server_res = await mcp_registry_service.register_server(
-                    auth, create_req, session=session
-                )
+            with patch(
+                "services.mcp_registry_service.validate_safe_provider_url",
+                return_value="https://analytics.example.com/mcp",
+            ):
+                server_res = await mcp_registry_service.register_server(auth, create_req, session=session)
             assert server_res.id is not None
             assert server_res.trust_status == MCPTrustStatus.PENDING_APPROVAL.value
 
@@ -363,9 +360,7 @@ class TestPostgresMCPRLS:
                 )
             ]
             mcp_registry_service.mcp_client.list_tools = AsyncMock(return_value=mock_discovered)
-            sync_res = await mcp_registry_service.discover_and_sync_tools(
-                auth, server_res.id, session=session
-            )
+            sync_res = await mcp_registry_service.discover_and_sync_tools(auth, server_res.id, session=session)
             assert sync_res.tools_registered == 1
             assert len(sync_res.tools_discovered) == 1
             assert sync_res.tools_discovered[0].name == "run_query"

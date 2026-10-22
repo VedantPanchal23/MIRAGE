@@ -82,7 +82,7 @@ def derive_resource_advisory_lock_key(tenant_id: str, canonical_uri: str) -> int
     or process termination can never leave stale application-level advisory locks behind.
     """
     digest = hashlib.sha256(f"{tenant_id}:{canonical_uri}".encode()).digest()
-    return struct.unpack(">q", digest[:8])[0]
+    return int(struct.unpack(">q", digest[:8])[0])
 
 
 def _safe_unquote_segment(seg: str) -> str:
@@ -708,13 +708,13 @@ class ResourceConcurrencyService:
                 try:
                     token_res = await s.execute(token_stmt)
                     if hasattr(token_res, "scalar_one"):
-                        val = token_res.scalar_one()
-                        if val is not None and isinstance(val, (int, float)):
-                            max_token = max(max_token, int(val))
+                        v1 = token_res.scalar_one()
+                        if v1 is not None and isinstance(v1, (int, float)):
+                            max_token = max(max_token, int(v1))
                     elif hasattr(token_res, "scalar"):
-                        val = token_res.scalar()
-                        if val is not None and isinstance(val, (int, float)):
-                            max_token = max(max_token, int(val))
+                        v2 = token_res.scalar()
+                        if v2 is not None and isinstance(v2, (int, float)):
+                            max_token = max(max_token, int(v2))
                 except Exception:
                     pass
 

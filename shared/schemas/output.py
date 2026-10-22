@@ -189,7 +189,5 @@ class OutputAssuranceRequest(BaseModel):
     knowledge_base_id: str | None = Field(default=None, description="Qdrant collection for RAV grounding")
     image_urls: list[str] = Field(default_factory=list, description="Multimodal image references")
     auto_correct: bool = Field(default=True, description="Enable autonomous LangGraph correction loop")
-    require_factual_verification: bool = Field(
-        default=True, description="Whether to invoke Tier 3 verification ladder"
-    )
+    require_factual_verification: bool = Field(default=True, description="Whether to invoke Tier 3 verification ladder")
     budget: VerificationBudget = Field(default_factory=VerificationBudget)

@@ -296,10 +296,7 @@ class OutputAssuranceService:
 
             # Check budget limits before expensive verification
             elapsed_ms = (time.time() - start_time) * 1000
-            if (
-                elapsed_ms > request.budget.max_latency_ms
-                or (model_calls + 2) > request.budget.max_model_calls
-            ):
+            if elapsed_ms > request.budget.max_latency_ms or (model_calls + 2) > request.budget.max_model_calls:
                 budget_exhausted = True
                 logger.warning(
                     "Gate 4 verification budget exhausted before full grounding",

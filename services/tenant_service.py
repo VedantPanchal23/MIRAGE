@@ -196,6 +196,7 @@ class TenantService:
 
             # Create default tenant governance policy
             from db.models import Policy
+
             default_policy = Policy(
                 id=f"pol_{target_id}_default",
                 tenant_id=target_id,

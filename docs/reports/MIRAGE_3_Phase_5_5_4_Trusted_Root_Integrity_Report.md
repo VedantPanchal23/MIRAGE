@@ -79,12 +79,14 @@ Following the Phase 5.5.3 residual-closure milestone, this cryptographic audit a
 ### 2.5. Reproduction of Vulnerability 4: Race Condition on Concurrent Chain Appends
 - **Observation:** During `RealityVerifierService.verify_action_outcome`, the latest audit record was fetched via:
   ```python
-  latest_audit = (await db.execute(
-      select(AuditLogRecord)
-      .where(AuditLogRecord.tenant_id == tenant_id)
-      .order_by(AuditLogRecord.created_at.desc())
-      .limit(1)
-  )).scalar_one_or_none()
+  latest_audit = (
+      await db.execute(
+          select(AuditLogRecord)
+          .where(AuditLogRecord.tenant_id == tenant_id)
+          .order_by(AuditLogRecord.created_at.desc())
+          .limit(1)
+      )
+  ).scalar_one_or_none()
   ```
 - **Vulnerability:** Without database row locking (`FOR UPDATE`), two concurrent outcome verification requests for the same tenant could both read the same `latest_audit` record and use its `chain_hash` as `prev_hash`, resulting in a fork in the append-only ledger.
 
@@ -102,6 +104,7 @@ Following the Phase 5.5.3 residual-closure milestone, this cryptographic audit a
    ```python
    SHA256_HEX_PATTERN: Final[Pattern[str]] = re.compile(r"^[0-9a-f]{64}$")
 
+
    def is_valid_sha256_hex(val: Any) -> bool:
        if not isinstance(val, str):
            return False
@@ -111,6 +114,7 @@ Following the Phase 5.5.3 residual-closure milestone, this cryptographic audit a
    ```python
    class TrustedCheckpointRegistry:
        """Authoritative registry for trusted root hashes and verified checkpoints."""
+
        def __init__(self) -> None:
            self._roots: dict[str, set[str]] = {}
 
@@ -149,7 +153,7 @@ In `verify_record_against_audit_trail`:
    if not self._checkpoint_registry.is_authenticated_root(record.tenant_id, trusted_root_hash):
        raise HTTPException(
            status_code=409,
-           detail=f"Unauthenticated trust anchor: checkpoint {trusted_root_hash} is not registered or authenticated for tenant {record.tenant_id}"
+           detail=f"Unauthenticated trust anchor: checkpoint {trusted_root_hash} is not registered or authenticated for tenant {record.tenant_id}",
        )
    ```
 3. **Predecessor Ambiguity Detection:** Queries predecessor rows with `pred_stmt = select(AuditLogRecord).where(AuditLogRecord.chain_hash == curr.prev_hash, AuditLogRecord.tenant_id == record.tenant_id)`.
@@ -157,7 +161,7 @@ In `verify_record_against_audit_trail`:
    ```python
    raise HTTPException(
        status_code=409,
-       detail=f"Cryptographic chain ambiguity: multiple predecessor audit records found with chain_hash {curr.prev_hash} (chain fork detected)"
+       detail=f"Cryptographic chain ambiguity: multiple predecessor audit records found with chain_hash {curr.prev_hash} (chain fork detected)",
    )
    ```
 4. **Tenant Boundary Enforcement:** Checks `pred.tenant_id == record.tenant_id` at every hop.

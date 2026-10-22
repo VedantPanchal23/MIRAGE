@@ -89,7 +89,7 @@ def _seed_standard_test_tenants(conn: Any) -> None:
         values.append(f"('{t_id}', '{t_id.title()}', '{h}', 'free', NOW())")
     sql = f"""
         INSERT INTO tenants (id, name, api_key_hash, tier, created_at)
-        VALUES {', '.join(values)}
+        VALUES {", ".join(values)}
         ON CONFLICT (id) DO NOTHING;
     """
     conn.execute(text(sql))
@@ -102,6 +102,7 @@ def live_postgres_database() -> Generator[Any, None, None]:
     settings = get_settings()
     try:
         from testcontainers.community.postgres import PostgresContainer
+
         with PostgresContainer("postgres:16-alpine") as pg:
             sync_url = pg.get_connection_url().replace("+psycopg2", "")
             async_url = sync_url.replace("postgresql://", "postgresql+asyncpg://")
@@ -121,6 +122,7 @@ def live_postgres_database() -> Generator[Any, None, None]:
 
             # Seed standard test tenants required by unit and integration suites
             from sqlalchemy import create_engine
+
             sync_engine = create_engine(sync_url)
             with sync_engine.connect() as conn:
                 _seed_standard_test_tenants(conn)
@@ -132,6 +134,7 @@ def live_postgres_database() -> Generator[Any, None, None]:
         # Attempt seeding on configured fallback sync url
         try:
             from sqlalchemy import create_engine
+
             fallback_engine = create_engine(settings.database_sync_url)
             with fallback_engine.connect() as conn:
                 _seed_standard_test_tenants(conn)

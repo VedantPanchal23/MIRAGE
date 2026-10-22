@@ -1,5 +1,6 @@
 """Unit tests for Governed MCP Server Registry and Lifecycle Management."""
 
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -80,7 +81,7 @@ async def test_register_stdio_mcp_server_success(tenant_admin_auth: AuthContext)
     mock_audit_res = MagicMock()
     mock_audit_res.first.return_value = ("0" * 64, 0)
 
-    def execute_side_effect(stmt):
+    def execute_side_effect(stmt: Any) -> Any:
         stmt_str = str(stmt).lower()
         if "audit_logs" in stmt_str:
             return mock_audit_res
@@ -165,7 +166,7 @@ async def test_mcp_server_trust_lifecycle_transitions(tenant_admin_auth: AuthCon
     mock_audit = MagicMock()
     mock_audit.first.return_value = ("0" * 64, 1)
 
-    def exec_side_effect(stmt):
+    def exec_side_effect(stmt: Any) -> Any:
         s_str = str(stmt).lower()
         if "audit_logs" in s_str:
             return mock_audit
@@ -280,7 +281,7 @@ async def test_discover_and_sync_tools_success(tenant_admin_auth: AuthContext) -
 
     call_count = 0
 
-    def exec_side_effect(stmt):
+    def exec_side_effect(stmt: Any) -> Any:
         nonlocal call_count
         call_count += 1
         s_str = str(stmt).lower()

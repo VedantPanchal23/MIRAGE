@@ -168,9 +168,7 @@ class SSRFSafeMCPHttpClient:
                     raise MCPProtocolError(f"HTTP MCP error {resp.status_code}: {resp.text[:500]}")
 
                 if len(resp.content) > MAX_FRAME_SIZE:
-                    raise MCPProtocolError(
-                        f"MCP response exceeded maximum frame size of {MAX_FRAME_SIZE} bytes"
-                    )
+                    raise MCPProtocolError(f"MCP response exceeded maximum frame size of {MAX_FRAME_SIZE} bytes")
 
                 return resp.json()  # type: ignore[no-any-return]
         except (httpx.TimeoutException, TimeoutError) as exc:
@@ -214,15 +212,11 @@ class SafeSubprocessMCPClient:
             raise MCPSecurityError("Subprocess MCP command cannot be empty")
 
         if FORBIDDEN_SHELL_CHARS.search(self.command):
-            raise MCPSecurityError(
-                f"Subprocess command '{self.command}' contains prohibited shell metacharacters"
-            )
+            raise MCPSecurityError(f"Subprocess command '{self.command}' contains prohibited shell metacharacters")
 
         # Prohibit path traversal
         if ".." in self.command.replace("\\", "/").split("/"):
-            raise MCPSecurityError(
-                f"Subprocess command '{self.command}' contains prohibited path traversal components"
-            )
+            raise MCPSecurityError(f"Subprocess command '{self.command}' contains prohibited path traversal components")
 
         # Check egress allowlist if specified
         if self.egress_allowlist:
@@ -384,9 +378,7 @@ class GovernedMCPClient:
             )
 
         if call_depth >= MAX_RECURSION_DEPTH:
-            raise MCPSecurityError(
-                f"MCP tool call recursion depth exceeded maximum limit of {MAX_RECURSION_DEPTH}"
-            )
+            raise MCPSecurityError(f"MCP tool call recursion depth exceeded maximum limit of {MAX_RECURSION_DEPTH}")
 
         # Recursion & self-reference guard: reject arguments containing circular references to MIRAGE gateway
         raw_args_str = json.dumps(arguments, default=str).lower()
@@ -440,7 +432,7 @@ class GovernedMCPClient:
             args = cfg.get("args", [])
             env = cfg.get("env", {})
             cwd = cfg.get("cwd")
-            client = SafeSubprocessMCPClient(
+            subproc_client = SafeSubprocessMCPClient(
                 command=command,
                 args=args,
                 env=env,
@@ -448,20 +440,20 @@ class GovernedMCPClient:
                 timeout_seconds=timeout,
                 egress_allowlist=server.egress_allowlist or [],
             )
-            return await client.execute_rpc_single(payload, is_call=is_call)
+            return await subproc_client.execute_rpc_single(payload, is_call=is_call)
 
         elif server.transport_type == MCPServerTransport.HTTP_STREAM.value:
             url = cfg.get("url", "")
             headers = cfg.get("headers", {})
             auth_token = cfg.get("auth_token")
-            client = SSRFSafeMCPHttpClient(
+            http_client = SSRFSafeMCPHttpClient(
                 url=url,
                 timeout_seconds=timeout,
                 headers=headers,
                 auth_token=auth_token,
                 egress_allowlist=server.egress_allowlist or [],
             )
-            return await client.send_rpc(payload, is_call=is_call)
+            return await http_client.send_rpc(payload, is_call=is_call)
 
         else:
             raise MCPSecurityError(f"Unsupported MCP transport type: '{server.transport_type}'")

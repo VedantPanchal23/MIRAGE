@@ -103,14 +103,10 @@ class PricingService:
         ):
             val = getattr(record, field_name)
             if isinstance(val, bool) or not isinstance(val, int) or val < 0:
-                raise PricingValidationError(
-                    f"Corrupt pricing profile '{record.id}': invalid {field_name}={val!r}"
-                )
+                raise PricingValidationError(f"Corrupt pricing profile '{record.id}': invalid {field_name}={val!r}")
 
         if not record.currency or not isinstance(record.currency, str):
-            raise PricingValidationError(
-                f"Corrupt pricing profile '{record.id}': invalid currency={record.currency!r}"
-            )
+            raise PricingValidationError(f"Corrupt pricing profile '{record.id}': invalid currency={record.currency!r}")
 
         return record
 
@@ -148,9 +144,7 @@ class PricingService:
             ("cached_tokens", cached_tokens),
         ]:
             if isinstance(val, bool) or not isinstance(val, int) or val < 0:
-                raise PricingValidationError(
-                    f"Token count '{name}' must be a non-negative integer, got {val!r}"
-                )
+                raise PricingValidationError(f"Token count '{name}' must be a non-negative integer, got {val!r}")
 
         if cached_tokens > prompt_tokens:
             raise PricingValidationError(

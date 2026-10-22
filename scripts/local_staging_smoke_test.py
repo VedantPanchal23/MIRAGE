@@ -39,12 +39,14 @@ TEST_RESULTS: list[dict[str, Any]] = []
 
 
 def record_result(name: str, passed: bool, duration_ms: float, detail: str = "") -> None:
-    TEST_RESULTS.append({
-        "test": name,
-        "passed": passed,
-        "duration_ms": round(duration_ms, 2),
-        "detail": detail,
-    })
+    TEST_RESULTS.append(
+        {
+            "test": name,
+            "passed": passed,
+            "duration_ms": round(duration_ms, 2),
+            "detail": detail,
+        }
+    )
     status = "PASS" if passed else "FAIL"
     print(f"[{status}] {name} ({duration_ms:.1f}ms) {detail}")
     if not passed:
@@ -63,10 +65,7 @@ def grant_agent_capability(tenant_id: str, agent_id: str, capability: str = "dat
     )
     ON CONFLICT (id) DO NOTHING;
     """
-    cmd = [
-        "docker", "compose", "exec", "-T", "postgres",
-        "psql", "-U", "mirage", "-d", "mirage_db", "-c", sql
-    ]
+    cmd = ["docker", "compose", "exec", "-T", "postgres", "psql", "-U", "mirage", "-d", "mirage_db", "-c", sql]
     res = subprocess.run(cmd, capture_output=True, text=True, check=False)
     return res.returncode == 0
 
@@ -172,8 +171,12 @@ def run_smoke_test() -> bool:
             json={
                 "name": "Staging Full Access Key",
                 "scopes": [
-                    "verify:read", "verify:write", "action:execute",
-                    "agent:manage", "context:read", "context:write",
+                    "verify:read",
+                    "verify:write",
+                    "action:execute",
+                    "agent:manage",
+                    "context:read",
+                    "context:write",
                 ],
             },
         )

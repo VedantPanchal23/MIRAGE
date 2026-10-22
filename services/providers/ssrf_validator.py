@@ -32,30 +32,30 @@ class SSRFValidationError(Exception):
 
 # Canonical prohibited IPv4 & IPv6 CIDR blocks
 PROHIBITED_NETWORKS = [
-    ipaddress.ip_network("0.0.0.0/8"),          # Current network (only valid as source)
-    ipaddress.ip_network("10.0.0.0/8"),          # RFC 1918 private
-    ipaddress.ip_network("100.64.0.0/10"),       # RFC 6598 Shared Address Space / CGNAT (includes 100.100.100.200)
-    ipaddress.ip_network("127.0.0.0/8"),         # RFC 1122 Loopback
-    ipaddress.ip_network("169.254.0.0/16"),      # RFC 3927 Link Local (includes 169.254.169.254)
-    ipaddress.ip_network("172.16.0.0/12"),       # RFC 1918 private
-    ipaddress.ip_network("192.0.0.0/24"),        # IETF Protocol Assignments
-    ipaddress.ip_network("192.0.2.0/24"),        # TEST-NET-1
-    ipaddress.ip_network("192.168.0.0/16"),      # RFC 1918 private
-    ipaddress.ip_network("198.18.0.0/15"),       # Benchmarking
-    ipaddress.ip_network("198.51.100.0/24"),     # TEST-NET-2
-    ipaddress.ip_network("203.0.113.0/24"),      # TEST-NET-3
-    ipaddress.ip_network("224.0.0.0/4"),        # Multicast
-    ipaddress.ip_network("240.0.0.0/4"),        # Reserved
+    ipaddress.ip_network("0.0.0.0/8"),  # Current network (only valid as source)
+    ipaddress.ip_network("10.0.0.0/8"),  # RFC 1918 private
+    ipaddress.ip_network("100.64.0.0/10"),  # RFC 6598 Shared Address Space / CGNAT (includes 100.100.100.200)
+    ipaddress.ip_network("127.0.0.0/8"),  # RFC 1122 Loopback
+    ipaddress.ip_network("169.254.0.0/16"),  # RFC 3927 Link Local (includes 169.254.169.254)
+    ipaddress.ip_network("172.16.0.0/12"),  # RFC 1918 private
+    ipaddress.ip_network("192.0.0.0/24"),  # IETF Protocol Assignments
+    ipaddress.ip_network("192.0.2.0/24"),  # TEST-NET-1
+    ipaddress.ip_network("192.168.0.0/16"),  # RFC 1918 private
+    ipaddress.ip_network("198.18.0.0/15"),  # Benchmarking
+    ipaddress.ip_network("198.51.100.0/24"),  # TEST-NET-2
+    ipaddress.ip_network("203.0.113.0/24"),  # TEST-NET-3
+    ipaddress.ip_network("224.0.0.0/4"),  # Multicast
+    ipaddress.ip_network("240.0.0.0/4"),  # Reserved
     ipaddress.ip_network("255.255.255.255/32"),  # Broadcast
     # IPv6 blocks
-    ipaddress.ip_network("::/128"),              # Unspecified
-    ipaddress.ip_network("::1/128"),             # Loopback
-    ipaddress.ip_network("::ffff:0:0/96"),       # IPv4-mapped IPv6
-    ipaddress.ip_network("100::/64"),            # Discard prefix
-    ipaddress.ip_network("2001:db8::/32"),       # Documentation
-    ipaddress.ip_network("fc00::/7"),            # Unique Local (ULA private)
-    ipaddress.ip_network("fe80::/10"),           # Link-local
-    ipaddress.ip_network("ff00::/8"),            # Multicast
+    ipaddress.ip_network("::/128"),  # Unspecified
+    ipaddress.ip_network("::1/128"),  # Loopback
+    ipaddress.ip_network("::ffff:0:0/96"),  # IPv4-mapped IPv6
+    ipaddress.ip_network("100::/64"),  # Discard prefix
+    ipaddress.ip_network("2001:db8::/32"),  # Documentation
+    ipaddress.ip_network("fc00::/7"),  # Unique Local (ULA private)
+    ipaddress.ip_network("fe80::/10"),  # Link-local
+    ipaddress.ip_network("ff00::/8"),  # Multicast
 ]
 
 PROHIBITED_METADATA_HOSTS = {
@@ -272,15 +272,12 @@ class SSRFSafeNetworkBackend(httpcore.AnyIOBackend):
         else:
             # Hostname: check localhost string if local not allowed
             if not self.allow_local and (
-                host_lower in ("localhost", "ip6-localhost", "ip6-loopback")
-                or host_lower.endswith(".localhost")
+                host_lower in ("localhost", "ip6-localhost", "ip6-loopback") or host_lower.endswith(".localhost")
             ):
                 raise SSRFValidationError(f"Outbound loopback host '{raw_host}' is blocked")
 
             # Resolve DNS immediately before connecting to defeat DNS rebinding
-            resolver = self._dns_resolver or (
-                lambda h, p: socket.getaddrinfo(h, p, proto=socket.IPPROTO_TCP)
-            )
+            resolver = self._dns_resolver or (lambda h, p: socket.getaddrinfo(h, p, proto=socket.IPPROTO_TCP))
             try:
                 addr_info = resolver(raw_host, port)
             except Exception as dns_err:
@@ -292,7 +289,7 @@ class SSRFSafeNetworkBackend(httpcore.AnyIOBackend):
             verified_safe_ip: str | None = None
             for entry in addr_info:
                 sockaddr = entry[4]
-                ip_str = sockaddr[0]
+                ip_str = str(sockaddr[0])
                 try:
                     resolved_ip = ipaddress.ip_address(ip_str)
                 except ValueError as ip_err:

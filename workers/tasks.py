@@ -12,6 +12,7 @@ import concurrent.futures
 import hashlib
 import os
 import random
+import tempfile
 import threading
 import time
 from datetime import datetime
@@ -40,7 +41,7 @@ NON_RETRYABLE_EXCEPTIONS = (
     TypeError,
 )
 
-_HEARTBEAT_PATH = "/tmp/worker_heartbeat"
+_HEARTBEAT_PATH = os.path.join(tempfile.gettempdir(), "worker_heartbeat")
 _stop_heartbeat = threading.Event()
 
 

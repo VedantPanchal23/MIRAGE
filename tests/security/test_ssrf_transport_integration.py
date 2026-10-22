@@ -41,9 +41,7 @@ from shared.config import get_settings
 def tls_cert_fixture():
     """Generate self-signed certificate and private key for 'secure-model-endpoint.local'."""
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
-    subject = issuer = x509.Name([
-        x509.NameAttribute(NameOID.COMMON_NAME, "secure-model-endpoint.local")
-    ])
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "secure-model-endpoint.local")])
     cert = (
         x509.CertificateBuilder()
         .subject_name(subject)
@@ -129,6 +127,7 @@ async def test_actual_socket_connected_to_verified_destination() -> None:
 async def test_unsafe_dns_answers_rejected_at_socket_boundary() -> None:
     """DNS answers resolving to private or metadata addresses are rejected before connect."""
     for bad_ip in ["10.0.0.1", "172.16.0.5", "192.168.1.1", "169.254.169.254", "127.0.0.1"]:
+
         def bad_resolver(_h: str, p: int, ip: str = bad_ip) -> list[tuple[int, int, int, str, tuple[str, int]]]:
             return [(2, 1, 6, "", (ip, p))]
 
@@ -255,6 +254,7 @@ async def test_tls_untrusted_ca_fails_closed(tls_cert_fixture: tuple[str, str]) 
 @pytest.mark.asyncio
 async def test_redirects_prohibited_and_cannot_bypass_ssrf() -> None:
     """Redirects are strictly not followed (follow_redirects=False)."""
+
     async def handle_redirect(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         _ = await reader.read(500)
         writer.write(

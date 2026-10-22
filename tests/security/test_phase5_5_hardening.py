@@ -903,6 +903,7 @@ def test_compensating_action_bypass_strictly_blocked():
 def test_postgres_rls_isolation_check():
     """RLS setting key used is canonical app.current_tenant_id."""
     import importlib
+
     mig = importlib.import_module("db.migrations.versions.009_gate5_outcome_assurance")
     assert callable(mig.upgrade)
 

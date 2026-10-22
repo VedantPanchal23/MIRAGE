@@ -89,6 +89,7 @@ def sync_engine(live_postgres_database: Any) -> Any:
 # PART 1: Live PostgreSQL Catalog & Migration 011 Invariant Check
 # =============================================================================
 
+
 @pytest.mark.security
 class TestMigration011CatalogInvariant:
     """Verify that Alembic migration 011 enforces NOT NULL on audit_logs.sequence_number in PostgreSQL."""
@@ -147,12 +148,13 @@ class TestMigration011CatalogInvariant:
                 conn.commit()
 
             err_str = str(exc_info.value).lower()
-            assert "null value in column \"sequence_number\"" in err_str or "not-null constraint" in err_str
+            assert 'null value in column "sequence_number"' in err_str or "not-null constraint" in err_str
 
 
 # =============================================================================
 # PART 2: Production PostgreSQL Concurrency & Monotonicity
 # =============================================================================
+
 
 @pytest.mark.security
 class TestPostgresProductionPathConcurrency:
@@ -291,7 +293,7 @@ class TestPostgresProductionPathConcurrency:
             assert rows[0][1] == GENESIS_ROOT_HASH, "First entry must chain from GENESIS_ROOT_HASH"
             for i in range(1, num_workers):
                 assert rows[i][1] == rows[i - 1][2], (
-                    f"Chain break at index {i}: prev_hash {rows[i][1]} != previous chain_hash {rows[i-1][2]}"
+                    f"Chain break at index {i}: prev_hash {rows[i][1]} != previous chain_hash {rows[i - 1][2]}"
                 )
 
             # Verify tenant_audit_ledgers head
@@ -315,6 +317,7 @@ class TestPostgresProductionPathConcurrency:
 # =============================================================================
 # PART 3: Authoritative Verification & Fail-Closed Integrity
 # =============================================================================
+
 
 @pytest.mark.security
 class TestAuthoritativeVerificationIntegrity:
@@ -384,6 +387,7 @@ class TestAuthoritativeVerificationIntegrity:
 # PART 4: Compliance Report & PDF Integrity (Zero Synthetic Fallback)
 # =============================================================================
 
+
 @pytest.mark.security
 class TestComplianceReportZeroSyntheticFallback:
     """Verify that requesting a report for a non-existent session returns HTTP 404 (zero dummy data)."""
@@ -422,6 +426,7 @@ class TestComplianceReportZeroSyntheticFallback:
 # =============================================================================
 # PART 5: Notary Trust Hardening & Revocation Enforcement
 # =============================================================================
+
 
 @pytest.mark.security
 class TestNotaryHardeningAndRevocation:
@@ -483,6 +488,7 @@ class TestNotaryHardeningAndRevocation:
 # =============================================================================
 # PART 6: Conservative Trust Labels & Sentinel Validation
 # =============================================================================
+
 
 @pytest.mark.security
 class TestConservativeTrustLabels:

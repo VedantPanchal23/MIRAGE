@@ -106,9 +106,7 @@ async def test_end_to_end_action_lifecycle(phase3_setup: dict[str, str]) -> None
             )
         )
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
 
     # 1. Propose Action with valid parameters and postcondition
     proposal = {
@@ -239,9 +237,7 @@ async def test_atomic_action_batch_all_or_nothing(phase3_setup: dict[str, str]) 
             )
         )
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
 
     batch_payload = {
         "transaction_id": txn_id,
@@ -343,12 +339,8 @@ async def test_l4_human_approval_grant_and_deny_lifecycle(phase3_setup: dict[str
             )
         )
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
-    admin_headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=admin_sub, role=Role.SUPER_ADMIN
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
+    admin_headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=admin_sub, role=Role.SUPER_ADMIN)
 
     # 1. Propose high risk action requiring human sign-off
     prop1 = {

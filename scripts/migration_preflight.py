@@ -123,10 +123,7 @@ def check_database_migration_status(
 
                 # Check mirage_app unprivileged role properties if it exists
                 app_role_res = conn.execute(
-                    text(
-                        "SELECT rolname, rolsuper, rolbypassrls "
-                        "FROM pg_roles WHERE rolname = 'mirage_app';"
-                    )
+                    text("SELECT rolname, rolsuper, rolbypassrls FROM pg_roles WHERE rolname = 'mirage_app';")
                 ).fetchone()
                 if app_role_res:
                     report["role_checks"]["mirage_app_exists"] = True
@@ -163,9 +160,7 @@ def check_database_migration_status(
             report["status"] = "MIGRATIONS_PENDING"
         except Exception:
             report["status"] = "DIVERGENT_OR_UNKNOWN_REVISION"
-            report["errors"].append(
-                f"Current revision '{current_rev}' is not an ancestor of head '{target_head}'"
-            )
+            report["errors"].append(f"Current revision '{current_rev}' is not an ancestor of head '{target_head}'")
 
     return report
 

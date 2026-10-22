@@ -38,9 +38,9 @@ class CLIPPreFilter:
             try:
                 from transformers import CLIPModel, CLIPProcessor
 
-                self._processor = CLIPProcessor.from_pretrained(self.model_name)
+                self._processor = CLIPProcessor.from_pretrained(self.model_name)  # nosec B615
 
-                self._model = CLIPModel.from_pretrained(self.model_name)
+                self._model = CLIPModel.from_pretrained(self.model_name)  # nosec B615
                 logger.info("Loaded neural CLIP model", model=self.model_name)
             except Exception as exc:
                 logger.warning(
@@ -142,6 +142,6 @@ class CLIPPreFilter:
 
         # Hash-based pseudo-cosine projection in [0.30, 0.84]
         combined = f"{img_descriptor}::{claim_text.lower()}"
-        h_val = int(hashlib.md5(combined.encode("utf-8")).hexdigest(), 16)
+        h_val = int(hashlib.md5(combined.encode("utf-8"), usedforsecurity=False).hexdigest(), 16)
         pseudo_sim = 0.30 + ((h_val % 540) / 1000.0)  # [0.30, 0.84]
         return round(pseudo_sim, 4)

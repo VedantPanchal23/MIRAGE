@@ -275,12 +275,8 @@ async def test_governed_memory_attestation_tamper_detection_and_shredding(phase2
         )
 
     app = create_app()
-    agent_headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, role=Role.API_CLIENT, user_id=agent_sub
-    )
-    admin_headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, role=Role.TENANT_ADMIN, user_id=admin_sub
-    )
+    agent_headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.API_CLIENT, user_id=agent_sub)
+    admin_headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.TENANT_ADMIN, user_id=admin_sub)
 
     with TestClient(app) as client:
         # A) Agent attempts to self-attest memory -> HTTP 403 Forbidden
@@ -441,9 +437,7 @@ async def test_context_assembler_indirect_injection_quarantine_and_delimiters(
         )
 
     app = create_app()
-    auth_headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, role=Role.API_CLIENT, user_id=agent_sub
-    )
+    auth_headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.API_CLIENT, user_id=agent_sub)
 
     with TestClient(app) as client:
         # Delimiter attack payload & prompt injection inside passive tool observation
@@ -655,4 +649,3 @@ async def test_context_budgeting_secret_taints_and_memory_listing(phase2_setup: 
             txn_db = await session.get(AITransaction, txn_id)
             assert txn_db is not None
             assert Taint.CONCURRENT_RESTRICTION.value in txn_db.taint_flags
-

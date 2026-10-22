@@ -113,9 +113,7 @@ In `services/reality_verifier.py`, `SafeAsyncNetworkBackend` and `SafeAsyncHTTPT
    server_addr = stream.get_extra_info("server_addr")
    if server_addr is None:
        await stream.aclose()
-       raise httpcore.ConnectError(
-           "SSRF security block: unable to verify peer address at connection boundary"
-       )
+       raise httpcore.ConnectError("SSRF security block: unable to verify peer address at connection boundary")
    ```
 2. **Strict Peer IP Enforcement:** The peer IP extracted from the live operating-system socket is checked against `_is_ip_allowed_fn` before returning the stream.
 3. **Immediate Stream Termination:** If the peer IP is forbidden (e.g. `127.0.0.1`, RFC 1918 private IPs, or cloud metadata `169.254.169.254`), `await stream.aclose()` terminates the socket instantly. Zero HTTP request bytes flow.
@@ -237,12 +235,14 @@ To conclusively eliminate reliance on mocks, `test_real_tcp_transport_prohibited
 bytes_received = 0
 server_port = 0
 
+
 async def handle_client(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
     nonlocal bytes_received
     data = await reader.read(1024)
     bytes_received += len(data)
     writer.close()
     await writer.wait_closed()
+
 
 server = await asyncio.start_server(handle_client, "127.0.0.1", 0)
 server_port = server.sockets[0].getsockname()[1]

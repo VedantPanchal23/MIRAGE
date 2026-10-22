@@ -399,29 +399,37 @@ class TestPostgresOutcomeMigration:
 
         with sync_engine.connect() as conn:
             # Check Phase 6 columns were dropped from outcome_verification_records
-            col_check = conn.execute(
-                text(
-                    """
+            col_check = (
+                conn.execute(
+                    text(
+                        """
                     SELECT column_name
                     FROM information_schema.columns
                     WHERE table_name = 'outcome_verification_records'
                     AND column_name IN ('evidence_source', 'evidence_digest', 'observed_at', 'verification_deadline');
                     """
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert len(col_check) == 0, f"Expected Phase 6 columns dropped, found {col_check}"
 
             # Check Phase 6 columns were dropped from action_contracts
-            act_col_check = conn.execute(
-                text(
-                    """
+            act_col_check = (
+                conn.execute(
+                    text(
+                        """
                     SELECT column_name
                     FROM information_schema.columns
                     WHERE table_name = 'action_contracts'
                     AND column_name IN ('requires_outcome_assurance', 'outcome_contract', 'outcome_status');
                     """
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert len(act_col_check) == 0, f"Expected Phase 6 action columns dropped, found {act_col_check}"
 
         # 2. Re-upgrade to head (016)
@@ -429,28 +437,36 @@ class TestPostgresOutcomeMigration:
 
         with sync_engine.connect() as conn:
             # Check Phase 6 columns restored
-            col_restored = conn.execute(
-                text(
-                    """
+            col_restored = (
+                conn.execute(
+                    text(
+                        """
                     SELECT column_name
                     FROM information_schema.columns
                     WHERE table_name = 'outcome_verification_records'
                     AND column_name IN ('evidence_source', 'evidence_digest', 'observed_at', 'verification_deadline');
                     """
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert set(col_restored) == {"evidence_source", "evidence_digest", "observed_at", "verification_deadline"}
 
-            act_col_restored = conn.execute(
-                text(
-                    """
+            act_col_restored = (
+                conn.execute(
+                    text(
+                        """
                     SELECT column_name
                     FROM information_schema.columns
                     WHERE table_name = 'action_contracts'
                     AND column_name IN ('requires_outcome_assurance', 'outcome_contract', 'outcome_status');
                     """
+                    )
                 )
-            ).scalars().all()
+                .scalars()
+                .all()
+            )
             assert set(act_col_restored) == {"requires_outcome_assurance", "outcome_contract", "outcome_status"}
 
     def test_clean_schema_migration_rls_and_unprivileged_app_role_isolation(self, sync_engine: Any) -> None:
@@ -570,8 +586,7 @@ class TestPostgresOutcomeMigration:
                 )
                 conn.execute(
                     text(
-                        "INSERT INTO tenants (id, name, api_key_hash, created_at) "
-                        "VALUES (:t, 'TenantA', 'h_a', NOW())"
+                        "INSERT INTO tenants (id, name, api_key_hash, created_at) VALUES (:t, 'TenantA', 'h_a', NOW())"
                     ),
                     {"t": tenant_a},
                 )
@@ -657,8 +672,7 @@ class TestPostgresOutcomeMigration:
                 )
                 conn.execute(
                     text(
-                        "INSERT INTO tenants (id, name, api_key_hash, created_at) "
-                        "VALUES (:t, 'TenantB', 'h_b', NOW())"
+                        "INSERT INTO tenants (id, name, api_key_hash, created_at) VALUES (:t, 'TenantB', 'h_b', NOW())"
                     ),
                     {"t": tenant_b},
                 )

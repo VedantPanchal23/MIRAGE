@@ -21,6 +21,7 @@ import os
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 # Ensure project root is in sys.path
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -53,12 +54,12 @@ class InMemoryDemoCache:
     """In-memory cache implementing RedisCacheService contract for instant live verification."""
 
     def __init__(self) -> None:
-        self._cache: dict[str, dict] = {}
+        self._cache: dict[str, dict[str, Any]] = {}
 
     def get_scs_cache_key(self, tenant_id: str, model_id: str, prompt: str) -> str:
         return f"scs:{tenant_id}:{abs(hash(prompt + model_id))}"
 
-    async def get_scs(self, tenant_id: str, model_id: str, prompt: str) -> tuple[dict | None, bool]:
+    async def get_scs(self, tenant_id: str, model_id: str, prompt: str) -> tuple[dict[str, Any] | None, bool]:
         key = self.get_scs_cache_key(tenant_id, model_id, prompt)
         return (self._cache.get(key), True) if key in self._cache else (None, False)
 
@@ -80,7 +81,7 @@ class InMemoryDemoCache:
         }
         return True
 
-    async def check_health(self) -> dict:
+    async def check_health(self) -> dict[str, Any]:
         return {"status": "healthy", "mode": "in_memory_interactive"}
 
 
@@ -130,7 +131,7 @@ def setup_orchestrator(custom_kb_text: str | None = None) -> VerificationOrchest
         )
 
     cache = InMemoryDemoCache()
-    scs = SCSWorker(verifier=verifier, cache_service=cache)
+    scs = SCSWorker(verifier=verifier, cache_service=cache)  # type: ignore[arg-type]
     ics = ICSWorker(verifier=verifier)
 
     return VerificationOrchestrator(
@@ -179,9 +180,10 @@ async def verify_custom_input(prompt: str, response: str, kb_context: str | None
             status_color = RED
         else:
             status_color = YELLOW
+        ent_prob = f"{c.nli_score * 100:.1f}%" if c.nli_score is not None else "N/A"
         print(f'  [{idx}] "{BOLD}{c.claim.text}{RESET}"')
         print(f"      - Criticality Tier : {crit.upper()} (Weight: {c.claim.criticality_weight:.2f})")
-        print(f"      - Textual Entailment: {c.nli_score * 100:.1f}%")
+        print(f"      - Textual Entailment: {ent_prob}")
         print(f"      - Retrieval Support : {c.rav_score:.4f}")
         print(f"      - Verification State: {status_color}{BOLD}{status_val}{RESET}")
 
@@ -248,12 +250,12 @@ async def fetch_llm_response(prompt: str) -> str:
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    content = data["choices"][0]["message"]["content"].strip()
+                    content = str(data["choices"][0]["message"]["content"]).strip()
                     print(
                         f"{GREEN}>>> Received raw model response from {settings.default_primary_model} "
                         f"in {resp.elapsed.total_seconds():.2f}s!{RESET}"
                     )
-                    return content
+                    return str(content)
                 else:
                     print(f"{YELLOW}>>> Groq returned HTTP {resp.status_code}. Using fallback generator.{RESET}")
         except Exception as e:
@@ -299,9 +301,8 @@ def main() -> None:
             resp_input = asyncio.run(fetch_llm_response(prompt_input))
 
         prompt_ev = f"Enter Custom Ground Truth Evidence [{DIM}Press Enter to use built-in KB{RESET}]: "
-        evidence_input = input(prompt_ev).strip()
-        if not evidence_input:
-            evidence_input = None
+        raw_evidence = input(prompt_ev).strip()
+        evidence_input: str | None = raw_evidence if raw_evidence else None
 
         asyncio.run(verify_custom_input(prompt_input, resp_input, evidence_input))
 

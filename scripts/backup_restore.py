@@ -81,7 +81,7 @@ def execute_backup(
     manifest_files: dict[str, dict[str, Any]] = {}
 
     # 1. Backup External Audit Anchors
-    resolved_anchor_dir = Path(anchor_dir or os.getenv("AUDIT_ANCHOR_DIR", "data/audit_anchors"))
+    resolved_anchor_dir = Path(str(anchor_dir or os.getenv("AUDIT_ANCHOR_DIR") or "data/audit_anchors"))
     anchors_captured = 0
     if resolved_anchor_dir.exists():
         for anchor_file in resolved_anchor_dir.glob("*.anchors.jsonl"):
@@ -225,9 +225,7 @@ def verify_backup_bundle(bundle_dir: str | Path) -> dict[str, Any]:
     ).hexdigest()
 
     if claimed_digest != expected_digest:
-        errors.append(
-            f"Manifest self-integrity mismatch! Claimed '{claimed_digest}', computed '{expected_digest}'"
-        )
+        errors.append(f"Manifest self-integrity mismatch! Claimed '{claimed_digest}', computed '{expected_digest}'")
 
     # 2. Verify Checksums of all Captured Files
     for rel_path, file_meta in files_map.items():
@@ -260,9 +258,7 @@ def verify_backup_bundle(bundle_dir: str | Path) -> dict[str, Any]:
                 loop = asyncio.new_event_loop()
                 asyncio.set_event_loop(loop)
 
-            is_valid, defects = loop.run_until_complete(
-                verifier_backend.verify_anchor_chain(tenant_id)
-            )
+            is_valid, defects = loop.run_until_complete(verifier_backend.verify_anchor_chain(tenant_id))
             if not is_valid:
                 errors.extend([f"Anchor chain defect in tenant '{tenant_id}': {d}" for d in defects])
 
@@ -307,9 +303,7 @@ def execute_restore(
         }
 
     bundle_path = Path(bundle_dir)
-    dest_anchor_dir = Path(
-        target_anchor_dir or os.getenv("AUDIT_ANCHOR_DIR", "data/audit_anchors")
-    )
+    dest_anchor_dir = Path(str(target_anchor_dir or os.getenv("AUDIT_ANCHOR_DIR") or "data/audit_anchors"))
     dest_anchor_dir.mkdir(parents=True, exist_ok=True)
 
     # Step 2: Restore Audit Anchors

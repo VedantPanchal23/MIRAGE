@@ -192,10 +192,12 @@ class TestAgentRegistration:
         mock_session = _build_mock_session()
         req = AgentRegistrationRequest(
             name="agent_worker_1",
-            agent_type="worker",
-            capabilities=["tools:file_read", "tools:network_query"],
-            system_prompt="You are a verified worker agent.",
-            metadata={"department": "secops"},
+            metadata={
+                "department": "secops",
+                "agent_type": "worker",
+                "capabilities": ["tools:file_read", "tools:network_query"],
+                "system_prompt": "You are a verified worker agent.",
+            },
         )
 
         resp = await agent_service.register_agent(
@@ -640,7 +642,7 @@ class TestIntegrationInvariants:
                 "services.control_plane.assure_input",
                 return_value=InputAssuranceResult(
                     decision=PolicyDecision(decision=Decision.ALLOW, reason="ok"),
-                    taints=[],
+                    taints=set(),
                     risk=0,
                     indicators=[],
                 ),

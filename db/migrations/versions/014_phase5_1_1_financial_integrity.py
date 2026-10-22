@@ -46,11 +46,7 @@ def upgrade() -> None:
     )
 
     # 3. Create accounting_incidents table for durable financial drift and discrepancy auditing
-    json_type = (
-        postgresql.JSONB(astext_type=sa.Text())
-        if op.get_bind().dialect.name == "postgresql"
-        else sa.JSON()
-    )
+    json_type = postgresql.JSONB(astext_type=sa.Text()) if op.get_bind().dialect.name == "postgresql" else sa.JSON()
     op.create_table(
         "accounting_incidents",
         sa.Column("id", sa.String(64), primary_key=True),

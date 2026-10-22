@@ -92,6 +92,7 @@ def auth_tenant_admin() -> AuthContext:
 # PART 1: Idempotency Fail-Closed Verification
 # =============================================================================
 
+
 @pytest.mark.security
 class TestIdempotencyFailClosed:
     """Prove that cached outcome replay fails closed on any integrity or audit anomaly."""
@@ -384,6 +385,7 @@ class TestIdempotencyFailClosed:
 # PART 2: Real PostgreSQL 16 Production-Path Concurrency Execution
 # =============================================================================
 
+
 @pytest.mark.security
 class TestPostgresProductionPathConcurrency:
     """Execute concurrent reality verifications through the ACTUAL service method on PostgreSQL 16."""
@@ -530,28 +532,36 @@ class TestPostgresProductionPathConcurrency:
 
         # 3. Query PostgreSQL audit_logs directly and verify sequence numbers and hash chain
         with sync_engine.connect() as conn:
-            logs = conn.execute(
-                text(
-                    """
+            logs = (
+                conn.execute(
+                    text(
+                        """
                     SELECT entry_id, sequence_number, prev_hash, chain_hash, decision
                     FROM audit_logs
                     WHERE tenant_id = :tid
                     ORDER BY sequence_number ASC;
                     """
-                ),
-                {"tid": test_tenant},
-            ).mappings().all()
+                    ),
+                    {"tid": test_tenant},
+                )
+                .mappings()
+                .all()
+            )
 
-            ledger_row = conn.execute(
-                text(
-                    """
+            ledger_row = (
+                conn.execute(
+                    text(
+                        """
                     SELECT head_entry_id, head_chain_hash, sequence_number
                     FROM tenant_audit_ledgers
                     WHERE tenant_id = :tid;
                     """
-                ),
-                {"tid": test_tenant},
-            ).mappings().one()
+                    ),
+                    {"tid": test_tenant},
+                )
+                .mappings()
+                .one()
+            )
 
         assert len(logs) == num_workers, f"Expected {num_workers} audit records, found {len(logs)}"
 
@@ -642,6 +652,7 @@ class TestPostgresProductionPathConcurrency:
 # PART 3: Notary Trust Hardening & Key Management
 # =============================================================================
 
+
 @pytest.mark.security
 class TestNotaryTrustHardening:
     """Verify notary key boundary enforcement and rejection of insecure defaults."""
@@ -680,6 +691,7 @@ class TestNotaryTrustHardening:
 # =============================================================================
 # PART 4: Durable Database Checkpoint Persistence & Verification
 # =============================================================================
+
 
 @pytest.mark.security
 class TestDurableCheckpointPersistence:
@@ -970,6 +982,7 @@ class TestDurableCheckpointPersistence:
 # PART 5: Control-Plane API Authorization (SUPER_ADMIN Only)
 # =============================================================================
 
+
 @pytest.mark.security
 class TestControlPlaneAuthorization:
     """Verify that only SUPER_ADMIN is authorized to register or revoke audit checkpoints."""
@@ -1067,6 +1080,7 @@ class TestControlPlaneAuthorization:
 # PART 6: Audit Ledger Monotonicity in PostgresPersistenceService
 # =============================================================================
 
+
 @pytest.mark.security
 class TestPersistenceServiceSequenceConsistency:
     """Verify that PostgresPersistenceService assigns non-null monotonic sequence numbers."""
@@ -1158,4 +1172,3 @@ class TestPersistenceServiceSequenceConsistency:
         assert prev_hashes[0] == GENESIS_ROOT_HASH
         assert prev_hashes[1] == chain_hashes[0]
         assert prev_hashes[2] == chain_hashes[1]
-

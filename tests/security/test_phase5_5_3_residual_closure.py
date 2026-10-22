@@ -1013,9 +1013,7 @@ async def test_audit_chain_custom_trusted_root_checkpoint():
     mock_scalars = MagicMock(all=MagicMock(return_value=[aud_leaf]))
     mock_session.execute = AsyncMock(return_value=MagicMock(scalars=MagicMock(return_value=mock_scalars)))
 
-    contract = await service.verify_record_against_audit_trail(
-        mock_session, rec, trusted_root_hash=checkpoint_root
-    )
+    contract = await service.verify_record_against_audit_trail(mock_session, rec, trusted_root_hash=checkpoint_root)
     assert contract.outcome_id == rec.id
 
 
@@ -1055,7 +1053,7 @@ async def test_correlation_fallback_matching_rejected_when_outcome_id_differs():
             "verified_at": now_iso,
         },
         prev_hash="0" * 64,
-        chain_hash=compute_sha256(f"{'0'*64}:aud_sibling:SUCCESS_CONFIRMED:{now_iso}"),
+        chain_hash=compute_sha256(f"{'0' * 64}:aud_sibling:SUCCESS_CONFIRMED:{now_iso}"),
         created_at=datetime.now(UTC),
     )
 
@@ -1147,25 +1145,19 @@ def test_reconciliation_correlation_empty_string_rejected():
     )
 
     # Empty/whitespace auth_tenant_id
-    r1 = service.reconcile_output_with_outcome(
-        "Successfully completed operation.", contract, auth_tenant_id="   "
-    )
+    r1 = service.reconcile_output_with_outcome("Successfully completed operation.", contract, auth_tenant_id="   ")
     assert not r1.is_consistent
     assert r1.recommended_disposition == "REJECT"
     assert "Cross-tenant outcome violation" in r1.conflict_reasons[0]
 
     # Empty/whitespace transaction_id
-    r2 = service.reconcile_output_with_outcome(
-        "Successfully completed operation.", contract, transaction_id=""
-    )
+    r2 = service.reconcile_output_with_outcome("Successfully completed operation.", contract, transaction_id="")
     assert not r2.is_consistent
     assert r2.recommended_disposition == "REJECT"
     assert "Transaction correlation mismatch" in r2.conflict_reasons[0]
 
     # Empty/whitespace action_id
-    r3 = service.reconcile_output_with_outcome(
-        "Successfully completed operation.", contract, action_id=" \t "
-    )
+    r3 = service.reconcile_output_with_outcome("Successfully completed operation.", contract, action_id=" \t ")
     assert not r3.is_consistent
     assert r3.recommended_disposition == "REJECT"
     assert "Action correlation mismatch" in r3.conflict_reasons[0]

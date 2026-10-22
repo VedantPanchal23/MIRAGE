@@ -205,7 +205,7 @@ class TestConcurrencyEvidenceClosure:
                 assert rows[0][1] == GENESIS_ROOT_HASH, f"Tenant {t_id} first entry must chain from GENESIS_ROOT_HASH"
                 for i in range(1, workers_per_tenant):
                     assert rows[i][1] == rows[i - 1][2], (
-                        f"Tenant {t_id} chain break at index {i}: prev_hash {rows[i][1]} != previous {rows[i-1][2]}"
+                        f"Tenant {t_id} chain break at index {i}: prev_hash {rows[i][1]} != previous {rows[i - 1][2]}"
                     )
 
                 # Verify tenant audit ledger head

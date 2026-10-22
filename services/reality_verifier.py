@@ -144,9 +144,7 @@ def _extract_clauses(text: str) -> list[str]:
     """Split text into independent clauses using sentence terminators and contrastive conjunctions."""
     sentences = re.split(r"[.!?;\n]+", text)
     clauses: list[str] = []
-    contrastive_re = re.compile(
-        r"\b(?:but|however|although|though|yet|nevertheless|whereas|while)\b", re.IGNORECASE
-    )
+    contrastive_re = re.compile(r"\b(?:but|however|although|though|yet|nevertheless|whereas|while)\b", re.IGNORECASE)
     for s in sentences:
         s = s.strip()
         if not s:
@@ -586,9 +584,7 @@ class HttpResourceAdapter(BaseOutcomeAdapter):
         # Anti-SSRF check
         allow_local = config.get("allow_localhost_for_tests", False)
         if not allow_local and not self._is_ip_allowed(parsed.hostname or ""):
-            discrepancies.append(
-                f"SSRF violation: target host '{parsed.hostname}' is a forbidden private address"
-            )
+            discrepancies.append(f"SSRF violation: target host '{parsed.hostname}' is a forbidden private address")
             return AdapterProbeResult(
                 observed_state={},
                 evidence_payload=evidence,
@@ -922,8 +918,7 @@ class IndependentObserverAdapter(BaseOutcomeAdapter):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail=(
-                    f"Invalid evidence digest '{obs.evidence_digest}': "
-                    "must be 64-char lowercase SHA-256 hex string."
+                    f"Invalid evidence digest '{obs.evidence_digest}': must be 64-char lowercase SHA-256 hex string."
                 ),
             )
 
@@ -945,22 +940,22 @@ class IndependentObserverAdapter(BaseOutcomeAdapter):
         for key, exp_val in expected.items():
             obs_val = obs.observed_state.get(key)
             if obs_val != exp_val:
-                discrepancies.append(
-                    f"Postcondition violation on '{key}': expected '{exp_val}', observed '{obs_val}'."
-                )
+                discrepancies.append(f"Postcondition violation on '{key}': expected '{exp_val}', observed '{obs_val}'.")
 
         # Redact any secrets in observed state
         safe_observed_state = _redact_sensitive_payload(obs.observed_state)
-        safe_evidence = _redact_sensitive_payload({
-            "observation_id": obs.observation_id,
-            "source_id": obs.source_id,
-            "target_resource": obs.target_resource,
-            "observed_at": obs.observed_at.isoformat(),
-            "evidence_digest": obs.evidence_digest,
-            "signature": obs.signature,
-            "epistemic_confidence": obs.epistemic_confidence,
-            "observed_state": safe_observed_state,
-        })
+        safe_evidence = _redact_sensitive_payload(
+            {
+                "observation_id": obs.observation_id,
+                "source_id": obs.source_id,
+                "target_resource": obs.target_resource,
+                "observed_at": obs.observed_at.isoformat(),
+                "evidence_digest": obs.evidence_digest,
+                "signature": obs.signature,
+                "epistemic_confidence": obs.epistemic_confidence,
+                "observed_state": safe_observed_state,
+            }
+        )
 
         return AdapterProbeResult(
             observed_state=safe_observed_state,
@@ -1065,9 +1060,7 @@ class RealityVerifierService:
                 )
 
         verified_dt = (
-            record.verified_at.isoformat()
-            if hasattr(record.verified_at, "isoformat")
-            else str(record.verified_at)
+            record.verified_at.isoformat() if hasattr(record.verified_at, "isoformat") else str(record.verified_at)
         )
         return OutcomeVerificationContract(
             outcome_id=record.id,
@@ -1093,12 +1086,16 @@ class RealityVerifierService:
             observed_at=(
                 record.observed_at.isoformat()
                 if hasattr(record.observed_at, "isoformat") and record.observed_at
-                else str(record.observed_at) if record.observed_at else None
+                else str(record.observed_at)
+                if record.observed_at
+                else None
             ),
             verification_deadline=(
                 record.verification_deadline.isoformat()
                 if hasattr(record.verification_deadline, "isoformat") and record.verification_deadline
-                else str(record.verification_deadline) if record.verification_deadline else None
+                else str(record.verification_deadline)
+                if record.verification_deadline
+                else None
             ),
             escalation_status=record.escalation_status,
             escalation_notes=record.escalation_notes,
@@ -1344,31 +1341,15 @@ class RealityVerifierService:
                     epistemic_confidence = 0.50
             elif discrepancies:
                 if len(discrepancies) < len(effective_postconditions) and len(effective_postconditions) > 1:
-                    outcome_status = (
-                        OutcomeStatus.PARTIAL_ACHIEVEMENT
-                        if observation
-                        else OutcomeStatus.PARTIAL
-                    )
+                    outcome_status = OutcomeStatus.PARTIAL_ACHIEVEMENT if observation else OutcomeStatus.PARTIAL
                     raw_conf = observation.epistemic_confidence if observation else 0.85
                     epistemic_confidence = min(raw_conf, 0.70)
                 else:
-                    outcome_status = (
-                        OutcomeStatus.VERIFIED_FAILURE
-                        if observation
-                        else OutcomeStatus.FAILED
-                    )
+                    outcome_status = OutcomeStatus.VERIFIED_FAILURE if observation else OutcomeStatus.FAILED
                     epistemic_confidence = 0.95
             else:
-                outcome_status = (
-                    OutcomeStatus.VERIFIED_SUCCESS
-                    if observation
-                    else OutcomeStatus.SUCCESS_CONFIRMED
-                )
-                epistemic_confidence = (
-                    observation.epistemic_confidence
-                    if observation
-                    else 1.00
-                )
+                outcome_status = OutcomeStatus.VERIFIED_SUCCESS if observation else OutcomeStatus.SUCCESS_CONFIRMED
+                epistemic_confidence = observation.epistemic_confidence if observation else 1.00
 
         elif obs_class == ObservabilityClass.OBS_EVENTUAL:
             if len(effective_postconditions) == 0:
@@ -1473,9 +1454,7 @@ class RealityVerifierService:
 
             # C. Row-level lock on the persistent tenant ledger head
             ledger_head_stmt = (
-                select(TenantAuditLedger)
-                .where(TenantAuditLedger.tenant_id == tenant_id)
-                .with_for_update()
+                select(TenantAuditLedger).where(TenantAuditLedger.tenant_id == tenant_id).with_for_update()
             )
             ledger_res = await session.execute(ledger_head_stmt)
             ledger_head_row = ledger_res.scalar_one_or_none()
@@ -1741,8 +1720,7 @@ class RealityVerifierService:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
-                        f"Audit chain cyclic loop detected at hash '{curr.prev_hash}' "
-                        f"for tenant '{record.tenant_id}'."
+                        f"Audit chain cyclic loop detected at hash '{curr.prev_hash}' for tenant '{record.tenant_id}'."
                     ),
                 )
 
@@ -1808,11 +1786,7 @@ class RealityVerifierService:
                 )
 
             # Monotonicity check
-            if (
-                pred_record.created_at
-                and curr.created_at
-                and pred_record.created_at > curr.created_at
-            ):
+            if pred_record.created_at and curr.created_at and pred_record.created_at > curr.created_at:
                 raise HTTPException(
                     status_code=status.HTTP_409_CONFLICT,
                     detail=(
@@ -1963,12 +1937,9 @@ class RealityVerifierService:
             # ensure observation_id has not been consumed by another action in this tenant
             if request.observation:
                 obs_id = request.observation.observation_id
-                replay_stmt = (
-                    select(OutcomeVerificationRecord)
-                    .where(
-                        OutcomeVerificationRecord.tenant_id == auth.tenant_id,
-                        OutcomeVerificationRecord.action_id != action.id,
-                    )
+                replay_stmt = select(OutcomeVerificationRecord).where(
+                    OutcomeVerificationRecord.tenant_id == auth.tenant_id,
+                    OutcomeVerificationRecord.action_id != action.id,
                 )
                 existing_for_tenant = (await session.execute(replay_stmt)).scalars().all()
                 for rec in existing_for_tenant:
@@ -2070,6 +2041,7 @@ class RealityVerifierService:
                     if act_start.tzinfo is None:
                         act_start = act_start.replace(tzinfo=UTC)
                     from datetime import timedelta
+
                     if now_utc > (act_start + timedelta(seconds=float(dl_sec))):
                         deadline_passed = True
 
@@ -2452,8 +2424,7 @@ class RealityVerifierService:
         )
         if status_val == OutcomeStatus.PENDING_VERIFICATION:
             conflict_msg += (
-                "Action outcome verification is still PENDING_VERIFICATION; "
-                "real-world success is unconfirmed."
+                "Action outcome verification is still PENDING_VERIFICATION; real-world success is unconfirmed."
             )
         elif status_val == OutcomeStatus.ACKNOWLEDGED_UNVERIFIED:
             conflict_msg += "Transport acknowledgment alone does not prove destination state change."
@@ -2471,9 +2442,7 @@ class RealityVerifierService:
         conflict_reasons.append(conflict_msg)
 
         disposition = (
-            "REJECT"
-            if status_val in (OutcomeStatus.FAILED, OutcomeStatus.VERIFIED_FAILURE)
-            else "REWRITE_WITH_CAVEAT"
+            "REJECT" if status_val in (OutcomeStatus.FAILED, OutcomeStatus.VERIFIED_FAILURE) else "REWRITE_WITH_CAVEAT"
         )
         return OutcomeReconciliationResult(
             is_consistent=False,

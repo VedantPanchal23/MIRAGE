@@ -84,9 +84,7 @@ async def test_action_proposed_without_capability_is_denied() -> None:
             )
         )
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
 
     # Actor has NO capability granted for "db:modify"
     proposal = {
@@ -171,9 +169,7 @@ async def test_action_violating_capability_constraints_is_denied() -> None:
             )
         )
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
 
     # Attempt to transfer 2500 (exceeding constraint of 500)
     proposal = {
@@ -261,9 +257,7 @@ async def test_dangerous_triad_interlock_blocks_external_egress() -> None:
             )
         )
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
 
     proposal = {
         "transaction_id": txn_id,
@@ -371,9 +365,7 @@ async def test_salami_slicing_attack_triggers_approval_escalation() -> None:
                 )
             )
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
 
     # Next transfer of $100 would push cumulative window cost to $1050 > $1000 limit
     proposal = {
@@ -405,9 +397,7 @@ async def test_agent_cannot_self_grant_human_approvals() -> None:
     client = TestClient(app)
 
     # Attempt to call grant approval with API_CLIENT credentials
-    client_headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_id, role=Role.API_CLIENT
-    )
+    client_headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_id, role=Role.API_CLIENT)
     grant_body = {"decision": "GRANT", "reason": "Self-authorizing high risk action"}
     response = client.post("/v1/approvals/appr_fake123/grant", json=grant_body, headers=client_headers)
 
@@ -480,12 +470,8 @@ async def test_parameter_tampering_after_approval_invalidates_execution() -> Non
             )
         )
 
-    headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT
-    )
-    admin_headers = AuthTestFactory.auth_headers(
-        tenant_id=tenant_id, user_id="admin_sec_01", role=Role.SUPER_ADMIN
-    )
+    headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id=actor_sub, role=Role.API_CLIENT)
+    admin_headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, user_id="admin_sec_01", role=Role.SUPER_ADMIN)
 
     # 1. Propose high risk action (blast radius target PROD, risk score > 80)
     proposal = {
@@ -518,6 +504,7 @@ async def test_parameter_tampering_after_approval_invalidates_execution() -> Non
     # 3. Simulate attacker tampering with parameters in the database after approval
     async with db_session.get_tenant_session(tenant_id) as session:
         from sqlalchemy import select
+
         res = await session.execute(select(ActionContract).where(ActionContract.id == action_id))
         contract = res.scalar_one()
         # Tamper normalized_parameters to point to malicious container

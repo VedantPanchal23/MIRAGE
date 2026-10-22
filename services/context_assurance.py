@@ -195,8 +195,7 @@ async def create_governed_memory(auth: AuthContext, request: MemoryCreateRequest
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "Sensitive secrets or credential tokens detected in memory content. "
-                "Write rejected under DLP policy."
+                "Sensitive secrets or credential tokens detected in memory content. Write rejected under DLP policy."
             ),
         )
 
@@ -662,9 +661,7 @@ async def evaluate_context_candidate(
         trust_score = max(0.05, trust_score - 0.50)
         if quarantine_injections:
             disposition = ContextDisposition.QUARANTINED_AS_DATA
-            disposition_reason = (
-                "Suspicious instruction/impersonation markers detected; encapsulated strictly as data"
-            )
+            disposition_reason = "Suspicious instruction/impersonation markers detected; encapsulated strictly as data"
         else:
             disposition = ContextDisposition.REJECTED
             disposition_reason = "Indirect prompt injection detected in context content"
@@ -789,9 +786,7 @@ async def assemble_governed_context(auth: AuthContext, request: GovernedContextR
             for d in data_items:
                 escaped = _escape_data_delimiters(d.content.strip())
                 warning_attr = (
-                    ' warning="injection_payload_contained"'
-                    if "indirect_prompt_injection" in d.indicators
-                    else ""
+                    ' warning="injection_payload_contained"' if "indirect_prompt_injection" in d.indicators else ""
                 )
                 prompt_parts.append(
                     f'<untrusted_data id="{d.id}" type="{d.source_type.value}" '

@@ -53,7 +53,7 @@ def _mock_action(action_id: str = "act_unit_1", txn_id: str = "txn_unit_1") -> A
 
 
 @pytest.mark.asyncio
-async def test_database_adapter_direct_success():
+async def test_database_adapter_direct_success() -> None:
     """OBS_DIRECT: Synchronous database state matching postconditions yields SUCCESS_CONFIRMED."""
     adapter = DatabaseStateAdapter()
     action = _mock_action()
@@ -73,7 +73,7 @@ async def test_database_adapter_direct_success():
 
 
 @pytest.mark.asyncio
-async def test_database_adapter_mismatch_discrepancy():
+async def test_database_adapter_mismatch_discrepancy() -> None:
     """OBS_DIRECT: Invariant mismatch in observed state records explicit discrepancy."""
     adapter = DatabaseStateAdapter()
     action = _mock_action()
@@ -92,7 +92,7 @@ async def test_database_adapter_mismatch_discrepancy():
 
 
 @pytest.mark.asyncio
-async def test_http_adapter_ssrf_protection():
+async def test_http_adapter_ssrf_protection() -> None:
     """HttpResourceAdapter strictly blocks private and loopback target IPs without explicit bypass."""
     adapter = HttpResourceAdapter()
     action = _mock_action()
@@ -113,7 +113,7 @@ async def test_http_adapter_ssrf_protection():
 
 
 @pytest.mark.asyncio
-async def test_async_event_adapter_eventual_success():
+async def test_async_event_adapter_eventual_success() -> None:
     """OBS_EVENTUAL: Bounded polling observes eventual state change before timeout."""
     adapter = AsyncEventAdapter()
     action = _mock_action()
@@ -143,7 +143,7 @@ async def test_async_event_adapter_eventual_success():
 
 
 @pytest.mark.asyncio
-async def test_async_event_adapter_timeout_unknown():
+async def test_async_event_adapter_timeout_unknown() -> None:
     """OBS_EVENTUAL: Polling timeout yields timeout discrepancy for indeterminate state."""
     adapter = AsyncEventAdapter()
     action = _mock_action()
@@ -171,7 +171,7 @@ async def test_async_event_adapter_timeout_unknown():
 
 
 @pytest.mark.asyncio
-async def test_simulated_adapter_disclosure():
+async def test_simulated_adapter_disclosure() -> None:
     """SimulatedTestAdapter explicitly flags is_simulated=True in evidence and notes."""
     adapter = SimulatedTestAdapter()
     action = _mock_action()
@@ -191,7 +191,7 @@ async def test_simulated_adapter_disclosure():
 
 
 @pytest.mark.asyncio
-async def test_observability_class_blind_confidence_zero():
+async def test_observability_class_blind_confidence_zero() -> None:
     """OBS_BLIND (write-only sinks) must strictly force UNOBSERVABLE status with confidence 0.0."""
     service = RealityVerifierService()
     action = _mock_action()
@@ -227,7 +227,7 @@ async def test_observability_class_blind_confidence_zero():
 
 
 @pytest.mark.asyncio
-async def test_observability_class_inferred_transport_ack():
+async def test_observability_class_inferred_transport_ack() -> None:
     """OBS_INFERRED must yield ACKNOWLEDGED_UNVERIFIED with moderate confidence (<= 0.60)."""
     service = RealityVerifierService()
     action = _mock_action()
@@ -261,7 +261,7 @@ async def test_observability_class_inferred_transport_ack():
         assert contract.epistemic_confidence == 0.50
 
 
-def test_reconciliation_detects_false_completion_claims():
+def test_reconciliation_detects_false_completion_claims() -> None:
     """Epistemic Invariant: Reconciler flags model asserting confirmation on unverified or unobservable sinks."""
     service = RealityVerifierService()
 

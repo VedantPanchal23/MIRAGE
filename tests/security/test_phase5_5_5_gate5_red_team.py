@@ -151,6 +151,7 @@ def _build_test_contract_and_audit(
 # PART 1: Real PostgreSQL 16 Concurrency and Serialization Verification
 # =============================================================================
 
+
 @pytest.mark.security
 class TestPostgresAuditConcurrency:
     """Rigorous multi-connection concurrent append tests against live PostgreSQL 16."""
@@ -210,17 +211,21 @@ class TestPostgresAuditConcurrency:
                     )
 
                     # 3. Lock tenant ledger head
-                    row = conn.execute(
-                        text(
-                            """
+                    row = (
+                        conn.execute(
+                            text(
+                                """
                             SELECT head_chain_hash, sequence_number
                             FROM tenant_audit_ledgers
                             WHERE tenant_id = :tenant_id
                             FOR UPDATE;
                             """
-                        ),
-                        {"tenant_id": test_tenant},
-                    ).mappings().one()
+                            ),
+                            {"tenant_id": test_tenant},
+                        )
+                        .mappings()
+                        .one()
+                    )
 
                     prev_hash = row["head_chain_hash"]
                     new_seq = row["sequence_number"] + 1
@@ -290,17 +295,21 @@ class TestPostgresAuditConcurrency:
 
         # Query all committed audit_logs in sequence
         with sync_engine.connect() as conn:
-            rows = conn.execute(
-                text(
-                    """
+            rows = (
+                conn.execute(
+                    text(
+                        """
                     SELECT sequence_number, prev_hash, chain_hash
                     FROM audit_logs
                     WHERE tenant_id = :tenant_id
                     ORDER BY sequence_number ASC;
                     """
-                ),
-                {"tenant_id": test_tenant},
-            ).mappings().all()
+                    ),
+                    {"tenant_id": test_tenant},
+                )
+                .mappings()
+                .all()
+            )
 
         assert len(rows) == 10
         # 1. Verify sequence numbers are exactly 1 through 10 (no duplicates, no gaps)
@@ -314,7 +323,7 @@ class TestPostgresAuditConcurrency:
         for i in range(1, 10):
             assert rows[i]["prev_hash"] == rows[i - 1]["chain_hash"], (
                 f"Chain broken at sequence {rows[i]['sequence_number']}: "
-                f"prev_hash {rows[i]['prev_hash']} != predecessor chain_hash {rows[i-1]['chain_hash']}"
+                f"prev_hash {rows[i]['prev_hash']} != predecessor chain_hash {rows[i - 1]['chain_hash']}"
             )
 
     def test_database_enforced_unique_constraint_rejects_duplicate_sequence(self, sync_engine: Any) -> None:
@@ -443,16 +452,20 @@ class TestPostgresAuditConcurrency:
                 ),
                 {"tenant_id": test_tenant, "genesis_hash": GENESIS_ROOT_HASH},
             )
-            row = conn2.execute(
-                text(
-                    """
+            row = (
+                conn2.execute(
+                    text(
+                        """
                     SELECT head_chain_hash, sequence_number
                     FROM tenant_audit_ledgers
                     WHERE tenant_id = :tenant_id;
                     """
-                ),
-                {"tenant_id": test_tenant},
-            ).mappings().one()
+                    ),
+                    {"tenant_id": test_tenant},
+                )
+                .mappings()
+                .one()
+            )
             assert row["head_chain_hash"] == GENESIS_ROOT_HASH
             assert row["sequence_number"] == 0
             trans2.commit()
@@ -461,6 +474,7 @@ class TestPostgresAuditConcurrency:
 # =============================================================================
 # PART 2: Authenticated Checkpoint Trust Model & Provenance
 # =============================================================================
+
 
 @pytest.mark.security
 class TestCheckpointTrustModel:
@@ -654,6 +668,7 @@ class TestCheckpointTrustModel:
 # PART 3: Full-Chain Verification & Idempotency Tampering Audit
 # =============================================================================
 
+
 @pytest.mark.security
 @pytest.mark.asyncio
 class TestFullChainVerificationAndIdempotency:
@@ -668,45 +683,57 @@ class TestFullChainVerificationAndIdempotency:
         mock_session = AsyncMock()
         mock_session.execute = AsyncMock(
             side_effect=[
-                MagicMock(scalar_one_or_none=MagicMock(return_value=ActionContract(
-                    id=rec.action_id,
-                    tenant_id=rec.tenant_id,
-                    transaction_id=rec.transaction_id,
-                    state="COMPLETED",
-                    blast_radius={},
-                    postconditions=[],
-                    required_capability="service:manage",
-                ))),
+                MagicMock(
+                    scalar_one_or_none=MagicMock(
+                        return_value=ActionContract(
+                            id=rec.action_id,
+                            tenant_id=rec.tenant_id,
+                            transaction_id=rec.transaction_id,
+                            state="COMPLETED",
+                            blast_radius={},
+                            postconditions=[],
+                            required_capability="service:manage",
+                        )
+                    )
+                ),
                 # Existing outcome record returned via idempotency
                 MagicMock(scalar_one_or_none=MagicMock(return_value=rec)),
                 # Audit lookup for verify_record_against_audit_trail returns corrupted audit (tampered hash)
-                MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[
-                    AuditLogRecord(
-                        entry_id="aud_corrupt",
-                        tenant_id=rec.tenant_id,
-                        session_id=rec.transaction_id,
-                        transaction_id=rec.transaction_id,
-                        trace_id="gate5-outcome",
-                        prompt_hash="0" * 64,
-                        response_hash="corrupted_hash" + "0" * 50,  # DIVERGENCE!
-                        hrs_score=0.0,
-                        risk_tier="LOW",
-                        claims_count=1,
-                        claims_summary=[],
-                        correction_applied=False,
-                        event_type="GATE5_OUTCOME_VERIFIED",
-                        decision=rec.outcome_status,
-                        event_payload={
-                            "outcome_id": rec.id,
-                            "action_id": rec.action_id,
-                            "transaction_id": rec.transaction_id,
-                            "verified_at": datetime.now(UTC).isoformat(),
-                        },
-                        prev_hash="0" * 64,
-                        chain_hash="1" * 64,
-                        created_at=datetime.now(UTC),
+                MagicMock(
+                    scalars=MagicMock(
+                        return_value=MagicMock(
+                            all=MagicMock(
+                                return_value=[
+                                    AuditLogRecord(
+                                        entry_id="aud_corrupt",
+                                        tenant_id=rec.tenant_id,
+                                        session_id=rec.transaction_id,
+                                        transaction_id=rec.transaction_id,
+                                        trace_id="gate5-outcome",
+                                        prompt_hash="0" * 64,
+                                        response_hash="corrupted_hash" + "0" * 50,  # DIVERGENCE!
+                                        hrs_score=0.0,
+                                        risk_tier="LOW",
+                                        claims_count=1,
+                                        claims_summary=[],
+                                        correction_applied=False,
+                                        event_type="GATE5_OUTCOME_VERIFIED",
+                                        decision=rec.outcome_status,
+                                        event_payload={
+                                            "outcome_id": rec.id,
+                                            "action_id": rec.action_id,
+                                            "transaction_id": rec.transaction_id,
+                                            "verified_at": datetime.now(UTC).isoformat(),
+                                        },
+                                        prev_hash="0" * 64,
+                                        chain_hash="1" * 64,
+                                        created_at=datetime.now(UTC),
+                                    )
+                                ]
+                            )
+                        )
                     )
-                ])))),
+                ),
             ]
         )
 
@@ -732,6 +759,7 @@ class TestFullChainVerificationAndIdempotency:
             yield mock_session
 
         import services.reality_verifier as rv_module
+
         orig_fn = rv_module.db_session.get_tenant_session
         rv_module.db_session.get_tenant_session = mock_tenant_session
 
@@ -832,6 +860,7 @@ class TestFullChainVerificationAndIdempotency:
 # PART 4: System Catalog, RLS & Schema Invariants
 # =============================================================================
 
+
 @pytest.mark.security
 class TestPostgresCatalogAndSecurityPrivileges:
     """Verifies live PostgreSQL 16 catalog state for ledgers, checkpoints, and RLS."""
@@ -849,56 +878,72 @@ class TestPostgresCatalogAndSecurityPrivileges:
         """Prove tenant_audit_ledgers exists and has row level security forced."""
         with sync_engine.connect() as conn:
             # 1. Table existence and RLS flags in pg_class
-            res = conn.execute(
-                text(
-                    """
+            res = (
+                conn.execute(
+                    text(
+                        """
                     SELECT relname, relrowsecurity, relforcerowsecurity
                     FROM pg_class
                     WHERE relname = 'tenant_audit_ledgers';
                     """
+                    )
                 )
-            ).mappings().one_or_none()
+                .mappings()
+                .one_or_none()
+            )
             assert res is not None, "tenant_audit_ledgers table not found in pg_class!"
             assert res["relrowsecurity"] is True
             assert res["relforcerowsecurity"] is True
 
             # 2. Policy in pg_policies
-            pol = conn.execute(
-                text(
-                    """
+            pol = (
+                conn.execute(
+                    text(
+                        """
                     SELECT policyname, tablename
                     FROM pg_policies
                     WHERE tablename = 'tenant_audit_ledgers';
                     """
+                    )
                 )
-            ).mappings().one_or_none()
+                .mappings()
+                .one_or_none()
+            )
             assert pol is not None
             assert pol["policyname"] == "tenant_isolation_tenant_audit_ledgers"
 
     def test_audit_checkpoints_unique_constraint_and_rls(self, sync_engine: Any) -> None:
         """Prove audit_checkpoints has unique constraint (tenant_id, checkpoint_hash) and RLS."""
         with sync_engine.connect() as conn:
-            res = conn.execute(
-                text(
-                    """
+            res = (
+                conn.execute(
+                    text(
+                        """
                     SELECT conname, contype
                     FROM pg_constraint
                     WHERE conname = 'uq_audit_checkpoints_tenant_hash';
                     """
+                    )
                 )
-            ).mappings().one_or_none()
+                .mappings()
+                .one_or_none()
+            )
             assert res is not None
             assert res["contype"] == "u"
 
-            rls = conn.execute(
-                text(
-                    """
+            rls = (
+                conn.execute(
+                    text(
+                        """
                     SELECT relname, relrowsecurity, relforcerowsecurity
                     FROM pg_class
                     WHERE relname = 'audit_checkpoints';
                     """
+                    )
                 )
-            ).mappings().one_or_none()
+                .mappings()
+                .one_or_none()
+            )
             assert rls is not None
             assert rls["relrowsecurity"] is True
             assert rls["relforcerowsecurity"] is True
@@ -906,15 +951,19 @@ class TestPostgresCatalogAndSecurityPrivileges:
     def test_audit_logs_append_only_policies_exclude_update_and_delete(self, sync_engine: Any) -> None:
         """Prove that audit_logs has policies ONLY for SELECT and INSERT (immutable / append-only)."""
         with sync_engine.connect() as conn:
-            policies = conn.execute(
-                text(
-                    """
+            policies = (
+                conn.execute(
+                    text(
+                        """
                     SELECT policyname, cmd
                     FROM pg_policies
                     WHERE tablename = 'audit_logs';
                     """
+                    )
                 )
-            ).mappings().all()
+                .mappings()
+                .all()
+            )
 
             cmds = {p["cmd"] for p in policies}
             assert "SELECT" in cmds, "audit_logs must permit SELECT"
@@ -927,6 +976,7 @@ class TestPostgresCatalogAndSecurityPrivileges:
 # PART 5: Gate 5 Epistemic Adapter Semantics
 # =============================================================================
 
+
 @pytest.mark.security
 class TestGate5AdapterSemantics:
     """Verifies that Gate 5 never conflates simulation, transport ACKs, or blind sinks with confirmed reality."""
@@ -934,6 +984,7 @@ class TestGate5AdapterSemantics:
     def test_simulation_cannot_certify_success_confirmed(self) -> None:
         """Simulated probe must produce ACKNOWLEDGED_UNVERIFIED with confidence <= 0.50, never SUCCESS_CONFIRMED."""
         from shared.schemas.outcome import OutcomeVerificationContract
+
         rec, _ = _build_test_contract_and_audit(status_val="ACKNOWLEDGED_UNVERIFIED", confidence=0.50)
         contract = OutcomeVerificationContract(
             outcome_id=rec.id,
@@ -954,6 +1005,7 @@ class TestGate5AdapterSemantics:
     def test_write_only_sink_confidence_strictly_zero(self) -> None:
         """Write-only resources (OBS_BLIND) must have confidence 0.0 and status UNOBSERVABLE."""
         from shared.schemas.outcome import OutcomeVerificationContract
+
         contract = OutcomeVerificationContract(
             outcome_id="outc_blind_test",
             transaction_id="txn_blind",

@@ -1,6 +1,5 @@
 """Unit tests for the Dynamic Information Flow Control (DIFC) security lattice."""
 
-
 from shared.schemas.control_plane import (
     Taint,
     TaintLatticeLevel,

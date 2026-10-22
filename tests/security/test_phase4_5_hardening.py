@@ -115,6 +115,7 @@ async def _seed_identities_and_txn(
 # 1. Zero-width space & Unicode evasion resistance
 # =========================================================================
 
+
 def test_dlp_zero_width_space_evasion_defeated() -> None:
     """Zero-width spaces embedded in an AWS secret key must be stripped and detected."""
     # Embedded zero-width space \u200b in AKIA...
@@ -142,6 +143,7 @@ def test_dlp_fullwidth_unicode_evasion_defeated() -> None:
 # 2. Comprehensive Secret Variants (AWS, GitHub, Slack, Private Key)
 # =========================================================================
 
+
 @pytest.mark.parametrize(
     "secret_payload,secret_type",
     [
@@ -162,6 +164,7 @@ def test_dlp_comprehensive_secret_tokens_detected(secret_payload: str, secret_ty
 # =========================================================================
 # 3. Prompt Injection & Jailbreak Control Tokens
 # =========================================================================
+
 
 @pytest.mark.parametrize(
     "injection_token",
@@ -184,6 +187,7 @@ def test_injection_control_tokens_detected(injection_token: str) -> None:
 # =========================================================================
 # 4. Postcondition Honesty: Passive Voice and Zero-Action Invariant
 # =========================================================================
+
 
 @pytest.mark.asyncio
 async def test_postcondition_honesty_zero_actions_claimed_blocked() -> None:
@@ -333,6 +337,7 @@ async def test_postcondition_honesty_completed_action_allowed() -> None:
 # 5. Transaction State Machine Invariant: No COMPLETED without Gate 4
 # =========================================================================
 
+
 @pytest.mark.asyncio
 async def test_transaction_completion_blocked_without_gate4_record() -> None:
     """Cannot transition transaction to COMPLETED when Gate 4 record is missing."""
@@ -447,6 +452,7 @@ async def test_transaction_completion_blocked_when_gate4_blocked() -> None:
 # 6. Conformal Uncertainty Escalation
 # =========================================================================
 
+
 @pytest.mark.asyncio
 async def test_conformal_interval_high_uncertainty_escalates_to_human_review() -> None:
     """When conformal interval upper bound >= 0.85, Gate 4 escalates to REQUIRE_HUMAN_REVIEW."""
@@ -497,6 +503,7 @@ async def test_conformal_interval_high_uncertainty_escalates_to_human_review() -
 # 7. Scientific Honesty & Calibration Disclosure
 # =========================================================================
 
+
 def test_calibration_metadata_discloses_non_certified_baseline() -> None:
     """CalibrationMetadata schema must explicitly disclose uncertified baseline and analytical bounds."""
     calib = CalibrationMetadata()
@@ -510,6 +517,7 @@ def test_calibration_metadata_discloses_non_certified_baseline() -> None:
 # =========================================================================
 # 8. OpenAI Proxy Route Honesty and DLP Redaction
 # =========================================================================
+
 
 def test_proxy_chat_completions_redacts_secrets_and_honestly_flags_verification() -> None:
     """Proxy route must redact secrets returned from model and compute honest mirage['verified'] flag."""

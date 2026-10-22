@@ -137,12 +137,12 @@ class Calibrator:
             # Temperature scaling: optimize T to minimize NLL
             eps = 1e-6
             clipped = np.clip(scores_arr, eps, 1.0 - eps)
-            logits = np.log(clipped / (1.0 - clipped))
+            t_logits = np.log(clipped / (1.0 - clipped))
             # Grid search for best temperature T in [0.1, 5.0]
             best_t = 1.0
             best_loss = float("inf")
             for t_candidate in np.linspace(0.2, 3.0, 50):
-                scaled_probs = 1.0 / (1.0 + np.exp(-logits / t_candidate))
+                scaled_probs = 1.0 / (1.0 + np.exp(-t_logits / t_candidate))
                 nll_pos = labels_arr * np.log(np.clip(scaled_probs, eps, 1.0))
                 nll_neg = (1 - labels_arr) * np.log(np.clip(1.0 - scaled_probs, eps, 1.0))
                 loss = -float(np.mean(nll_pos + nll_neg))
@@ -178,8 +178,8 @@ class Calibrator:
         if self.method == "temperature":
             eps = 1e-6
             clipped = np.clip(scores_arr, eps, 1.0 - eps)
-            logits = np.log(clipped / (1.0 - clipped))
-            scaled_probs = 1.0 / (1.0 + np.exp(-logits / self._temperature))
+            t_logits = np.log(clipped / (1.0 - clipped))
+            scaled_probs = 1.0 / (1.0 + np.exp(-t_logits / self._temperature))
             return [round(float(min(1.0, max(0.0, p))), 4) for p in scaled_probs]
 
         return [round(float(min(1.0, max(0.0, s))), 4) for s in raw_scores]

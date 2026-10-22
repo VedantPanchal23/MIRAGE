@@ -81,6 +81,7 @@ async def test_model_router_enforces_gate1_taint_privacy() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await model_router_service.route(req)
     assert exc_info.value.status_code == 422
+    assert isinstance(exc_info.value.detail, dict)
     exclusions = {e["model_id"]: e["rule"] for e in exc_info.value.detail["exclusions"]}
     assert exclusions["gpt-4o"] == "GATE1_DATA_RESIDENCY_PRIVACY"
     assert exclusions["mock-frontier"] == "GATE1_PRIVACY_ATTESTATION_UNTRUSTED"

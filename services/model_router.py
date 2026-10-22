@@ -160,7 +160,6 @@ class ModelRouterService:
         now_dt = datetime.now(UTC)
 
         for m in models:
-
             # 1. Environment and test-only provider restriction
             if m.provider == "mock":
                 if settings.environment == EnvironmentType.PRODUCTION:
@@ -231,7 +230,7 @@ class ModelRouterService:
 
                 # Local Ollama endpoint check via SSRF validator
                 if m.provider == "ollama":
-                    endpoint = m.endpoint_url or getattr(settings, "ollama_base_url", "")
+                    endpoint = str(m.endpoint_url or getattr(settings, "ollama_base_url", ""))
                     try:
                         validate_safe_provider_url(endpoint, allow_local=True, resolve_dns=False)
                     except SSRFValidationError as s_err:
@@ -397,9 +396,7 @@ class ModelRouterService:
             if request.preferred_model and request.preferred_model == m.model_id:
                 score += 0.25
 
-            valid_candidates.append(
-                (m, round(score, 4), est_cost_micros, m.expected_latency_ms, pricing_id)
-            )
+            valid_candidates.append((m, round(score, 4), est_cost_micros, m.expected_latency_ms, pricing_id))
 
         if not valid_candidates:
             exclusion_summary = [e.model_dump() for e in exclusions]
@@ -510,7 +507,7 @@ class ModelRouterService:
                 return False, f"Privacy attestation verification failed: {attest_reason}", None, 0, ""
 
             if profile.provider == "ollama":
-                endpoint = profile.endpoint_url or getattr(settings, "ollama_base_url", "")
+                endpoint = str(profile.endpoint_url or getattr(settings, "ollama_base_url", ""))
                 try:
                     validate_safe_provider_url(endpoint, allow_local=True, resolve_dns=False)
                 except SSRFValidationError as s_err:

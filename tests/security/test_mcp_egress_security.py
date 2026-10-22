@@ -87,9 +87,8 @@ class TestMCPCommandInjectionSecurity:
         """Any command containing shell metacharacters or directory traversal must be rejected."""
         with pytest.raises(MCPSecurityError) as exc_info:
             SafeSubprocessMCPClient(command=malicious_command)
-        assert (
-            "prohibited shell metacharacters" in str(exc_info.value)
-            or "prohibited path traversal" in str(exc_info.value)
+        assert "prohibited shell metacharacters" in str(exc_info.value) or "prohibited path traversal" in str(
+            exc_info.value
         )
 
     @pytest.mark.parametrize(

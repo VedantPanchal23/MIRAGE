@@ -8,6 +8,8 @@ Validates:
 5. Index definitions for tenant-scoped parent/child lookups, status, and expiry sweeps.
 """
 
+from sqlalchemy import Table
+
 from db.models import AgentDelegation
 
 
@@ -75,19 +77,21 @@ class TestAgentDelegationModel:
     def test_unique_constraint_on_tenant_idempotency(self) -> None:
         """Verify unique constraint on (tenant_id, idempotency_key)."""
         table = AgentDelegation.__table__
+        assert isinstance(table, Table)
 
         unique_names = {u.name for u in table.constraints if hasattr(u, "columns")}
         assert "uq_agent_delegations_tenant_idempotency" in unique_names
 
         # Verify the columns involved in the uniqueness constraint
         for constraint in table.constraints:
-            if constraint.name == "uq_agent_delegations_tenant_idempotency":
-                col_names = [col.name for col in constraint.columns]
+            if constraint.name == "uq_agent_delegations_tenant_idempotency" and hasattr(constraint, "columns"):
+                col_names = [col.name for col in getattr(constraint, "columns", [])]
                 assert col_names == ["tenant_id", "idempotency_key"]
 
     def test_composite_indexes_configured(self) -> None:
         """Verify tenant-scoped lookup indexes are configured."""
         table = AgentDelegation.__table__
+        assert isinstance(table, Table)
 
         index_names = {idx.name for idx in table.indexes}
         assert "ix_agent_delegations_tenant_parent_txn" in index_names

@@ -13,11 +13,12 @@ from shared.schemas.action import (
     ActionExecutionRequest,
     ActionProposal,
     ActionState,
-    Decision,
+    ActionType,
     PostconditionRule,
     PreconditionRule,
 )
 from shared.schemas.auth import AuthContext, Role
+from shared.schemas.control_plane import Decision
 from shared.schemas.outcome import (
     OutcomeContractSpec,
     OutcomeStatus,
@@ -141,7 +142,7 @@ async def test_action_proposal_blocks_mutating_action_without_postconditions(
     proposal = ActionProposal(
         transaction_id="txn_p6_001",
         tool_name="write_file",
-        action_type="WRITE",
+        action_type=ActionType.WRITE,
         target_resource="file:///tmp/audit_log.txt",
         parameters={"content": "secure log entry"},
         preconditions=[],
@@ -201,7 +202,7 @@ async def test_action_proposal_authorizes_valid_outcome_contract(
     proposal = ActionProposal(
         transaction_id="txn_p6_002",
         tool_name="update_user",
-        action_type="WRITE",
+        action_type=ActionType.WRITE,
         target_resource="postgres://users/42",
         parameters={"status": "SUSPENDED", "user_exists": True},
         preconditions=[PreconditionRule(check_type="EQUALS", target="user_exists", expected_value=True)],
@@ -306,9 +307,10 @@ async def test_execution_creates_pending_verification_record(
         audit_chain=("0" * 64, 0),
     )
 
-    with patch("services.action_governor.db_session.get_tenant_session") as mock_db, \
-         patch.object(governor_service.tool_proxy, "dispatch", new_callable=AsyncMock) as mock_dispatch:
-
+    with (
+        patch("services.action_governor.db_session.get_tenant_session") as mock_db,
+        patch.object(governor_service.tool_proxy, "dispatch", new_callable=AsyncMock) as mock_dispatch,
+    ):
         mock_db.return_value.__aenter__.return_value = mock_session
 
         # Tool returns successful transport ACK
@@ -326,8 +328,7 @@ async def test_execution_creates_pending_verification_record(
 
         # Check that OutcomeVerificationRecord was added to session
         added_records = [
-            call[0][0] for call in mock_session.add.call_args_list
-            if isinstance(call[0][0], OutcomeVerificationRecord)
+            call[0][0] for call in mock_session.add.call_args_list if isinstance(call[0][0], OutcomeVerificationRecord)
         ]
         assert len(added_records) == 1
         record = added_records[0]
@@ -388,9 +389,10 @@ async def test_read_only_action_completes_without_gate5_pending(
         audit_chain=("0" * 64, 0),
     )
 
-    with patch("services.action_governor.db_session.get_tenant_session") as mock_db, \
-         patch.object(governor_service.tool_proxy, "dispatch", new_callable=AsyncMock) as mock_dispatch:
-
+    with (
+        patch("services.action_governor.db_session.get_tenant_session") as mock_db,
+        patch.object(governor_service.tool_proxy, "dispatch", new_callable=AsyncMock) as mock_dispatch,
+    ):
         mock_db.return_value.__aenter__.return_value = mock_session
 
         mock_dispatch.return_value = ({"content": "Hello World", "bytes": 11}, None)
@@ -407,6 +409,7 @@ async def test_read_only_action_completes_without_gate5_pending(
 # =============================================================================
 # Regression tests for lease expiration semantics & time-bounded invariants
 # =============================================================================
+
 
 def test_lease_expiry_semantics_valid_and_malformed() -> None:
     """Verify production lease expiry semantics:
@@ -451,4 +454,3 @@ def test_lease_expiry_semantics_valid_and_malformed() -> None:
     released_lease.status = LeaseStatus.RELEASED.value
     released_lease.expires_at = now + timedelta(minutes=10)
     assert is_lease_active(released_lease, now) is False
-

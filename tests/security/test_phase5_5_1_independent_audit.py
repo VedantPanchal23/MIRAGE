@@ -540,4 +540,3 @@ async def test_audit_trail_cryptographic_hash_chain_linkage(auth_tenant_audit):
         assert len(audit.chain_hash) == 64
         assert audit.response_hash == contract.verification_hash
         assert audit.event_type == "GATE5_OUTCOME_VERIFIED"
-

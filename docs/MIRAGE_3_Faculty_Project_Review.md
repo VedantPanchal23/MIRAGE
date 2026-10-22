@@ -1309,13 +1309,34 @@ The reconciliation engine ([`services/reality_verifier.py::reconcile_output_with
 The reconciler scans candidate model responses against regular expression patterns capturing active, passive, plural, and adverbial completion assertions:
 ```python
 _COMPLETION_ASSERTION_PATTERNS = (
-    re.compile(r"\b(?:I (?:have )?(?:transferred|deleted|updated|executed|deployed|paid|sent|removed|modified|cancelled|refunded|processed))\b", re.I),
-    re.compile(r"\b(?:(?:transfer|payment|deletion|removal|deployment|action|execution|refund|transaction|update|email|notification|message|item|items|batch|task|tasks|order|orders) (?:has been |have been |was |were |is |are )(?:\w+ )*(?:completed|processed|executed|successful|finalized|done|sent|delivered))\b", re.I),
-    re.compile(r"\b(?:(?:completed|processed|executed|finalized) (?:the |all )?(?:transfer|payment|deletion|deployment|action|refund|transaction|email|notification|items|batch|tasks))\b", re.I),
-    re.compile(r"\b(?:successfully (?:transferred|deleted|updated|executed|deployed|paid|sent|removed|modified|refunded|processed|created|finished|completed))\b", re.I),
-    re.compile(r"\b(?:(?:transferred|deleted|updated|executed|deployed|paid|sent|removed|modified|refunded|processed|created|finished|completed) successfully)\b", re.I),
-    re.compile(r"\b(?:(?:has|have) (?:succeeded|been completed|been processed|been executed|been sent|been deleted|been updated|been paid|been transferred))\b", re.I),
-    re.compile(r"\b(?:the )?(?:transfer|payment|transaction|wire|funds) (?:went through|has gone through|have gone through)\b", re.I),
+    re.compile(
+        r"\b(?:I (?:have )?(?:transferred|deleted|updated|executed|deployed|paid|sent|removed|modified|cancelled|refunded|processed))\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:(?:transfer|payment|deletion|removal|deployment|action|execution|refund|transaction|update|email|notification|message|item|items|batch|task|tasks|order|orders) (?:has been |have been |was |were |is |are )(?:\w+ )*(?:completed|processed|executed|successful|finalized|done|sent|delivered))\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:(?:completed|processed|executed|finalized) (?:the |all )?(?:transfer|payment|deletion|deployment|action|refund|transaction|email|notification|items|batch|tasks))\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:successfully (?:transferred|deleted|updated|executed|deployed|paid|sent|removed|modified|refunded|processed|created|finished|completed))\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:(?:transferred|deleted|updated|executed|deployed|paid|sent|removed|modified|refunded|processed|created|finished|completed) successfully)\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:(?:has|have) (?:succeeded|been completed|been processed|been executed|been sent|been deleted|been updated|been paid|been transferred))\b",
+        re.I,
+    ),
+    re.compile(
+        r"\b(?:the )?(?:transfer|payment|transaction|wire|funds) (?:went through|has gone through|have gone through)\b",
+        re.I,
+    ),
     re.compile(r"\b(?:the )?(?:database|db|record|table) (?:has been |was |is )?updated\b", re.I),
     re.compile(r"\b(?:the )?(?:deployment|service|release|app) is (?:now )?live\b", re.I),
 )

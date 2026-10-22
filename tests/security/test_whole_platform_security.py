@@ -101,13 +101,15 @@ class TestRolePermissionCeilings:
         ctx = AuthContext(
             tenant_id="tenant_sec_a",
             role=Role.TENANT_ADMIN,
-            capabilities=frozenset([
-                "root:superadmin",
-                "admin:all",
-                "../../etc/passwd",
-                "'; DROP TABLE users; --",
-                "UNKNOWN_SCOPE_1234",
-            ]),
+            capabilities=frozenset(
+                [
+                    "root:superadmin",
+                    "admin:all",
+                    "../../etc/passwd",
+                    "'; DROP TABLE users; --",
+                    "UNKNOWN_SCOPE_1234",
+                ]
+            ),
             token_type="api_key",
         )
         for perm in [

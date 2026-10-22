@@ -1077,7 +1077,7 @@ class TestCancellationAndExecutionBoundaries:
             target_resource="db://records/1",
             parameters={"id": 1},
             idempotency_key="idem_prop_blocked",
-            blast_radius=BlastRadiusAssessment(data_classification="CONFIDENTIAL", reversibility="REVERSIBLE"),
+            blast_radius=BlastRadiusAssessment(resource_scope="CONFIDENTIAL", reversibility="REVERSIBLE"),
         )
 
         session = _build_mock_session()

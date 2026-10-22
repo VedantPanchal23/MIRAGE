@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 REQUIRED_RELEASE_FILES: list[str] = [
     # Container & Compose topology
@@ -204,7 +205,7 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parent.parent
 
-    report: dict[str, object] = {
+    report: dict[str, Any] = {
         "status": "PASS",
         "repo_root": str(repo_root),
         "checks": {},
@@ -245,12 +246,7 @@ def main() -> int:
         "violations": sec_violations,
     }
 
-    all_passed = (
-        rev_ok
-        and (not is_dirty or args.allow_dirty)
-        and files_ok
-        and sec_ok
-    )
+    all_passed = rev_ok and (not is_dirty or args.allow_dirty) and files_ok and sec_ok
 
     report["status"] = "PASS" if all_passed else "FAIL"
 

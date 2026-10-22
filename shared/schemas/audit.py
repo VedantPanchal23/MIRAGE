@@ -243,9 +243,7 @@ class NotaryKeyRegistry:
                         if not isinstance(s_id, str) or not s_id.strip():
                             raise ValueError("Signer identity in NOTARY_KEYS_JSON must be a non-empty string")
                         if not isinstance(k_val, str) or len(k_val.strip()) < 32:
-                            raise ValueError(
-                                f"Notary key for '{s_id}' must be at least 32 characters (256 bits)"
-                            )
+                            raise ValueError(f"Notary key for '{s_id}' must be at least 32 characters (256 bits)")
                         self.register_key(s_id, k_val.strip().encode("utf-8"))
 
                 if not self._keys and effective_allow:

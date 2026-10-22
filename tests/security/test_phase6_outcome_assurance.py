@@ -103,6 +103,7 @@ def _mock_action_contract(
 # 1. Core Invariant & Discrepancy Detection
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_discrepancy_detection_flags_postcondition_failure(
     reality_service: RealityVerifierService,
@@ -195,6 +196,7 @@ async def test_partial_achievement_detected_on_multi_condition_batch(
 # 2. Risk-Sensitive Policy Enforcement
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_strict_direct_only_policy_rejects_simulated_probes(
     reality_service: RealityVerifierService,
@@ -258,6 +260,7 @@ async def test_strict_direct_only_policy_rejects_inferred_observability(
 # ---------------------------------------------------------------------------
 # 3. Output <-> Outcome Consistency Reconciliation
 # ---------------------------------------------------------------------------
+
 
 def test_reconciliation_flags_completion_claim_when_outcome_is_pending(
     reality_service: RealityVerifierService,
@@ -350,9 +353,7 @@ def test_reconciliation_permits_honest_model_acknowledging_uncertainty(
     )
 
     result = reality_service.reconcile_output_with_outcome(
-        response_text=(
-            "The payment transfer was requested, but I cannot confirm whether destination funds settled."
-        ),
+        response_text=("The payment transfer was requested, but I cannot confirm whether destination funds settled."),
         outcome_contract=contract,
     )
 
@@ -364,6 +365,7 @@ def test_reconciliation_permits_honest_model_acknowledging_uncertainty(
 # ---------------------------------------------------------------------------
 # 4. Operator Escalation Workflow
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_operator_escalation_workflow(
@@ -421,6 +423,7 @@ async def test_operator_escalation_workflow(
 # 5. Cross-Tenant Isolation
 # ---------------------------------------------------------------------------
 
+
 @pytest.mark.asyncio
 async def test_cross_tenant_outcome_access_prevented(
     reality_service: RealityVerifierService,
@@ -444,6 +447,7 @@ async def test_cross_tenant_outcome_access_prevented(
 # ---------------------------------------------------------------------------
 # 6. Replay Defense, Immutability, Tampering & Late Observation Defense
 # ---------------------------------------------------------------------------
+
 
 @pytest.mark.asyncio
 async def test_observation_id_replay_attack_rejected(
@@ -542,26 +546,28 @@ async def test_terminal_state_immutability_blocks_conflicting_reverification(
         expected_postconditions={"status": "SETTLED"},
         observed_state={"status": "SETTLED"},
         discrepancies=[],
-        evidence_payload={"_canonical_payload": {
-            "schema_version": "mirage.outcome.v1",
-            "tenant_id": tenant_a_auth.tenant_id,
-            "transaction_id": action.transaction_id,
-            "action_id": action.id,
-            "contract_binding_hash": action.parameters_hash,
-            "tool_name": action.tool_name,
-            "target_resource": action.target_resource,
-            "required_capability": action.required_capability,
-            "target_environment": "PROD",
-            "observability_class": "OBS_DIRECT",
-            "outcome_status": "VERIFIED_SUCCESS",
-            "epistemic_confidence": 1.0,
-            "verifier_adapter": "IndependentObserverAdapter",
-            "is_simulated": False,
-            "expected_postconditions": {"status": "SETTLED"},
-            "observed_state_hash": "dummy_hash",
-            "verified_at": now.isoformat(),
-            "idempotency_key": "key_initial",
-        }},
+        evidence_payload={
+            "_canonical_payload": {
+                "schema_version": "mirage.outcome.v1",
+                "tenant_id": tenant_a_auth.tenant_id,
+                "transaction_id": action.transaction_id,
+                "action_id": action.id,
+                "contract_binding_hash": action.parameters_hash,
+                "tool_name": action.tool_name,
+                "target_resource": action.target_resource,
+                "required_capability": action.required_capability,
+                "target_environment": "PROD",
+                "observability_class": "OBS_DIRECT",
+                "outcome_status": "VERIFIED_SUCCESS",
+                "epistemic_confidence": 1.0,
+                "verifier_adapter": "IndependentObserverAdapter",
+                "is_simulated": False,
+                "expected_postconditions": {"status": "SETTLED"},
+                "observed_state_hash": "dummy_hash",
+                "verified_at": now.isoformat(),
+                "idempotency_key": "key_initial",
+            }
+        },
         reconciliation_notes=[],
         verification_hash="hash_term",
         idempotency_key="key_initial",
@@ -684,6 +690,7 @@ async def test_late_observation_cannot_turn_expired_action_into_verified_success
             new_callable=AsyncMock,
         ) as mock_probe:
             from services.reality_verifier import AdapterProbeResult
+
             mock_probe.return_value = AdapterProbeResult(
                 observed_state={"status": "SETTLED"},
                 evidence_payload={},

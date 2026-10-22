@@ -1,7 +1,7 @@
 """Authentication and Authorization schemas adhering to Security & Access Document §3 and §13."""
 
 from enum import StrEnum
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -85,6 +85,9 @@ class AuthContext(BaseModel):
     capabilities: frozenset[str] = Field(default_factory=frozenset)
     is_authenticated: bool = Field(default=True, description="Whether authentication was cryptographically verified")
     token_type: Literal["jwt", "api_key"] = Field(default="jwt", description="Credential type used for authentication")
+    token_id: str | None = Field(default=None, description="Optional token identifier for audit correlation")
+    subject: str | None = Field(default=None, description="Optional subject identifier alias")
+    claims: dict[str, Any] = Field(default_factory=dict, description="Raw credential claims")
 
     def has_permission(self, permission: Permission | str) -> bool:
         """Evaluate if the identity possesses a required permission under role and scope attenuation."""

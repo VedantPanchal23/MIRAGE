@@ -354,6 +354,12 @@ class DelegationService:
     and non-repudiable audit trails across cross-agent delegation chains.
     """
 
+    @staticmethod
+    def _verify_attenuation(parent_scope: dict[str, Any] | None, child_scope: dict[str, Any] | None) -> str | None:
+        """Verify that child_scope is a strict attenuation (subset) of parent_scope."""
+        ok, reason = is_scope_attenuated(parent_scope, child_scope)
+        return None if ok else reason
+
     async def _get_ancestor_chain(
         self, session: AsyncSession, tenant_id: str, transaction_id: str
     ) -> list[AgentDelegation]:
@@ -1513,7 +1519,7 @@ class DelegationService:
         parent_transaction_id: str | None = None,
         parent_agent_id: str | None = None,
         child_agent_id: str | None = None,
-        status: DelegationStatus | None = None,
+        status_filter: DelegationStatus | None = None,
         limit: int = DEFAULT_PAGE_LIMIT,
         offset: int = 0,
         session: AsyncSession | None = None,
@@ -1531,8 +1537,8 @@ class DelegationService:
                 stmt = stmt.where(AgentDelegation.parent_agent_id == parent_agent_id)
             if child_agent_id:
                 stmt = stmt.where(AgentDelegation.child_agent_id == child_agent_id)
-            if status:
-                stmt = stmt.where(AgentDelegation.status == status.value)
+            if status_filter:
+                stmt = stmt.where(AgentDelegation.status == status_filter.value)
 
             stmt = stmt.order_by(AgentDelegation.created_at.desc(), AgentDelegation.id.desc())
             clamped_limit = min(max(1, limit), MAX_PAGE_LIMIT)

@@ -80,10 +80,14 @@ class AuditLedgerService:
         now = created_at or datetime.now(UTC)
         settings = get_settings()
         bind = session.bind
+        url_str = ""
+        if bind is not None:
+            if hasattr(bind, "url"):
+                url_str = str(getattr(bind, "url", ""))
+            elif hasattr(bind, "engine"):
+                url_str = str(getattr(bind.engine, "url", ""))
         is_postgres = (
-            bind is not None
-            and "postgresql" in str(bind.url)
-            and getattr(settings, "environment", EnvironmentType.TEST) != EnvironmentType.TEST
+            "postgresql" in url_str and getattr(settings, "environment", EnvironmentType.TEST) != EnvironmentType.TEST
         )
 
         # 1. Ensure tenant audit ledger head exists
@@ -298,15 +302,9 @@ class AuditLedgerService:
                 legacy_sess_data = f"{rec.prev_hash}:{rec.session_id}:{rec.hrs_score:.4f}:{now_iso}"
                 legacy_auth_data = f"{rec.prev_hash}:{rec.entry_id}:{rec.event_type or 'ACTION'}:{now_iso}"
                 legacy_gate5_data = f"{rec.prev_hash}:{rec.entry_id}:{rec.decision or ''}:{now_iso}"
-                legacy_hnd_data = (
-                    f"{rec.prev_hash}:{rec.entry_id}:{rec.event_type or ''}:{now_iso}:{rec.tenant_id}"
-                )
+                legacy_hnd_data = f"{rec.prev_hash}:{rec.entry_id}:{rec.event_type or ''}:{now_iso}:{rec.tenant_id}"
 
-                raw_action = (
-                    rec.event_type.removeprefix("AUTH_").removeprefix("ADMIN_")
-                    if rec.event_type
-                    else ""
-                )
+                raw_action = rec.event_type.removeprefix("AUTH_").removeprefix("ADMIN_") if rec.event_type else ""
                 legacy_api_key_data = f"{rec.prev_hash}:{rec.entry_id}:{raw_action}:{now_iso}"
                 legacy_agent_data = (
                     f"{rec.prev_hash}:{rec.entry_id}:{rec.decision or ''}:{now_iso}:{rec.session_id or ''}"
@@ -604,9 +602,7 @@ class AuditLedgerService:
             query = query.where(AuditLogRecord.event_type == event_type)
             count_query = count_query.where(AuditLogRecord.event_type == event_type)
         if action_id:
-            query = query.where(
-                (AuditLogRecord.session_id == action_id) | (AuditLogRecord.transaction_id == action_id)
-            )
+            query = query.where((AuditLogRecord.session_id == action_id) | (AuditLogRecord.transaction_id == action_id))
             count_query = count_query.where(
                 (AuditLogRecord.session_id == action_id) | (AuditLogRecord.transaction_id == action_id)
             )
@@ -704,9 +700,7 @@ class AuditLedgerService:
                 "head_chain_hash": integrity_report.head_chain_hash,
             },
             "latest_anchor": (
-                integrity_report.latest_anchor.model_dump(mode="json")
-                if integrity_report.latest_anchor
-                else None
+                integrity_report.latest_anchor.model_dump(mode="json") if integrity_report.latest_anchor else None
             ),
         }
 

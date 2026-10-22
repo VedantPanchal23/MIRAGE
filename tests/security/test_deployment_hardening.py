@@ -30,6 +30,7 @@ from shared.schemas.audit import CheckpointModel, NotaryKeyRegistry, TrustAssura
 # 1. Production Configuration Hardening Tests
 # =============================================================================
 
+
 class TestProductionSettingsHardening:
     """Validate Settings fail-closed enforcement under EnvironmentType.PRODUCTION."""
 
@@ -110,6 +111,7 @@ class TestProductionSettingsHardening:
 # 2. External Audit Anchor Hash-Chaining & Tamper Detection Tests
 # =============================================================================
 
+
 class TestAuditAnchorHashChaining:
     """Validate that FileAuditAnchorBackend implements immutable hash chaining across anchor proofs."""
 
@@ -117,9 +119,7 @@ class TestAuditAnchorHashChaining:
     async def test_anchor_proof_hash_chain_continuity(self, tmp_path: Path) -> None:
         """Verify that sequential anchor writes form a cryptographically linked hash chain."""
         anchor_dir = tmp_path / "anchors"
-        notary_keys = NotaryKeyRegistry(
-            initial_keys={"notary:test_primary": b"01234567890123456789012345678901"}
-        )
+        notary_keys = NotaryKeyRegistry(initial_keys={"notary:test_primary": b"01234567890123456789012345678901"})
         backend = FileAuditAnchorBackend(anchor_dir=anchor_dir, notary_keys=notary_keys)
         tenant_id = "tenant_chain_test"
 
@@ -137,6 +137,7 @@ class TestAuditAnchorHashChaining:
         )
         # Compute valid signature
         from shared.schemas.audit import compute_checkpoint_canonical_string, sign_checkpoint_payload
+
         canon1 = compute_checkpoint_canonical_string(
             tenant_id=tenant_id,
             ledger_identity=cp1.ledger_identity,
@@ -209,9 +210,7 @@ class TestAuditAnchorHashChaining:
     async def test_anchor_chain_detects_intermediate_deletion(self, tmp_path: Path) -> None:
         """Removing an intermediate anchor from the file breaks hash chain linkage."""
         anchor_dir = tmp_path / "anchors"
-        notary_keys = NotaryKeyRegistry(
-            initial_keys={"notary:test_primary": b"01234567890123456789012345678901"}
-        )
+        notary_keys = NotaryKeyRegistry(initial_keys={"notary:test_primary": b"01234567890123456789012345678901"})
         backend = FileAuditAnchorBackend(anchor_dir=anchor_dir, notary_keys=notary_keys)
         tenant_id = "tenant_deletion_test"
 
@@ -259,6 +258,7 @@ class TestAuditAnchorHashChaining:
 # =============================================================================
 # 3. Health & Readiness Probe Hardening Tests
 # =============================================================================
+
 
 class TestHealthAndReadinessHardening:
     """Validate /v1/health and /v1/ready probe behavior under deployment conditions."""
@@ -325,6 +325,7 @@ class TestHealthAndReadinessHardening:
 # 4. Migration Preflight Script Tests
 # =============================================================================
 
+
 class TestMigrationPreflightAutomation:
     """Validate migration preflight detection on clean and configured databases."""
 
@@ -341,6 +342,7 @@ class TestMigrationPreflightAutomation:
 # =============================================================================
 # 5. Backup & Disaster Recovery Script Tests
 # =============================================================================
+
 
 class TestBackupAndDisasterRecovery:
     """Validate signed backup bundle creation, manifest verification, and restore safety."""
@@ -367,7 +369,7 @@ class TestBackupAndDisasterRecovery:
             signer_identity="notary:system_primary",
         )
         sig = sign_checkpoint_payload(b"mirage-default-notary-secret-key-32b!", canon)
-        digest = compute_sha256(f"anchor:{canon}:{sig}:{'0'*64}")
+        digest = compute_sha256(f"anchor:{canon}:{sig}:{'0' * 64}")
         proof = AnchorProof(
             anchor_id="anc_t1_1",
             tenant_id="t1",
@@ -418,7 +420,7 @@ class TestBackupAndDisasterRecovery:
             signer_identity="notary:system_primary",
         )
         sig = sign_checkpoint_payload(b"mirage-default-notary-secret-key-32b!", canon)
-        digest = compute_sha256(f"anchor:{canon}:{sig}:{'0'*64}")
+        digest = compute_sha256(f"anchor:{canon}:{sig}:{'0' * 64}")
         proof = AnchorProof(
             anchor_id="anc_t1_1",
             tenant_id="t1",
@@ -440,7 +442,7 @@ class TestBackupAndDisasterRecovery:
 
         # Tamper: overwrite captured anchor file
         tamper_target = bundle_path / "audit_anchors" / "t1.anchors.jsonl"
-        tamper_target.write_text("{\"tampered\": true}\n", encoding="utf-8")
+        tamper_target.write_text('{"tampered": true}\n', encoding="utf-8")
 
         # Verify fails
         verification = verify_backup_bundle(bundle_path)

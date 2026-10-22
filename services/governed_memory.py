@@ -120,7 +120,7 @@ class MultiStorePropagator:
                 port=self.settings.qdrant_port,
                 api_key=self.settings.qdrant_api_key,
                 https=self.settings.qdrant_https,
-                timeout=2.0,
+                timeout=2,
             )
             collection_name = f"memories_{memory.tenant_id}"
             try:
@@ -177,7 +177,7 @@ class MultiStorePropagator:
                     port=self.settings.qdrant_port,
                     api_key=self.settings.qdrant_api_key,
                     https=self.settings.qdrant_https,
-                    timeout=2.0,
+                    timeout=2,
                 )
                 collection_name = f"memories_{memory.tenant_id}"
                 try:
@@ -319,18 +319,14 @@ def _to_record_response(r: GovernedMemory) -> GovernedMemoryRecordResponse:
         memory_category=MemoryCategory(r.memory_category)
         if r.memory_category in MemoryCategory._value2member_map_
         else MemoryCategory.USER_FACT,
-        purpose=MemoryPurpose(r.purpose)
-        if r.purpose in MemoryPurpose._value2member_map_
-        else MemoryPurpose.GENERAL,
+        purpose=MemoryPurpose(r.purpose) if r.purpose in MemoryPurpose._value2member_map_ else MemoryPurpose.GENERAL,
         lifecycle_state=MemoryLifecycleState(r.lifecycle_state)
         if r.lifecycle_state in MemoryLifecycleState._value2member_map_
         else MemoryLifecycleState.ACTIVE,
         trust_level=TrustLevel(r.trust_level)
         if r.trust_level in TrustLevel._value2member_map_
         else TrustLevel.PROVISIONAL,
-        scope=MemoryScope(r.scope)
-        if r.scope in MemoryScope._value2member_map_
-        else MemoryScope.ORGANIZATIONAL,
+        scope=MemoryScope(r.scope) if r.scope in MemoryScope._value2member_map_ else MemoryScope.ORGANIZATIONAL,
         content=r.content,
         content_hash=r.content_hash,
         version=r.version,
@@ -475,8 +471,7 @@ async def create_governed_memory_record(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=(
-                "Sensitive secrets or credential tokens detected in memory content. "
-                "Write rejected under DLP policy."
+                "Sensitive secrets or credential tokens detected in memory content. Write rejected under DLP policy."
             ),
         )
 
@@ -965,11 +960,11 @@ async def delete_governed_memory_record(
         prop_res = await _propagator.propagate_delete(record)
         record.propagation_status = prop_res.overall_status.value
         qdrant_stat = (
-            "purged" if prop_res.qdrant_purged
-            else ("failed" if prop_res.qdrant_purged is False else "unconfigured")
+            "purged" if prop_res.qdrant_purged else ("failed" if prop_res.qdrant_purged is False else "unconfigured")
         )
         redis_stat = (
-            "invalidated" if prop_res.redis_invalidated
+            "invalidated"
+            if prop_res.redis_invalidated
             else ("failed" if prop_res.redis_invalidated is False else "unconfigured")
         )
         record.propagation_details = {

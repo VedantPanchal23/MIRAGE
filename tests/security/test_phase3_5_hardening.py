@@ -74,6 +74,7 @@ async def _seed_test_identity(
 # 1. Tool Proxy Boundary & Bypass Prevention
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_tool_proxy_direct_bypass_rejected() -> None:
     """Tool Proxy cannot be directly invoked if contract is not in EXECUTING state."""
@@ -112,6 +113,7 @@ async def test_tool_proxy_direct_bypass_rejected() -> None:
 # =============================================================================
 # 2. Action Contract Tamper Resistance
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_contract_tampering_target_resource_rejected() -> None:
@@ -192,6 +194,7 @@ async def test_contract_tampering_target_resource_rejected() -> None:
     # Tamper target_resource to sensitive path
     async with db_session.get_tenant_session(tenant_id) as session:
         from sqlalchemy import select
+
         res = await session.execute(select(ActionContract).where(ActionContract.id == action_id))
         contract = res.scalar_one()
         contract.target_resource = "vault://secrets/api_keys"
@@ -279,6 +282,7 @@ async def test_contract_tampering_action_type_rejected() -> None:
     # Tamper action_type to DELETE
     async with db_session.get_tenant_session(tenant_id) as session:
         from sqlalchemy import select
+
         res = await session.execute(select(ActionContract).where(ActionContract.id == action_id))
         contract = res.scalar_one()
         contract.action_type = "DELETE"
@@ -291,6 +295,7 @@ async def test_contract_tampering_action_type_rejected() -> None:
 # =============================================================================
 # 3. Approval Replay Defense
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_approval_replay_attack_rejected() -> None:
@@ -374,6 +379,7 @@ async def test_approval_replay_attack_rejected() -> None:
     # Reset contract to AUTHORIZED to simulate attacker attempting replay with same approval
     async with db_session.get_tenant_session(tenant_id) as session:
         from sqlalchemy import select
+
         res = await session.execute(select(ActionContract).where(ActionContract.id == action_id))
         contract = res.scalar_one()
         contract.state = ActionState.AUTHORIZED.value
@@ -475,6 +481,7 @@ async def test_approval_replay_cross_transaction_rejected() -> None:
     # Cross-transaction replay attempt: Tamper contract.transaction_id to valid txn_b
     async with db_session.get_tenant_session(tenant_id) as session:
         from sqlalchemy import select
+
         res = await session.execute(select(ActionContract).where(ActionContract.id == action_id))
         contract = res.scalar_one()
         contract.transaction_id = txn_b
@@ -487,6 +494,7 @@ async def test_approval_replay_cross_transaction_rejected() -> None:
 # =============================================================================
 # 4. Agent Self-Approval Prevention
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_agent_self_approval_same_identity_rejected() -> None:
@@ -567,6 +575,7 @@ async def test_agent_self_approval_same_identity_rejected() -> None:
 # 5. Tool Registry Egress Demotion Defense
 # =============================================================================
 
+
 @pytest.mark.asyncio
 async def test_tool_registry_egress_demotion_rejected() -> None:
     """TENANT_ADMIN cannot demote EGRESS_EXTERNAL to INTERNAL_ISOLATED without SUPER_ADMIN."""
@@ -611,6 +620,7 @@ async def test_tool_registry_egress_demotion_rejected() -> None:
 # =============================================================================
 # 6. Advanced Anti-SSRF Defense
 # =============================================================================
+
 
 def test_advanced_ssrf_decimal_ip_blocked() -> None:
     """Decimal IP notation (2130706433 = 127.0.0.1) is blocked."""
@@ -660,6 +670,7 @@ def test_advanced_ssrf_forbidden_schemes_blocked() -> None:
 # 7. Advanced Path Traversal Defense
 # =============================================================================
 
+
 def test_advanced_path_traversal_url_encoded_and_unicode_blocked() -> None:
     """URL-encoded (%2e%2e) and NFKC normalized full-width Unicode dots are blocked."""
     with pytest.raises(ValueError, match="Path traversal detected"):
@@ -667,7 +678,7 @@ def test_advanced_path_traversal_url_encoded_and_unicode_blocked() -> None:
 
     with pytest.raises(ValueError, match="Path traversal detected"):
         # \uFF0E is full-width full stop '.'
-        normalize_action_parameters({"file": "\uFF0E\uFF0E/\uFF0E\uFF0E/windows/win.ini"})
+        normalize_action_parameters({"file": "\uff0e\uff0e/\uff0e\uff0e/windows/win.ini"})
 
 
 def test_advanced_path_traversal_null_bytes_and_unc_blocked() -> None:
@@ -688,6 +699,7 @@ def test_advanced_path_traversal_null_bytes_and_unc_blocked() -> None:
 # =============================================================================
 # 8. Salami-Slicing Dollar Cost Spoofing Defense
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_salami_slicing_financial_parameter_extraction() -> None:
@@ -763,6 +775,7 @@ async def test_salami_slicing_financial_parameter_extraction() -> None:
 # =============================================================================
 # 9. Runtime Capability Revocation & Fail-Closed Execution
 # =============================================================================
+
 
 @pytest.mark.asyncio
 async def test_runtime_capability_revocation_blocks_execution() -> None:
@@ -841,6 +854,7 @@ async def test_runtime_capability_revocation_blocks_execution() -> None:
     # 2. Security officer revokes capability before execution occurs
     async with db_session.get_tenant_session(tenant_id) as session:
         from sqlalchemy import select
+
         res = await session.execute(select(Capability).where(Capability.id == cap_id))
         cap = res.scalar_one()
         cap.revoked_at = datetime.now(UTC)

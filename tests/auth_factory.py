@@ -90,7 +90,7 @@ class AuthTestFactory:
             "aud": settings.jwt_audience,
         }
         claims.pop(omit_claim, None)
-        return jwt.encode(claims, settings.secret_key, algorithm=settings.algorithm)
+        return str(jwt.encode(claims, settings.secret_key, algorithm=settings.algorithm))
 
     @staticmethod
     def valid_api_key(

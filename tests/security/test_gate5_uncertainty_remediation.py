@@ -143,7 +143,7 @@ async def test_uncertain_action_resolved_to_success_by_independent_probe(
         mock_session.execute = AsyncMock(
             side_effect=[
                 MagicMock(scalar_one_or_none=MagicMock(return_value=action)),  # ActionContract
-                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),    # Existing OutcomeVerificationRecord
+                MagicMock(scalar_one_or_none=MagicMock(return_value=None)),  # Existing OutcomeVerificationRecord
                 MagicMock(scalars=MagicMock(return_value=MagicMock(all=MagicMock(return_value=[])))),  # Replay check
             ]
         )
@@ -266,9 +266,7 @@ async def test_uncertain_action_rejects_obs_inferred_with_400(
 
     with patch("services.reality_verifier.db_session.get_tenant_session") as mock_ctx:
         mock_session = AsyncMock()
-        mock_session.execute = AsyncMock(
-            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=action))
-        )
+        mock_session.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=action)))
         mock_ctx.return_value.__aenter__.return_value = mock_session
 
         with pytest.raises(HTTPException) as exc_info:
@@ -465,9 +463,7 @@ async def test_unexecuted_states_strictly_rejected_with_409(
 
     with patch("services.reality_verifier.db_session.get_tenant_session") as mock_ctx:
         mock_session = AsyncMock()
-        mock_session.execute = AsyncMock(
-            return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=action))
-        )
+        mock_session.execute = AsyncMock(return_value=MagicMock(scalar_one_or_none=MagicMock(return_value=action)))
         mock_ctx.return_value.__aenter__.return_value = mock_session
 
         with pytest.raises(HTTPException) as exc_info:

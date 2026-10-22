@@ -614,7 +614,7 @@ class TestConcurrencyServiceLifecycle:
             agent_id="agent_worker_1",
             resource_uri="db://postgres/finance/ledger",
             concurrency_mode=ConcurrencyMode.EXCLUSIVE,
-            lease_duration_seconds=60,
+            duration_seconds=60,
         )
 
         with pytest.raises(HTTPException) as exc_info:
@@ -695,7 +695,7 @@ class TestConcurrencyServiceLifecycle:
             transaction_id="txn_101",
             agent_id="agent_worker_1",
             fencing_token=1,
-            extension_seconds=60,
+            duration_seconds=60,
         )
 
         with pytest.raises(HTTPException) as exc_info:

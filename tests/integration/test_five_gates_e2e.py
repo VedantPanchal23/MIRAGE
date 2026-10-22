@@ -177,9 +177,7 @@ async def test_scenario_1_governed_success_pipeline(e2e_setup: dict[str, str]) -
         "parameters": {"account_id": 101, "amount": 50.0},
         "required_capability": "banking:transfer",
         "idempotency_key": f"idem_prop_{suffix}",
-        "postconditions": [
-            {"assertion": "EQUALS", "target": "balance", "expected_value": 150.0}
-        ],
+        "postconditions": [{"assertion": "EQUALS", "target": "balance", "expected_value": 150.0}],
         "blast_radius": {
             "resource_scope": "DEFAULT",
             "estimated_dollar_cost": 5.0,

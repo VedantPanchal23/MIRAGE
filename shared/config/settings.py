@@ -233,7 +233,6 @@ class Settings(BaseSettings):
             return False
         return True if v is None else v
 
-
     # --------------------------------------------------------------------------
     # Circuit Breaker & Routing Egress Controls
     # --------------------------------------------------------------------------
@@ -296,9 +295,8 @@ class Settings(BaseSettings):
             return defects
 
         # 1. JWT & HMAC Secret Hardening
-        if (
-            self.secret_key == "dev-insecure-secret-key-change-in-production-min32chars"
-            or is_insecure_placeholder(self.secret_key)
+        if self.secret_key == "dev-insecure-secret-key-change-in-production-min32chars" or is_insecure_placeholder(
+            self.secret_key
         ):
             defects.append("SECRET_KEY is using the default insecure development secret or unfilled placeholder")
         elif len(self.secret_key) < 48:
@@ -323,9 +321,8 @@ class Settings(BaseSettings):
             defects.append("ALLOW_MOCK_PROVIDERS is strictly prohibited in production")
 
         # 5. Database Credentials Hardening
-        db_sync_insecure = (
-            self.database_sync_url
-            and ("mirage_dev_secret" in self.database_sync_url or is_insecure_placeholder(self.database_sync_url))
+        db_sync_insecure = self.database_sync_url and (
+            "mirage_dev_secret" in self.database_sync_url or is_insecure_placeholder(self.database_sync_url)
         )
         if "mirage_dev_secret" in self.database_url or is_insecure_placeholder(self.database_url) or db_sync_insecure:
             defects.append(
@@ -372,9 +369,8 @@ class Settings(BaseSettings):
             return defects
 
         # 1. JWT & HMAC Secret Hardening (staging requires at least 32 characters, no dev default or placeholder)
-        if (
-            self.secret_key == "dev-insecure-secret-key-change-in-production-min32chars"
-            or is_insecure_placeholder(self.secret_key)
+        if self.secret_key == "dev-insecure-secret-key-change-in-production-min32chars" or is_insecure_placeholder(
+            self.secret_key
         ):
             defects.append("SECRET_KEY is using the default insecure development secret or unfilled placeholder")
         elif len(self.secret_key) < 32:
@@ -417,10 +413,7 @@ class Settings(BaseSettings):
             defects.append(
                 "CELERY_BROKER_URL / RABBITMQ_PASSWORD contains default password 'mirage_rabbit_secret' or placeholder"
             )
-        if (
-            is_insecure_placeholder(self.celery_redis_password)
-            or "mirage_celery_secret" in self.celery_result_backend
-        ):
+        if is_insecure_placeholder(self.celery_redis_password) or "mirage_celery_secret" in self.celery_result_backend:
             defects.append(
                 "CELERY_RESULT_BACKEND / CELERY_REDIS_PASSWORD contains default password "
                 "'mirage_celery_secret' or placeholder"
@@ -477,9 +470,7 @@ class Settings(BaseSettings):
                 and not self.huggingface_api_key.startswith("your_")
             ),
             "openai": bool(
-                self.openai_api_key
-                and self.openai_api_key.strip()
-                and not self.openai_api_key.startswith("your_")
+                self.openai_api_key and self.openai_api_key.strip() and not self.openai_api_key.startswith("your_")
             ),
             "anthropic": bool(
                 self.anthropic_api_key
@@ -487,14 +478,9 @@ class Settings(BaseSettings):
                 and not self.anthropic_api_key.startswith("your_")
             ),
             "gemini": bool(
-                self.gemini_api_key
-                and self.gemini_api_key.strip()
-                and not self.gemini_api_key.startswith("your_")
+                self.gemini_api_key and self.gemini_api_key.strip() and not self.gemini_api_key.startswith("your_")
             ),
-            "ollama": bool(
-                self.ollama_base_url
-                and self.ollama_base_url.strip()
-            ),
+            "ollama": bool(self.ollama_base_url and self.ollama_base_url.strip()),
         }
 
 

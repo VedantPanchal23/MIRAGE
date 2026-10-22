@@ -34,9 +34,7 @@ class TestConfig:
 
     def test_env_override(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("ENVIRONMENT", "production")
-        monkeypatch.setenv(
-            "SECRET_KEY", "a-very-long-production-secret-key-that-exceeds-48-characters!"
-        )
+        monkeypatch.setenv("SECRET_KEY", "a-very-long-production-secret-key-that-exceeds-48-characters!")
         monkeypatch.setenv("CELERY_BROKER_URL", "amqps://mirage:secret@rabbit.internal:5671//")
         monkeypatch.setenv("DEBUG", "false")
         monkeypatch.setenv("SCS_SAMPLE_COUNT", "7")

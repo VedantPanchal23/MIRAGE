@@ -175,7 +175,10 @@ class TestProviderConfigurationAndAdapters:
         """HuggingFace adapter resolves when HUGGINGFACE_API_KEY is configured."""
         with (
             patch("services.providers.factory.get_settings") as mock_settings,
-            patch("services.providers.factory.validate_provider_base_url", return_value="https://api-inference.huggingface.co/models"),
+            patch(
+                "services.providers.factory.validate_provider_base_url",
+                return_value="https://api-inference.huggingface.co/models",
+            ),
         ):
             mock_settings.return_value = Settings(
                 huggingface_api_key="hf_test_api_key_value",

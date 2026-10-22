@@ -52,8 +52,18 @@ COMMIT;
 def bootstrap_via_docker() -> bool:
     print("[BOOTSTRAP] Ensuring system tenant and super admin exist in PostgreSQL...")
     cmd = [
-        "docker", "compose", "exec", "-T", "postgres",
-        "psql", "-U", "mirage", "-d", "mirage_db", "-c", BOOTSTRAP_SQL
+        "docker",
+        "compose",
+        "exec",
+        "-T",
+        "postgres",
+        "psql",
+        "-U",
+        "mirage",
+        "-d",
+        "mirage_db",
+        "-c",
+        BOOTSTRAP_SQL,
     ]
     res = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if res.returncode != 0:

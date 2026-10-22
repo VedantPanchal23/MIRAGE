@@ -579,9 +579,7 @@ class MCPServer(Base):
     description: Mapped[str] = mapped_column(Text, default="", nullable=False)
     transport_type: Mapped[str] = mapped_column(String(32), default="STDIO", nullable=False)
     connection_config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
-    trust_status: Mapped[str] = mapped_column(
-        String(32), default="PENDING_APPROVAL", nullable=False, index=True
-    )
+    trust_status: Mapped[str] = mapped_column(String(32), default="PENDING_APPROVAL", nullable=False, index=True)
     permitted_capabilities: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     egress_allowlist: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     timeout_seconds: Mapped[int] = mapped_column(Integer, default=30, nullable=False)

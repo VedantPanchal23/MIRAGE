@@ -78,10 +78,14 @@ class TestPostgresTenantApiKeys:
             conn.commit()
         admin_engine.dispose()
 
-        app_async_url = make_url(settings.database_url).set(
-            username="mirage_app",
-            password="mirage_app_pw",
-        ).render_as_string(hide_password=False)
+        app_async_url = (
+            make_url(settings.database_url)
+            .set(
+                username="mirage_app",
+                password="mirage_app_pw",
+            )
+            .render_as_string(hide_password=False)
+        )
         app_engine = create_async_engine(app_async_url, pool_size=5, max_overflow=5)
         return async_sessionmaker(bind=app_engine, class_=AsyncSession, expire_on_commit=False)
 
@@ -202,9 +206,7 @@ class TestPostgresTenantApiKeys:
             assert res.first() is None, "Offboarded tenant credential MUST be permanently rejected"
 
     @pytest.mark.asyncio
-    async def test_postgresql_rls_isolation_on_api_credentials(
-        self, unprivileged_sessionmaker: Any
-    ) -> None:
+    async def test_postgresql_rls_isolation_on_api_credentials(self, unprivileged_sessionmaker: Any) -> None:
         """PostgreSQL RLS ensures tenant A session cannot read or query tenant B credentials."""
         suffix = uuid.uuid4().hex[:8]
         tenant_a = f"rls_a_{suffix}"
@@ -295,9 +297,9 @@ class TestPostgresTenantApiKeys:
                 creds_in_a = list(res_a.scalars().all())
                 tenant_ids_in_a = {c.tenant_id for c in creds_in_a}
                 assert tenant_a in tenant_ids_in_a
-                assert (
-                    tenant_b not in tenant_ids_in_a
-                ), "Tenant A MUST NOT see Tenant B credentials under PostgreSQL RLS"
+                assert tenant_b not in tenant_ids_in_a, (
+                    "Tenant A MUST NOT see Tenant B credentials under PostgreSQL RLS"
+                )
 
         # Query credentials from Tenant B session using unprivileged NOBYPASSRLS role
         async with unprivileged_sessionmaker() as s_b:
@@ -310,12 +312,13 @@ class TestPostgresTenantApiKeys:
                 creds_in_b = list(res_b.scalars().all())
                 tenant_ids_in_b = {c.tenant_id for c in creds_in_b}
                 assert tenant_b in tenant_ids_in_b
-                assert (
-                    tenant_a not in tenant_ids_in_b
-                ), "Tenant B MUST NOT see Tenant A credentials under PostgreSQL RLS"
+                assert tenant_a not in tenant_ids_in_b, (
+                    "Tenant B MUST NOT see Tenant A credentials under PostgreSQL RLS"
+                )
 
         # Verify cross-tenant insert attempt fails-closed with RLS policy violation
         from sqlalchemy.exc import DBAPIError, ProgrammingError
+
         async with unprivileged_sessionmaker() as s_spoof:
             async with s_spoof.begin():
                 await s_spoof.execute(
@@ -391,6 +394,7 @@ class TestPostgresTenantApiKeys:
 
         # 5. Immediate authentication boundary cutoff: resolve_api_key_context must fail
         from fastapi import HTTPException
+
         with pytest.raises(HTTPException) as exc_info:
             await resolve_api_key_context(created_key.raw_key)
         assert exc_info.value.status_code == 401

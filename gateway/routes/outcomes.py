@@ -90,10 +90,7 @@ async def list_outcomes_for_transaction(
         )
         records = (await session.execute(stmt)).scalars().all()
 
-        return [
-            await reality_verifier_service.verify_record_against_audit_trail(session, rec)
-            for rec in records
-        ]
+        return [await reality_verifier_service.verify_record_against_audit_trail(session, rec) for rec in records]
 
 
 @router.post(

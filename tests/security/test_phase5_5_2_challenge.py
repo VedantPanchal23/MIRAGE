@@ -357,15 +357,18 @@ def test_monotonic_state_machine_terminal_transitions():
 # 4. Premature Verification Rejection
 # -----------------------------------------------------------------------------
 @pytest.mark.asyncio
-@pytest.mark.parametrize("invalid_state", [
-    ActionState.PROPOSED.value,
-    ActionState.AUTHORIZED.value,
-    ActionState.AWAITING_APPROVAL.value,
-    ActionState.EXECUTING.value,
-    ActionState.BLOCKED.value,
-    ActionState.FAILED.value,
-    "CANCELLED",
-])
+@pytest.mark.parametrize(
+    "invalid_state",
+    [
+        ActionState.PROPOSED.value,
+        ActionState.AUTHORIZED.value,
+        ActionState.AWAITING_APPROVAL.value,
+        ActionState.EXECUTING.value,
+        ActionState.BLOCKED.value,
+        ActionState.FAILED.value,
+        "CANCELLED",
+    ],
+)
 async def test_premature_verification_rejected(invalid_state, auth_tenant_552):
     """Actions not in COMPLETED or EXECUTED states cannot undergo reality verification."""
     service = RealityVerifierService()

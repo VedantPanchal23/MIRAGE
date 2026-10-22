@@ -1131,10 +1131,10 @@ async def test_audit_chain_depth_exhaustion_fails_closed():
 
 
 def test_source_code_serializes_audit_appends_with_for_update():
-    """Verify source code includes .with_for_update() on latest_audit query."""
-    source = inspect.getsource(RealityVerifierService.verify_action_outcome)
-    assert "latest_audit = await session.execute(" in source
+    """Verify source code includes .with_for_update() on audit serialization."""
+    source = inspect.getsource(RealityVerifierService._acquire_audit_chain_state)
     assert ".with_for_update()" in source
+    assert "TenantAuditLedger" in source
 
 
 def test_threat_model_superuser_vs_unprivileged_documented():

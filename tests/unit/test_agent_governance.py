@@ -30,9 +30,9 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import jwt
 import pytest
 from fastapi import HTTPException
+from jose import jwt
 
 from db.models import (
     ActorIdentity,
@@ -544,11 +544,18 @@ class TestAgentTokenVerification:
 
     def test_claims_rejects_none_algorithm(self) -> None:
         """Token forged with alg='none' must be strictly rejected."""
-        unsecured_token = jwt.encode(
-            {"sub": "agent_x", "iss": settings.jwt_issuer, "aud": settings.jwt_audience},
-            key="",
-            algorithm="none",
+        import base64
+        import json
+
+        hdr = base64.urlsafe_b64encode(json.dumps({"alg": "none", "typ": "JWT"}).encode()).rstrip(b"=").decode()
+        pld = (
+            base64.urlsafe_b64encode(
+                json.dumps({"sub": "agent_x", "iss": settings.jwt_issuer, "aud": settings.jwt_audience}).encode()
+            )
+            .rstrip(b"=")
+            .decode()
         )
+        unsecured_token = f"{hdr}.{pld}."
         with pytest.raises(HTTPException) as exc:
             _claims_from_access_token(unsecured_token)
         assert exc.value.status_code == 401

@@ -71,8 +71,8 @@ dev = [
 ]
 
 [tool.setuptools.packages.find]
-where = ["."]
-include = ["shared*", "gateway*", "services*", "workers*", "models*", "hrs_engine*", "correction_agent*", "analytics*", "db*", "sdk*", "mcp_server*"]
+where = [".", "sdk"]
+include = ["shared*", "gateway*", "services*", "workers*", "models*", "hrs_engine*", "correction_agent*", "analytics*", "db*", "mcp_server*", "mirage_sdk*"]
 
 [tool.ruff]
 line-length = 120

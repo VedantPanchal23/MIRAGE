@@ -53,6 +53,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -e ".[dev]"
+          pip install -e "./sdk"
 
       - name: Run Mypy Strict
         run: |
@@ -76,6 +77,7 @@ jobs:
         run: |
           pip install --upgrade pip
           pip install -e ".[dev]"
+          pip install -e "./sdk"
 
       - name: Run Pytest with Coverage
         run: |

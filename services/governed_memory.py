@@ -201,7 +201,7 @@ class MultiStorePropagator:
                 r = aioredis.from_url(self.settings.redis_url, socket_timeout=1.0)
                 cache_key = f"mirage:memory:{memory.tenant_id}:{memory.id}"
                 await r.delete(cache_key)
-                await r.aclose()
+                await r.close()
                 redis_invalidated = True
             except Exception as exc:
                 errors["redis"] = str(exc)[:200]

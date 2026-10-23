@@ -64,7 +64,15 @@ class _TestClientTransport(httpx.BaseTransport):
         self._client = test_client
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
-        resp = self._client.send(request)
+        content = request.read()
+        headers = dict(request.headers)
+        headers.pop("host", None)
+        resp = self._client.request(
+            method=request.method,
+            url=str(request.url),
+            headers=headers,
+            content=content,
+        )
         return httpx.Response(
             status_code=resp.status_code,
             headers=resp.headers,

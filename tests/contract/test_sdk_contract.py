@@ -55,7 +55,25 @@ from gateway.middleware.auth import register_api_key, revoke_api_key
 from shared.schemas.auth import Role
 
 app = create_app()
-sync_transport = TestClient(app)._transport
+
+
+class _TestClientTransport(httpx.BaseTransport):
+    """Sync transport adapter that wraps Starlette TestClient cleanly."""
+
+    def __init__(self, test_client: TestClient) -> None:
+        self._client = test_client
+
+    def handle_request(self, request: httpx.Request) -> httpx.Response:
+        resp = self._client.send(request)
+        return httpx.Response(
+            status_code=resp.status_code,
+            headers=resp.headers,
+            content=resp.content,
+            request=request,
+        )
+
+
+sync_transport = _TestClientTransport(TestClient(app))
 
 
 @pytest.fixture(autouse=True)

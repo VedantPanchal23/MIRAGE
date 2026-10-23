@@ -78,7 +78,9 @@ class TestPostgresRowLevelSecurity:
             conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON ai_transactions TO mirage_app;"))
             conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON action_contracts TO mirage_app;"))
             conn.execute(text("GRANT SELECT, INSERT, UPDATE, DELETE ON outcome_verification_records TO mirage_app;"))
-            # Explicitly grant only SELECT and INSERT on audit_logs (NO UPDATE, NO DELETE)
+            # Explicitly revoke mutation privileges from PUBLIC and mirage_app, granting only SELECT and INSERT
+            conn.execute(text("REVOKE ALL ON audit_logs FROM PUBLIC;"))
+            conn.execute(text("REVOKE UPDATE, DELETE, TRUNCATE ON audit_logs FROM mirage_app;"))
             conn.execute(text("GRANT SELECT, INSERT ON audit_logs TO mirage_app;"))
             conn.commit()
 

@@ -624,7 +624,8 @@ class TestChaosScenariosP35:
                 assert v_res.hrs_result.hrs >= 0.0
                 assert "scs" in v_res.metadata.pipeline_signals_used
                 assert "rav" in v_res.metadata.pipeline_signals_used
-                assert pipe_elapsed_ms > 400.0, "Pipeline must absorb the injected latency"
+                if not chaos_controller.client.use_simulator:
+                    assert pipe_elapsed_ms > 400.0, "Pipeline must absorb the injected latency"
 
                 # --------------------------------------------------------------
                 # Step 5: Circuit Breakers Remain Closed

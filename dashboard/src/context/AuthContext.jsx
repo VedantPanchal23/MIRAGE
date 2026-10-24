@@ -140,7 +140,23 @@ export const AuthContext = createContext(null);
  * @param {string|null} [props.initialToken=null] - Optional initial token (e.g. for testing)
  */
 export function AuthProvider({ children, initialToken = null }) {
-  const [token, setToken] = useState(initialToken ? initialToken.trim().replace(/^Bearer\s+/i, "") : null);
+  const [token, setToken] = useState(() => {
+    if (initialToken) return initialToken.trim().replace(/^Bearer\s+/i, "");
+    try {
+      const stored =
+        (typeof window !== "undefined" && window.sessionStorage?.getItem("mirage_auth_token")) ||
+        (typeof window !== "undefined" && window.localStorage?.getItem("mirage_auth_token"));
+      if (stored) {
+        const payload = parseJwtPayload(stored);
+        if (payload && !isTokenExpired(payload.exp)) {
+          return stored;
+        }
+      }
+    } catch {
+      // storage unavailable
+    }
+    return null;
+  });
   const [authError, setAuthError] = useState(null);
 
   // Synchronize active in-memory token with the centralized API client
@@ -151,6 +167,14 @@ export function AuthProvider({ children, initialToken = null }) {
   // Register 401 Unauthorized handler to reset invalid/expired sessions
   useEffect(() => {
     const handleUnauthorized = () => {
+      try {
+        if (typeof window !== "undefined") {
+          window.sessionStorage?.removeItem("mirage_auth_token");
+          window.localStorage?.removeItem("mirage_auth_token");
+        }
+      } catch {
+        // ignore
+      }
       setToken(null);
       setApiToken(null);
       setAuthError("Session expired or unauthorized. Please authenticate.");
@@ -199,6 +223,15 @@ export function AuthProvider({ children, initialToken = null }) {
       throw new Error("Token has expired");
     }
 
+    try {
+      if (typeof window !== "undefined") {
+        window.sessionStorage?.setItem("mirage_auth_token", cleanToken);
+        window.localStorage?.setItem("mirage_auth_token", cleanToken);
+      }
+    } catch {
+      // storage unavailable
+    }
+
     setAuthError(null);
     setToken(cleanToken);
     setApiToken(cleanToken);
@@ -214,6 +247,14 @@ export function AuthProvider({ children, initialToken = null }) {
    * Clear in-memory token and reset authentication state.
    */
   const logout = useCallback(() => {
+    try {
+      if (typeof window !== "undefined") {
+        window.sessionStorage?.removeItem("mirage_auth_token");
+        window.localStorage?.removeItem("mirage_auth_token");
+      }
+    } catch {
+      // ignore
+    }
     setToken(null);
     setApiToken(null);
     setAuthError(null);

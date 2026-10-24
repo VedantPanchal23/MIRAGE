@@ -113,6 +113,9 @@ export async function apiFetch(endpoint, options = {}) {
       reqHeaders["Content-Type"] = "application/json";
       fetchOptions.body = JSON.stringify(body);
     } else {
+      if (!reqHeaders["Content-Type"]) {
+        reqHeaders["Content-Type"] = "application/json";
+      }
       fetchOptions.body = body;
     }
   }

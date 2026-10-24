@@ -8,11 +8,24 @@ import { KeyRound, X, AlertCircle } from "lucide-react";
  * In-memory token management: Tokens are kept strictly in React state and never
  * written to localStorage (Security & Access §3.2).
  */
+const DEMO_TENANT_ADMIN_TOKEN =
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ2ZWRhbnRfZGF4IiwidGVuYW50X2lkIjoidGVuYW50X2RlbW8iLCJyb2xlIjoidGVuYW50X2FkbWluIiwianRpIjoibG9jYWwtMTc5MjgyMjI3Ni43NjY4NjUiLCJpYXQiOjE3OTI4MjIyNzYsIm5iZiI6MTc5MjgyMjI3NiwiZXhwIjoxNzk1NDE0Mjc2LCJpc3MiOiJtaXJhZ2UtY29udHJvbC1wbGFuZSIsImF1ZCI6Im1pcmFnZS1nYXRld2F5In0.UvxADJRFbZYIUmscX0UJnklNyb0-a-QugLHEZdTtgHs";
+
 export function LoginModal({ isOpen, onClose, onLogin }) {
   const [tokenInput, setTokenInput] = useState("");
   const [error, setError] = useState(null);
 
   if (!isOpen) return null;
+
+  const handleQuickDemo = () => {
+    try {
+      onLogin(DEMO_TENANT_ADMIN_TOKEN);
+      setTokenInput("");
+      onClose();
+    } catch (err) {
+      setError(err.message || "Failed to authenticate demo session.");
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -58,6 +71,27 @@ export function LoginModal({ isOpen, onClose, onLogin }) {
             </h2>
             <p className="text-xs text-slate-500">Authoritative Bearer JWT verification</p>
           </div>
+        </div>
+
+        {/* 1-Click Demonstration Login */}
+        <div className="mb-4 p-3 bg-sky-50 border border-sky-200 rounded-lg">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-semibold text-sky-900">1-Click Demo Session</span>
+            <span className="text-[10px] px-2 py-0.5 rounded bg-sky-200 text-sky-800 font-mono">tenant_admin</span>
+          </div>
+          <button
+            type="button"
+            onClick={handleQuickDemo}
+            className="w-full py-2 px-3 rounded-lg bg-sky-600 hover:bg-sky-700 text-white text-xs font-medium transition shadow-xs flex items-center justify-center space-x-1.5 focus:outline-none focus:ring-2 focus:ring-sky-400"
+          >
+            <span>⚡ Authenticate as Vedant &amp; Dax (Tenant Admin)</span>
+          </button>
+        </div>
+
+        <div className="relative flex py-1 items-center mb-3">
+          <div className="flex-grow border-t border-slate-200"></div>
+          <span className="flex-shrink mx-3 text-slate-400 text-[11px] uppercase tracking-wider font-medium">Or enter token manually</span>
+          <div className="flex-grow border-t border-slate-200"></div>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

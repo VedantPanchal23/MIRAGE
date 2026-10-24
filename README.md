@@ -343,7 +343,7 @@ In accordance with MIRAGE architectural principles and ADR records:
 - [Observability & Audit](docs/Observability_and_Audit.md) — Tracing, metrics, and cryptographic audit proofs.
 - [Operational Runbooks](docs/runbooks/) — Incident triage, key rotation, and disaster recovery.
 - [Architecture Decision Records (ADRs)](docs/ADRs/README.md) — Architectural change governance.
-- [Project Changelog](docs/CHANGELOG.md) — Detailed version and migration history.
+
 
 ---
 

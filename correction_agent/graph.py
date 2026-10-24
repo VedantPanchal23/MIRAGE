@@ -211,8 +211,8 @@ class CorrectionGraph:
         # 2. Rule-based factual alignment fallback:
         # Replaces numerical / date discrepancies with authoritative evidence values
         top_ev = evidence_chunks[0]
-        ev_nums = re.findall(r"\b\d+\b", top_ev)
-        orig_nums = re.findall(r"\b\d+\b", original_text)
+        ev_nums = [n for n in re.findall(r"\b\d+\b", top_ev) if int(n) > 10] or re.findall(r"\b\d+\b", top_ev)
+        orig_nums = [n for n in re.findall(r"\b\d+\b", original_text) if int(n) > 10] or re.findall(r"\b\d+\b", original_text)
 
         if ev_nums and orig_nums and ev_nums[0] != orig_nums[0]:
             return original_text.replace(orig_nums[0], ev_nums[0])

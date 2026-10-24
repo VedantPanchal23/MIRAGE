@@ -1,5 +1,6 @@
 """RAV Worker: Qdrant vector retrieval and document support scoring."""
 
+import re
 from typing import Any
 
 from qdrant_client import QdrantClient
@@ -179,7 +180,16 @@ class RAVWorker:
                             source_metadata=payload,
                         )
                     )
-                return evidence
+
+                # Hybrid lexical re-ranking: boost evidence containing exact query terminology
+                q_words = set(re.findall(r"\b\w{3,}\b", query.lower()))
+                for ev in evidence:
+                    d_words = set(re.findall(r"\b\w{3,}\b", ev.content.lower()))
+                    overlap = len(q_words.intersection(d_words)) / max(len(q_words), 1)
+                    ev.similarity_score = ev.similarity_score * 0.4 + overlap * 0.6
+
+                evidence.sort(key=lambda x: x.similarity_score, reverse=True)
+                return evidence[:limit]
             except Exception as exc:
                 logger.debug("Qdrant search fallback to empty", error=str(exc))
 

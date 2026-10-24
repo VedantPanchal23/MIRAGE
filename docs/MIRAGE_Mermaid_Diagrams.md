@@ -445,3 +445,67 @@ mindmap
         PostgreSQL Multi-Tenant RLS
         Monotonic State Transitions
 ```
+
+---
+
+## 9. Granular 18-Point Execution Trace (Step-by-Step Micro-Processes)
+
+This flowchart illustrates all 18 chronological execution checkpoints traversed by an AI transaction inside MIRAGE, detailing the exact sub-processes, mathematical evaluations, and fail-closed branches.
+
+```mermaid
+flowchart TD
+    classDef point fill:#0f172a,stroke:#3b82f6,stroke-width:2px,color:#ffffff;
+    classDef branch fill:#1e1e2e,stroke:#f59e0b,stroke-width:1px,color:#ffffff;
+    classDef fail fill:#7f1d1d,stroke:#ef4444,stroke-width:2px,color:#ffffff;
+    classDef pass fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#ffffff;
+
+    P1["Point 1: Edge Ingress, JWT Verification & Tenant Context Binding"]:::point
+    P1 --> C1{JWT Signature & Tenant Valid?}:::branch
+    C1 -- No --> F1[HTTP 401/403 Fail-Closed Halt]:::fail
+    C1 -- Yes --> P2["Point 2: AST-Guarded Token-Bucket Rate Limiting (Redis)"]:::point
+
+    P2 --> C2{Tenant Quota Available?}:::branch
+    C2 -- No --> F2[HTTP 429 Retry-After Response]:::fail
+    C2 -- Yes --> P3["Point 3: Prompt Injection Scanner & DLP PII Masking (Gate 1)"]:::point
+
+    P3 --> C3{Prompt Safe & Clean?}:::branch
+    C3 -- Injection Detected --> F3[HTTP 400 Bad Request / Log Attack]:::fail
+    C3 -- Clean --> P4["Point 4: Qdrant Vector Retrieval & Freshness Decay (Gate 2)"]:::point
+
+    P4 --> P5["Point 5: Security Lattice Taint Update: l_state = l_1 ⊔ l_2 (Gate 2)"]:::point
+    P5 --> C4{Requires Action / Tool Execution?}:::branch
+
+    C4 -- Yes --> P6["Point 6: Action Proposal, Capability Scoping & Schema Check (Gate 3)"]:::point
+    C4 -- No --> P12["Point 12: Sub-Atomic Claim Decomposition via Flan-T5 (Gate 4)"]:::point
+
+    P6 --> C5{Agent Authorized for Tool & Schema Valid?}:::branch
+    C5 -- No --> F5[Reject Action Proposal]:::fail
+    C5 -- Yes --> P7["Point 7: Blast-Radius Salami Budget & HITL Approval Check (Gate 3)"]:::point
+
+    P7 --> C6{Approval Required / Budget Exceeded?}:::branch
+    C6 -- Budget Exceeded --> F6[Block Execution / Quota Exhausted]:::fail
+    C6 -- Approved / Within Budget --> P8["Point 8: Acquire Redis Lease + Fencing Token & 2-Phase Commit (Gate 3)"]:::point
+
+    P8 --> P9["Point 9: Outbound Egress Dispatch via Anti-SSRF Proxy"]:::point
+    P9 --> P10["Point 10: Epistemic Reality Verification via Target Verifier Adapters (Gate 5)"]:::point
+
+    P10 --> P11["Point 11: Monotonic Outcome State Classification (Gate 5)"]:::point
+    P11 --> C7{Reality State Transition Verified?}:::branch
+    C7 -- VERIFIED_FAILURE --> F7[Trigger Compensating Rollback Action]:::fail
+    C7 -- EXECUTION_UNCERTAIN --> F8[Lock for Manual Reconciliation]:::fail
+    C7 -- VERIFIED_SUCCESS --> P12
+
+    P12 --> P13["Point 13: Parallel Asynchronous Signal Extraction (RAV + SCS + NLI + ICS + VGS)"]:::point
+    P13 --> P14["Point 14: LightGBM Tree-Ensemble Score Fusion & TreeSHAP Attribution"]:::point
+    P14 --> P15["Point 15: Split-Mondrian Conformal Prediction Calibration: 95% Confidence Bounds"]:::point
+    P15 --> P16["Point 16: Dynamic Risk Tier Routing & LangGraph Iterative Self-Correction"]:::point
+
+    P16 --> C8{Conformal Bound Evaluation}:::branch
+    C8 -- "High Risk (HRS >= 0.70)" --> F9[Fail-Closed Output Suppression]:::fail
+    C8 -- "Medium Risk (0.35 <= HRS < 0.70)" --> LangGraph[LangGraph Iterative Self-Correction Loop]:::branch
+    LangGraph --> P13
+    C8 -- "Low Risk (HRS < 0.35)" --> P17["Point 17: Monotonic SHA-256 Rolling Hash-Chain Append & Merkle Anchor"]:::point
+
+    P17 --> P18["Point 18: Real-Time WebSocket Telemetry Broadcast to React 18 Dashboard"]:::pass
+    P18 --> FinalUser([Certified Output Delivered to User]):::pass
+```

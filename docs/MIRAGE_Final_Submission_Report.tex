@@ -411,6 +411,148 @@ A hardened, partitioned persistence tier comprising:
 \subsection{Detailed Process Walkthrough}
 Every AI transaction traversing MIRAGE undergoes a deterministic, five-gate inspection pipeline. The detailed sequence of operations across all sub-processes is illustrated in Figure~\ref{fig:e2e_flow_sequence}.
 
+\subsection{Granular Step-by-Step Execution Sequence (Point-by-Point Micro-Mechanics)}
+To provide complete transparency into runtime execution, this section details the eighteen consecutive execution points that govern an AI transaction from arrival to certified outcome:
+
+\subsubsection*{Point 1: Edge Ingress, JWT Cryptographic Signature \& Tenant Context Binding}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Client dispatches an HTTP POST or WebSocket frame to \texttt{/v1/verify} or \texttt{/v1/actions/propose}.
+  \item \textbf{Sub-Process Mechanics:} Gateway middleware intercepts the request before route dispatch. It reads the \texttt{Authorization: Bearer <token>} header or \texttt{X-API-Key}. For JWTs, it validates the HMAC-SHA256 signature against the shared secret; for API keys, it computes \texttt{SHA-256(raw\_key)} and matches against registered keys. It extracts \texttt{tenant\_id}, \texttt{role} (e.g., \texttt{TENANT\_ADMIN}, \texttt{OPERATOR}, \texttt{VIEWER}, \texttt{API\_CLIENT}), and assigned \texttt{scopes}.
+  \item \textbf{Fail-Closed Guarantee:} If the signature is invalid, expired, or missing tenant attribution, the gateway returns HTTP 401/403 and halts processing. The verified \texttt{tenant\_id} is bound to Python's asynchronous \texttt{ContextVar}, ensuring all downstream operations are pinned to the authenticated tenant.
+\end{itemize}
+
+\subsubsection*{Point 2: AST-Guarded Token-Bucket Rate Limiting (Redis)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Enforcing per-tenant consumption quotas.
+  \item \textbf{Sub-Process Mechanics:} The middleware queries Redis key \texttt{ratelimit:\{tenant\_id\}}. It executes a Lua script implementing an atomic token bucket: $C(t) = \min(B, C_{\text{prev}} + r \cdot \Delta t)$. If $C(t) \ge 1$, one token is consumed and the request proceeds; if $C(t) < 1$, the gateway computes the refill delay and returns HTTP 429 with a standardized \texttt{Retry-After} header.
+  \item \textbf{AST Invariant:} MIRAGE enforces via static AST testing that the rate limiter never falls back to an unmetered in-memory dictionary if Redis is unreachable; if the rate limiter cannot verify quota, it fails closed.
+\end{itemize}
+
+\subsubsection*{Point 3: Input Inspection, Jailbreak Neutralization \& DLP Secret Masking (Gate 1)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Sanitizing the user prompt and shielding against adversarial instruction injection.
+  \item \textbf{Sub-Process Mechanics:} The raw prompt string passes through three sequential filters:
+    (1)~\emph{Delimiter Scanner:} Strips or escapes structural markers such as \texttt{<|im\_start|>}, \texttt{[SYSTEM]}, and markdown code fences that attempt to mimic system directives;
+    (2)~\emph{Semantic Injection Classifier:} Measures semantic embedding similarity against a vector index of known adversarial jailbreak patterns, flagging instructions that attempt to bypass safety constraints;
+    (3)~\emph{DLP Masking:} High-throughput regular expressions scan for PII, API tokens, and credentials (e.g., credit card numbers, private keys), replacing them with masked placeholders \texttt{[REDACTED\_SECRET\_X]} before logging or RAG embedding.
+\end{itemize}
+
+\subsubsection*{Point 4: Qdrant Vector Retrieval, Evidence Provenance \& Freshness Decay (Gate 2)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Retrieving authoritative grounding evidence for RAG workflows.
+  \item \textbf{Sub-Process Mechanics:} The user query is converted into an embedding vector via a dense retriever model. A similarity search query is dispatched to Qdrant with a mandatory metadata filter: \texttt{tenant\_id == current\_tenant\_id}. The retrieved chunks carry provenance signatures. For each chunk, the system computes temporal decay: $S_{\text{fresh}} = \exp(-\lambda \cdot \Delta t)$, where $\Delta t = t_{\text{current}} - t_{\text{verified}}$. Chunks older than the configured freshness threshold receive downgraded relevance weights or are excluded.
+\end{itemize}
+
+\subsubsection*{Point 5: Security Lattice Taint Update \& Information Flow Control (Gate 2)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Tracking confidentiality labels across the agent's working memory.
+  \item \textbf{Sub-Process Mechanics:} Each ingested context chunk possesses a classification label $\ell \in \{\text{PUBLIC}, \text{INTERNAL}, \text{CONFIDENTIAL}, \text{TOP\_SECRET}\}$. MIRAGE evaluates the join operation across all ingested chunks: $\ell_{\text{state}} = \bigsqcup_{i} \ell_i$. If $\ell_{\text{state}} \sqsupseteq \text{CONFIDENTIAL}$, the agent's execution session is flagged as tainted. When the agent later formulates tool calls, Gate~3 inspects $\ell_{\text{state}}$: if the agent attempts to invoke a public webhook or external unencrypted endpoint while tainted, the egress call is blocked.
+\end{itemize}
+
+\subsubsection*{Point 6: Action Proposal, Capability Scoping \& Schema Validation (Gate 3)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Intercepting the agent's intent to perform a real-world side effect.
+  \item \textbf{Sub-Process Mechanics:} The agent constructs an \texttt{ActionProposal} detailing target tool name, method, and parameters. The \texttt{ActionGovernorService} checks the central \texttt{ToolRegistry} to verify whether the tool is active and healthy. Next, it matches the agent's cryptographic capability grants against the tool's required permission scopes. Finally, parameter arguments are strictly validated against the tool's registered JSON Schema, asserting types, boundary constraints, and allowed string patterns.
+\end{itemize}
+
+\subsubsection*{Point 7: Blast-Radius Salami-Budget Throttling \& Human Approval (Gate 3)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Preventing runaway execution and cumulative mutation attacks.
+  \item \textbf{Sub-Process Mechanics:} The platform computes an action risk weight $w_{\text{action}}$ based on target resource criticality. It queries a sliding 1-hour Redis window for the tenant: if $\sum w_{\text{past}} + w_{\text{action}} > \text{Budget}_{\text{max}}$, execution is halted. If the individual action's risk level is classified as \texttt{HIGH} or \texttt{CRITICAL}, MIRAGE generates an immutable \texttt{ApprovalTicket} in PostgreSQL and enters state \texttt{PENDING\_APPROVAL}. Execution pauses until an operator authorizes the ticket via the React 18 dashboard.
+\end{itemize}
+
+\subsubsection*{Point 8: Distributed Lease Fencing Token Acquisition \& Two-Phase Commit (Gate 3)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Guaranteeing mutual exclusion and eliminating split-brain execution across workers.
+  \item \textbf{Sub-Process Mechanics:} The governor contacts Redis to acquire a distributed Redlock lease for the action key with a 10-second TTL. The acquisition atomically increments a tenant monotonic counter to produce a strictly increasing fencing token: $\tau_{i} = \text{INCR}(\text{tenant\_fencing\_seq})$. Immediately following lease grant, MIRAGE performs the first phase of its two-phase commit: it records the action contract in PostgreSQL with status \texttt{EXECUTING} and fencing token $\tau_i$.
+\end{itemize}
+
+\subsubsection*{Point 9: Outbound Egress Dispatch via Anti-SSRF Proxy}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Transmitting the payload to the external actuator or tool.
+  \item \textbf{Sub-Process Mechanics:} Network requests pass through an anti-SSRF egress proxy. The proxy resolves the destination hostname to its IP address and asserts that it does not reside in private, loopback, or cloud-metadata address ranges (\texttt{10.0.0.0/8}, \texttt{172.16.0.0/12}, \texttt{192.168.0.0/16}, \texttt{127.0.0.0/8}, \texttt{169.254.169.254}). If the remote server responds with an HTTP redirect (301/302/307/308), the proxy intercepts the redirect and re-inspects the target IP before following, preventing DNS rebinding attacks.
+\end{itemize}
+
+\subsubsection*{Point 10: Epistemic Reality Verification via Verifier Adapters (Gate 5)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Probing actual real-world state transitions rather than trusting tool return codes.
+  \item \textbf{Sub-Process Mechanics:} Following tool execution, the tool's return code is recorded as unverified evidence. The \texttt{RealityVerifierService} dispatches an independent verifier adapter corresponding to the target system:
+    \begin{itemize}[leftmargin=*,itemsep=1pt]
+      \item \emph{Database Adapter:} Executes a read-only parameterized query against PostgreSQL inside a read-only transaction (\texttt{SET TRANSACTION READ ONLY}) to observe row existence and values;
+      \item \emph{REST Adapter:} Dispatches an independent, authenticated GET request to query the external service's authoritative state API;
+      \item \emph{Queue Adapter:} Probes RabbitMQ / Celery task backends to confirm asynchronous completion;
+      \item \emph{Log/File Adapter:} Verifies filesystem attributes and cryptographic content hashes.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection*{Point 11: Monotonic Outcome State Classification \& Automated Compensation (Gate 5)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Assigning authoritative outcome state and handling divergent realities.
+  \item \textbf{Sub-Process Mechanics:} The observed reality snapshot is compared against the predicted postconditions:
+    \begin{itemize}[leftmargin=*,itemsep=1pt]
+      \item If 100\% of postconditions match, status transitions to \texttt{VERIFIED\_SUCCESS};
+      \item If reality is unmodified or divergent, status transitions to \texttt{VERIFIED\_FAILURE};
+      \item If an unreachable timeout occurs during observation, status transitions to \texttt{EXECUTION\_UNCERTAIN} (blind redispatch strictly forbidden).
+    \end{itemize}
+  If an action fails or achieves only partial completion, the platform automatically schedules the registered compensating rollback action, verifying its successful execution via Gate~5.
+\end{itemize}
+
+\subsubsection*{Point 12: Sub-Atomic Claim Decomposition via Flan-T5 (Gate 4)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Breaking complex LLM text completions into atomic verifiable claims.
+  \item \textbf{Sub-Process Mechanics:} Model completions generated by the agent are routed to a specialized Flan-T5 seq2seq model. The model parses multi-sentence prose into a list of isolated atomic factual statements $\{c_1, c_2, \dots, c_m\}$. Each claim isolates a single predicate and entity relationship, stripping conversational fluff and modal qualifiers to enable targeted entailment checks.
+\end{itemize}
+
+\subsubsection*{Point 13: Parallel Asynchronous Signal Extraction (Gate 4)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Extracting multi-dimensional factual consistency signals concurrently.
+  \item \textbf{Sub-Process Mechanics:} The \texttt{VerificationOrchestrator} dispatches parallel Celery tasks across a RabbitMQ broker to compute five orthogonal signals:
+    (1)~\emph{RAV Worker:} Computes dense vector similarity against Qdrant evidence chunks;
+    (2)~\emph{SCS Worker:} Uses Groq LPU inference to sample completions at temperatures $T \in \{0.3, 0.7, 1.0\}$, measuring token-level semantic entropy;
+    (3)~\emph{NLI Worker:} Executes Cross-Encoder DeBERTa-v3 on (Evidence, Claim) pairs, outputting probabilities $[P_{\text{ent}}, P_{\text{neu}}, P_{\text{con}}]$;
+    (4)~\emph{ICS Worker:} Calculates cross-turn consistency against prior turns;
+    (5)~\emph{VGS Worker:} Evaluates visual grounding for multimodal tokens.
+\end{itemize}
+
+\subsubsection*{Point 14: LightGBM Tree-Ensemble Fusion \& TreeSHAP Attribution (Gate 4)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Fusing individual signal scores into a single Hallucination Risk Score.
+  \item \textbf{Sub-Process Mechanics:} The extracted signal vectors are assembled into a feature matrix and evaluated by a calibrated LightGBM gradient-boosted decision forest. The ensemble produces a continuous risk score $\text{HRS}_{\text{raw}} \in [0.0, 1.0]$. Concurrently, TreeSHAP computes Shapley attribution values for each feature, identifying whether high risk was driven by NLI contradiction, high semantic entropy, or low retrieval similarity.
+\end{itemize}
+
+\subsubsection*{Point 15: Split-Mondrian Conformal Prediction Calibration (Gate 4)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Providing rigorous finite-sample statistical guarantees on risk predictions.
+  \item \textbf{Sub-Process Mechanics:} Rather than treating $\text{HRS}_{\text{raw}}$ as absolute truth, MIRAGE routes the score through a Split-Mondrian Conformal Predictor partitioned by claim difficulty groups. The calibrator computes non-conformity quantiles $\hat{q}$ from pre-computed calibration sets, outputting an exact 95\% confidence interval $[\text{HRS}_{\text{lower}}, \text{HRS}_{\text{upper}}]$. This mathematically guarantees that the true factual risk is contained in the interval with at least 95\% probability.
+\end{itemize}
+
+\subsubsection*{Point 16: Dynamic Risk Tier Routing \& LangGraph Iterative Self-Healing (Gate 4)}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Routing outputs and executing automated self-correction.
+  \item \textbf{Sub-Process Mechanics:} The platform categorizes output into three operational tiers based on conformal bounds:
+    \begin{itemize}[leftmargin=*,itemsep=1pt]
+      \item \emph{Tier 1 (Safe, $\text{HRS}_{\text{upper}} < 0.35$):} Output is certified and returned to the client;
+      \item \emph{Tier 2 (Marginal, $0.35 \le \text{HRS}_{\text{upper}} < 0.70$):} Triggers the LangGraph Self-Correction agent. The agent is provided with the specific contradicted claim, the SHAP explanation, and the counter-evidence chunk, prompting the model to regenerate the assertion. The revision is re-evaluated by Gate~4 (up to 3 iterations);
+      \item \emph{Tier 3 (High Risk, $\text{HRS}_{\text{upper}} \ge 0.70$):} Output is suppressed fail-closed, returning a safe failure response.
+    \end{itemize}
+\end{itemize}
+
+\subsubsection*{Point 17: Monotonic SHA-256 Rolling Hash-Chain Append \& Merkle Checkpoints}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Creating an immutable, tamper-evident audit record.
+  \item \textbf{Sub-Process Mechanics:} The audit engine initiates a database transaction, acquiring a PostgreSQL transaction-scoped advisory lock (\texttt{pg\_advisory\_xact\_lock(tenant\_int\_id)}) to serialize tenant writes. It reads the latest ledger head to retrieve sequence number $S$ and prior hash $H_{S}$. It increments the sequence number to $S+1$ and computes:
+  \begin{equation}
+    H_{S+1} = \text{SHA-256}\left(H_S \parallel \text{tenant\_id} \parallel (S+1) \parallel \text{event\_payload}\right)
+  \end{equation}
+  The record is inserted into \texttt{audit\_logs} under PostgreSQL RLS, and the transaction commits, releasing the advisory lock. Periodically, epoch checkpoints hash blocks into Merkle trees anchored to external cloud object storage.
+\end{itemize}
+
+\subsubsection*{Point 18: Real-Time WebSocket Telemetry Broadcast to Operator Dashboard}
+\begin{itemize}[leftmargin=*,itemsep=1pt]
+  \item \textbf{Action:} Providing complete operational visibility to system administrators.
+  \item \textbf{Sub-Process Mechanics:} As state transitions occur, the gateway emits structured JSON telemetry events across authenticated WebSocket connections. The React 18 / JSX dashboard renders progressive live streams: showing atomic claims as they are parsed, parallel signal progress bars, SHAP waterfall graphs, live leasing states, and reality verification results, allowing operators to monitor and intervene in real time with zero mock data.
+\end{itemize}
+
 \begin{figure}[!htbp]
 \centering
 \begin{adjustbox}{max width=\linewidth}

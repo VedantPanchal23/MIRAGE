@@ -135,6 +135,12 @@ export {
   commitAuditAnchor,
 } from "./audit";
 
+export {
+  getBillingPlans,
+  getTenantSubscription,
+  subscribePlan,
+} from "./billing";
+
 import * as dashboard from "./dashboard";
 import * as alerts from "./alerts";
 import * as stream from "./stream";
@@ -149,6 +155,7 @@ import * as tenants from "./tenants";
 import * as apikeys from "./apikeys";
 import * as mcp from "./mcp";
 import * as audit from "./audit";
+import * as billing from "./billing";
 import { apiFetch, setApiToken, getApiToken, onUnauthorized, ApiError } from "./client";
 
 export const api = {
@@ -171,6 +178,7 @@ export const api = {
   apikeys,
   mcp,
   audit,
+  billing,
 };
 
 export default api;

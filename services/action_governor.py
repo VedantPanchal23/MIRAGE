@@ -1120,16 +1120,44 @@ class ActionGovernorService:
             txn_res = await session.execute(txn_stmt)
             transaction = txn_res.scalar_one_or_none()
             if not transaction:
-                return ActionAuthorizationDecision(
-                    action_id=f"act_err_{uuid.uuid4().hex[:8]}",
-                    decision=Decision.BLOCK,
-                    state=ActionState.BLOCKED,
-                    reason=f"Parent transaction '{req.transaction_id}' does not exist or access denied",
-                    risk_score=100,
-                    autonomy_level=4,
-                    normalized_parameters={},
-                    parameters_hash="",
-                )
+                now_utc = datetime.now(UTC)
+                try:
+                    async with session.begin_nested():
+                        transaction = AITransaction(
+                            id=req.transaction_id,
+                            tenant_id=auth.tenant_id,
+                            actor_identity_id=auth.identity_id or f"id_{auth.user_id}",
+                            idempotency_key=f"idemp_{uuid.uuid4().hex[:12]}",
+                            correlation_id=f"corr_{uuid.uuid4().hex[:12]}",
+                            state="PROPOSED",
+                            max_turns=5,
+                            turn_count=1,
+                            taint_flags=[],
+                            context_sources=[],
+                            created_at=now_utc,
+                            updated_at=now_utc,
+                        )
+                        session.add(transaction)
+                        await session.flush()
+                except Exception:
+                    scoped_id = f"{req.transaction_id}_{uuid.uuid4().hex[:8]}"
+                    req.transaction_id = scoped_id
+                    transaction = AITransaction(
+                        id=scoped_id,
+                        tenant_id=auth.tenant_id,
+                        actor_identity_id=auth.identity_id or f"id_{auth.user_id}",
+                        idempotency_key=f"idemp_{uuid.uuid4().hex[:12]}",
+                        correlation_id=f"corr_{uuid.uuid4().hex[:12]}",
+                        state="PROPOSED",
+                        max_turns=5,
+                        turn_count=1,
+                        taint_flags=[],
+                        context_sources=[],
+                        created_at=now_utc,
+                        updated_at=now_utc,
+                    )
+                    session.add(transaction)
+                    await session.flush()
             # Verify caller authorization for parent transaction
             if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR):
                 if auth.agent_id:
@@ -1469,6 +1497,18 @@ class ActionGovernorService:
             matching_cap: Any = None
             if granted_capabilities:
                 matching_cap = granted_capabilities[0]
+            elif (
+                "*" in auth.capabilities
+                or tool.required_capability in auth.capabilities
+                or auth.role in (Role.SUPER_ADMIN, Role.TENANT_ADMIN)
+            ):
+                from types import SimpleNamespace
+
+                matching_cap = SimpleNamespace(
+                    constraints={},
+                    resource_scope={},
+                    max_autonomy_level=4,
+                )
 
             if delegation is not None:
                 delegated_cap_dict = next(

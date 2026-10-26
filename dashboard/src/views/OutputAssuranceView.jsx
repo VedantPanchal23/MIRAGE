@@ -36,7 +36,7 @@ export function OutputAssuranceView({ isRefreshing, onDataLoaded }) {
   const [responseText, setResponseText] = useState(
     "Alexander Fleming discovered penicillin in 1928 at St. Mary's Hospital in London."
   );
-  const [transactionId, setTransactionId] = useState("txn_demo_default");
+  const [transactionId, setTransactionId] = useState(() => "txn_" + Math.random().toString(36).substring(2, 10));
   const [modelId, setModelId] = useState("allam-2-7b");
   const [autoCorrect, setAutoCorrect] = useState(true);
   const [maxLatencyMs, setMaxLatencyMs] = useState(5000);

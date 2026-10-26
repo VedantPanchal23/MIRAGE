@@ -6,7 +6,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi import HTTPException, status
 
-from db.models import ActorIdentity, ApiCredential, AuditLogRecord, Tenant, TenantAuditLedger, TenantBudgetRecord
+from db.models import (
+    ActorIdentity,
+    ApiCredential,
+    AuditLogRecord,
+    Tenant,
+    TenantAuditLedger,
+    TenantBudgetRecord,
+    User,
+)
 from services.tenant_service import TenantService
 from shared.schemas.auth import AuthContext, Role
 from shared.schemas.tenant import TenantCreateRequest, TenantStatus
@@ -299,7 +307,12 @@ async def test_offboard_tenant_success(super_admin_auth: AuthContext) -> None:
     mock_res_audit = MagicMock()
     mock_res_audit.first.return_value = None
 
-    mock_session.execute.side_effect = [mock_res_creds, mock_res_audit]
+    def mock_exec_side_effect(stmt, *args, **kwargs):
+        if "api_credentials" in str(stmt).lower():
+            return mock_res_creds
+        return mock_res_audit
+
+    mock_session.execute.side_effect = mock_exec_side_effect
     mock_session.add = MagicMock()
 
     with patch("db.session.get_tenant_session") as mock_get_sess:
@@ -322,3 +335,49 @@ async def test_cross_tenant_access_denied(tenant_admin_auth: AuthContext) -> Non
 
     assert exc_info.value.status_code == status.HTTP_403_FORBIDDEN
     assert "Cross-tenant access prohibited" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_register_tenant_success() -> None:
+    """Self-service onboarding successfully provisions tenant, user, API key, and returns credentials."""
+    from shared.schemas.tenant import TenantRegistrationRequest
+
+    service = TenantService()
+    req = TenantRegistrationRequest(
+        name="Nova Health AI",
+        admin_email="admin@novahealth.ai",
+        tenant_id="nova_health",
+        tier="business",
+    )
+
+    mock_session = AsyncMock()
+    mock_session.get.return_value = None
+
+    mock_res_audit = MagicMock()
+    mock_res_audit.first.return_value = None
+    mock_session.execute.return_value = mock_res_audit
+
+    added_objects: list[object] = []
+    mock_session.add = MagicMock(side_effect=lambda obj: added_objects.append(obj))
+
+    with patch("db.session.get_tenant_session") as mock_get_sess:
+        mock_get_sess.return_value.__aenter__.return_value = mock_session
+
+        resp = await service.register_tenant(req=req)
+
+        assert resp.tenant_id == "nova_health"
+        assert resp.name == "Nova Health AI"
+        assert resp.tier == "business"
+        assert resp.api_key.startswith("mirage_live_")
+        assert resp.access_token is not None
+        assert resp.token_type == "bearer"
+
+        # Check all models were registered
+        types_added = [type(o) for o in added_objects]
+        assert Tenant in types_added
+        assert User in types_added
+        assert ActorIdentity in types_added
+        assert ApiCredential in types_added
+        assert TenantBudgetRecord in types_added
+        assert TenantAuditLedger in types_added
+

@@ -64,15 +64,17 @@ export function OverviewView({ isRefreshing, onDataLoaded }) {
   }, [onDataLoaded]);
 
   useEffect(() => {
-    fetchOverviewData();
-  }, [fetchOverviewData]);
+    if (auth?.isAuthenticated) {
+      fetchOverviewData();
+    }
+  }, [auth?.isAuthenticated, fetchOverviewData]);
 
   // Synchronize when parent triggers a global refresh
   useEffect(() => {
-    if (isRefreshing) {
+    if (isRefreshing && auth?.isAuthenticated) {
       fetchOverviewData();
     }
-  }, [isRefreshing, fetchOverviewData]);
+  }, [isRefreshing, auth?.isAuthenticated, fetchOverviewData]);
 
   // 1. LOADING STATE
   if (loading && !stats) {

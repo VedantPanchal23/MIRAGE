@@ -1,4 +1,5 @@
 import React, { useState, useCallback } from "react";
+import { ShieldCheck } from "lucide-react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { Header } from "./components/Header";
 import {
@@ -22,6 +23,7 @@ import { MultiAgentGovernanceView } from "./views/MultiAgentGovernanceView";
 import { TenantsView } from "./views/TenantsView";
 import { MCPServersView } from "./views/MCPServersView";
 import { AuditIntegrityView } from "./views/AuditIntegrityView";
+import { SubscriptionView } from "./views/SubscriptionView";
 
 /**
  * Dashboard application shell managing navigation state, header actions, and view routing.
@@ -58,6 +60,28 @@ export function DashboardShell() {
 
   // Determine view to render based on activeTab and authoritative permission check
   const renderView = () => {
+    if (!isAuthenticated) {
+      return (
+        <div className="flex-1 flex items-center justify-center p-8">
+          <div className="bg-white border border-slate-200 rounded-xl p-8 max-w-md w-full shadow-sm text-center">
+            <div className="w-12 h-12 rounded-xl bg-sky-50 text-sky-600 flex items-center justify-center mx-auto mb-4 border border-sky-100">
+              <ShieldCheck className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-900 mb-2">Authentication Required</h2>
+            <p className="text-xs text-slate-500 mb-6">
+              Please authenticate your enterprise operator session to access real-time assurance gates and telemetry.
+            </p>
+            <button
+              onClick={() => setIsLoginOpen(true)}
+              className="w-full py-2.5 px-4 bg-sky-600 hover:bg-sky-700 text-white rounded-lg text-xs font-semibold shadow-xs transition"
+            >
+              ⚡ Authenticate Operator Session
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     // Authoritative RBAC UX Gating: Check whether authenticated user possesses required permissions
     if (isAuthenticated && !isSectionPermitted(activeTab, hasPermission)) {
       const required = SECTION_PERMISSIONS[activeTab] || [];
@@ -77,6 +101,14 @@ export function DashboardShell() {
       case "overview":
         return (
           <OverviewView
+            isRefreshing={isRefreshing}
+            onDataLoaded={handleDataLoaded}
+          />
+        );
+
+      case "subscription":
+        return (
+          <SubscriptionView
             isRefreshing={isRefreshing}
             onDataLoaded={handleDataLoaded}
           />

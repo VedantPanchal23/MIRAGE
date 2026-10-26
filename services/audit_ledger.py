@@ -111,9 +111,9 @@ class AuditLedgerService:
 
         ledger_head_row = (await session.execute(ledger_stmt)).scalar_one_or_none()
 
-        if ledger_head_row is not None:
-            prev_hash = ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH
-            new_seq = (ledger_head_row.sequence_number or 0) + 1
+        if ledger_head_row is not None and isinstance(getattr(ledger_head_row, "head_chain_hash", None), str):
+            prev_hash = str(ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH)
+            new_seq = int(ledger_head_row.sequence_number or 0) + 1
         else:
             # Fallback for mock/sqlite environments without tenant_audit_ledgers row
             latest_audit_stmt = (
@@ -123,10 +123,12 @@ class AuditLedgerService:
                 .limit(1)
             )
             audit_res = await session.execute(latest_audit_stmt)
-            latest_row = audit_res.first()
-            prev_hash = latest_row[0] if latest_row and latest_row[0] is not None else GENESIS_ROOT_HASH
-            last_seq = latest_row[1] if latest_row and len(latest_row) > 1 and latest_row[1] is not None else 0
+            latest_row = audit_res.first() if hasattr(audit_res, "first") else None
+            prev_hash = str(latest_row[0]) if latest_row and len(latest_row) > 0 and isinstance(latest_row[0], str) else GENESIS_ROOT_HASH
+            last_seq = int(latest_row[1]) if latest_row and len(latest_row) > 1 and isinstance(latest_row[1], int) else 0
             new_seq = last_seq + 1
+            if ledger_head_row is not None and not isinstance(getattr(ledger_head_row, "head_chain_hash", None), str):
+                ledger_head_row = None
 
         entry_id = f"aud_{time.time_ns():020d}_{uuid.uuid4().hex[:8]}"
         clean_prompt_hash = prompt_hash or compute_sha256("")

@@ -25,7 +25,17 @@ from shared.schemas.auth import AuthContext, Role
 logger = get_logger("auth_middleware")
 security_bearer = HTTPBearer(auto_error=False)
 settings = get_settings()
-EXEMPT_PATHS: set[str] = {"/v1/health", "/health", "/docs", "/redoc", "/openapi.json", "/metrics"}
+EXEMPT_PATHS: set[str] = {
+    "/v1/health",
+    "/health",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/metrics",
+    "/v1/auth/register-tenant",
+    "/v1/billing/plans",
+    "/v1/billing/webhook",
+}
 _TEST_API_KEY_REGISTRY: dict[str, AuthContext] = {}
 
 

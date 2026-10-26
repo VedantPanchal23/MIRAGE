@@ -13,6 +13,7 @@ import {
   Building,
   Server,
   FileCheck,
+  CreditCard,
 } from "lucide-react";
 import { PERMISSIONS } from "../context/AuthContext";
 
@@ -46,6 +47,7 @@ export const SECTION_PERMISSIONS = Object.freeze({
   tenants: [PERMISSIONS.CONFIG_WRITE],
   mcp: [PERMISSIONS.CONFIG_WRITE],
   audit: [PERMISSIONS.AUDIT_READ],
+  subscription: [PERMISSIONS.DASHBOARD_READ],
 });
 
 export const NAV_ITEMS = [
@@ -54,6 +56,12 @@ export const NAV_ITEMS = [
     label: "Overview",
     icon: LayoutDashboard,
     requiredPermissions: SECTION_PERMISSIONS.overview,
+  },
+  {
+    id: "subscription",
+    label: "Pricing & Plans",
+    icon: CreditCard,
+    requiredPermissions: SECTION_PERMISSIONS.subscription,
   },
   {
     id: "context",

@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, Query, status
 
 from gateway.middleware.auth import get_current_auth
 from services.api_key_service import api_key_service
+from services.tenant_service import TenantService
 from shared.schemas.api_key import (
     ApiKeyCreatedResponse,
     ApiKeyCreateRequest,
@@ -18,8 +19,26 @@ from shared.schemas.api_key import (
     ApiKeyRotateRequest,
 )
 from shared.schemas.auth import AuthContext
+from shared.schemas.tenant import (
+    TenantRegistrationRequest,
+    TenantRegistrationResponse,
+)
 
 router = APIRouter(prefix="/v1/auth", tags=["Authentication"])
+tenant_service = TenantService()
+
+
+@router.post(
+    "/register-tenant",
+    response_model=TenantRegistrationResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Self-service enterprise tenant registration",
+)
+async def register_tenant_endpoint(
+    req: TenantRegistrationRequest,
+) -> TenantRegistrationResponse:
+    """Self-service enterprise onboarding: provisions tenant, admin user, identity, API key, and budget."""
+    return await tenant_service.register_tenant(req)
 
 
 @router.get("/me", response_model=AuthContext, summary="Current authenticated identity")

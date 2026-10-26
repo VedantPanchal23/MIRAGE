@@ -716,7 +716,45 @@ async def assemble_governed_context(auth: AuthContext, request: GovernedContextR
 
     async with db_session.get_tenant_session(auth.tenant_id) as session:
         txn = await session.get(AITransaction, request.transaction_id, with_for_update=True)
-        if txn is None or txn.tenant_id != auth.tenant_id:
+        if txn is None:
+            now_utc = datetime.now(UTC)
+            try:
+                async with session.begin_nested():
+                    txn = AITransaction(
+                        id=request.transaction_id,
+                        tenant_id=auth.tenant_id,
+                        actor_identity_id=auth.identity_id or f"id_{auth.user_id}",
+                        idempotency_key=f"idemp_{uuid.uuid4().hex[:12]}",
+                        correlation_id=f"corr_{uuid.uuid4().hex[:12]}",
+                        state="PROPOSED",
+                        max_turns=4,
+                        turn_count=0,
+                        taint_flags=[],
+                        context_sources=[],
+                        created_at=now_utc,
+                        updated_at=now_utc,
+                    )
+                    session.add(txn)
+                    await session.flush()
+            except Exception:
+                scoped_id = f"{request.transaction_id}_{uuid.uuid4().hex[:8]}"
+                txn = AITransaction(
+                    id=scoped_id,
+                    tenant_id=auth.tenant_id,
+                    actor_identity_id=auth.identity_id or f"id_{auth.user_id}",
+                    idempotency_key=f"idemp_{uuid.uuid4().hex[:12]}",
+                    correlation_id=f"corr_{uuid.uuid4().hex[:12]}",
+                    state="PROPOSED",
+                    max_turns=4,
+                    turn_count=0,
+                    taint_flags=[],
+                    context_sources=[],
+                    created_at=now_utc,
+                    updated_at=now_utc,
+                )
+                session.add(txn)
+                await session.flush()
+        elif txn.tenant_id != auth.tenant_id:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Transaction not found in tenant")
 
         # Evaluate each context item candidate

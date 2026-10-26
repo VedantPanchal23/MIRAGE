@@ -74,3 +74,39 @@ class TenantListResponse(BaseModel):
     tenants: list[TenantResponse]
     total: int
     next_cursor: str | None = None
+
+
+class TenantRegistrationRequest(BaseModel):
+    """Self-service registration payload for enterprise B2B SaaS onboarding."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(..., min_length=2, max_length=255, description="Organization or Company Name")
+    admin_email: str = Field(..., min_length=5, max_length=255, description="Administrator contact email")
+    tenant_id: str | None = Field(
+        default=None,
+        min_length=3,
+        max_length=64,
+        pattern=r"^[a-zA-Z0-9_\-]+$",
+        description="Optional custom tenant identifier",
+    )
+    tier: str = Field(
+        default="business",
+        description="Subscription tier: developer, business, or enterprise",
+    )
+
+
+class TenantRegistrationResponse(BaseModel):
+    """Response returned upon successful self-service tenant registration."""
+
+    tenant_id: str
+    name: str
+    tier: str
+    admin_user_id: str
+    admin_identity_id: str
+    api_key: str
+    api_key_id: str
+    access_token: str
+    token_type: str = "bearer"
+    created_at: datetime
+

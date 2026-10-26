@@ -45,10 +45,10 @@ export function ActionAssuranceView({ isRefreshing, onDataLoaded }) {
   const [showToolModal, setShowToolModal] = useState(false);
   const [toolName, setToolName] = useState("");
   const [toolDesc, setToolDesc] = useState("");
-  const [toolType, setToolType] = useState("DETERMINISTIC_FUNCTION");
+  const [toolType, setToolType] = useState("NATIVE");
   const [egressType, setEgressType] = useState("INTERNAL_ISOLATED");
-  const [trustLevel, setTrustLevel] = useState("SANDBOXED");
-  const [reqCapability, setReqCapability] = useState("tools:read");
+  const [trustLevel, setTrustLevel] = useState("INTERNAL");
+  const [reqCapability, setReqCapability] = useState("tools:execute");
   const [registering, setRegistering] = useState(false);
 
   // Approval Modal State
@@ -58,7 +58,7 @@ export function ActionAssuranceView({ isRefreshing, onDataLoaded }) {
   const [processingApproval, setProcessingApproval] = useState(false);
 
   // Action Sandbox Proposal State
-  const [sandboxTxnId, setSandboxTxnId] = useState("txn_action_gate3_demo");
+  const [sandboxTxnId, setSandboxTxnId] = useState(() => "txn_" + Math.random().toString(36).substring(2, 10));
   const [sandboxTool, setSandboxTool] = useState("");
   const [sandboxResource, setSandboxResource] = useState("db://records/financial_report");
   const [sandboxCost, setSandboxCost] = useState("25.00");
@@ -187,22 +187,25 @@ export function ActionAssuranceView({ isRefreshing, onDataLoaded }) {
         parameters: parsedParams,
         idempotency_key: `key_${Date.now()}`,
         blast_radius: {
-          estimated_cost_usd: parseFloat(sandboxCost) || 0.0,
-          target_criticality: 0.5,
-          data_classification: "CONFIDENTIAL",
+          estimated_dollar_cost: parseFloat(sandboxCost) || 0.0,
+          resource_scope: "DATABASE",
+          reversibility: "REVERSIBLE",
+          target_environment: "DEV",
         },
         preconditions: [
           {
-            field: "target_resource",
-            operator: "EQUALS",
-            expected_value: sandboxResource,
+            check_type: "RESOURCE_EXISTS",
+            target: sandboxResource,
+            expected_value: true,
+            description: "Target resource must be accessible",
           },
         ],
         postconditions: [
           {
-            field: "status",
-            operator: "EQUALS",
+            assertion: "STATUS_EQUALS",
+            target: "status",
             expected_value: "SUCCESS",
+            description: "Execution state must be success",
           },
         ],
       });
@@ -695,9 +698,9 @@ export function ActionAssuranceView({ isRefreshing, onDataLoaded }) {
                     onChange={(e) => setToolType(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
                   >
-                    <option value="DETERMINISTIC_FUNCTION">DETERMINISTIC_FUNCTION</option>
-                    <option value="REST_API">REST_API</option>
-                    <option value="MCP_BRIDGE">MCP_BRIDGE</option>
+                    <option value="NATIVE">NATIVE (Deterministic Function / DB)</option>
+                    <option value="HTTP">HTTP (REST API / External Service)</option>
+                    <option value="MCP">MCP (Model Context Protocol Tool)</option>
                   </select>
                 </div>
 
@@ -710,9 +713,9 @@ export function ActionAssuranceView({ isRefreshing, onDataLoaded }) {
                     onChange={(e) => setTrustLevel(e.target.value)}
                     className="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
                   >
-                    <option value="SANDBOXED">SANDBOXED</option>
-                    <option value="VERIFIED_INTERNAL">VERIFIED_INTERNAL</option>
-                    <option value="UNTRUSTED_EXTERNAL">UNTRUSTED_EXTERNAL</option>
+                    <option value="INTERNAL">INTERNAL (Authoritative / Local)</option>
+                    <option value="VERIFIED">VERIFIED (Cryptographically Checked)</option>
+                    <option value="UNTRUSTED">UNTRUSTED (Sandboxed / Low Trust)</option>
                   </select>
                 </div>
               </div>

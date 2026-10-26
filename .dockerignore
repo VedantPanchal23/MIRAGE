@@ -17,6 +17,7 @@ htmlcov
 dist
 build
 dashboard/node_modules
+infra
 .tools
 *.egg-info
 .vscode

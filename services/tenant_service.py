@@ -20,6 +20,7 @@ from db.models import (
     Tenant,
     TenantAuditLedger,
     TenantBudgetRecord,
+    User,
 )
 from shared.logging import get_logger
 from shared.schemas.audit import compute_sha256
@@ -27,6 +28,8 @@ from shared.schemas.auth import AuthContext, Role
 from shared.schemas.tenant import (
     TenantCreateRequest,
     TenantListResponse,
+    TenantRegistrationRequest,
+    TenantRegistrationResponse,
     TenantResponse,
     TenantStatus,
     TenantUpdateRequest,
@@ -155,12 +158,27 @@ class TenantService:
             s.add(tenant)
             await s.flush()
 
-            # Create default TenantAdmin identity
+            # Create default User record
             admin_user = req.admin_user_id or f"admin_{target_id}"
+            user_id = f"user_{uuid.uuid4().hex[:12]}"
+            user = User(
+                id=user_id,
+                tenant_id=target_id,
+                external_subject=admin_user,
+                display_name=f"{req.name} Admin",
+                role=Role.TENANT_ADMIN.value,
+                active=True,
+                created_at=now,
+            )
+            s.add(user)
+            await s.flush()
+
+            # Create default TenantAdmin identity
             actor = ActorIdentity(
                 id=f"id_{uuid.uuid4().hex[:12]}",
                 tenant_id=target_id,
                 subject=admin_user,
+                user_id=user_id,
                 role=Role.TENANT_ADMIN.value,
                 principal_type="user",
                 active=True,
@@ -225,6 +243,175 @@ class TenantService:
 
             logger.info("Provisioned new tenant", tenant_id=target_id, name=req.name, tier=req.tier)
             return TenantResponse.model_validate(tenant)
+
+        if session is not None:
+            return await _execute(session)
+        async with db_session.get_tenant_session(target_id) as s:
+            return await _execute(s)
+
+    async def register_tenant(
+        self,
+        req: TenantRegistrationRequest,
+        session: AsyncSession | None = None,
+    ) -> TenantRegistrationResponse:
+        """Self-service enterprise onboarding: provisions tenant, user, identity, API key, and budget."""
+        from gateway.middleware.auth import create_access_token
+        from services.api_key_service import generate_secure_api_key
+
+        target_id = req.tenant_id or f"tenant_{uuid.uuid4().hex[:12]}"
+        now = datetime.now(UTC)
+
+        async def _execute(s: AsyncSession) -> TenantRegistrationResponse:
+            existing = await s.get(Tenant, target_id)
+            if existing:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"Tenant '{target_id}' already exists",
+                )
+
+            # Generate primary API key
+            raw_key, key_prefix, key_hash = generate_secure_api_key(prefix="mirage_live_")
+
+            tenant = Tenant(
+                id=target_id,
+                name=req.name,
+                api_key_hash=key_hash,
+                tier=req.tier.lower(),
+                scs_enabled=True,
+                pii_detection_enabled=True,
+                status=TenantStatus.ACTIVE.value,
+                created_at=now,
+                updated_at=now,
+            )
+            s.add(tenant)
+            await s.flush()
+
+            # Create User record
+            user_id = f"user_{uuid.uuid4().hex[:12]}"
+            user = User(
+                id=user_id,
+                tenant_id=target_id,
+                external_subject=req.admin_email,
+                display_name=f"{req.name} Administrator",
+                role=Role.TENANT_ADMIN.value,
+                active=True,
+                created_at=now,
+            )
+            s.add(user)
+            await s.flush()
+
+            # Create ActorIdentity record
+            actor_id = f"id_{uuid.uuid4().hex[:12]}"
+            actor = ActorIdentity(
+                id=actor_id,
+                tenant_id=target_id,
+                subject=req.admin_email,
+                principal_type="user",
+                role=Role.TENANT_ADMIN.value,
+                user_id=user_id,
+                active=True,
+                created_at=now,
+            )
+            s.add(actor)
+            await s.flush()
+
+            # Create primary ApiCredential
+            key_id = f"key_{uuid.uuid4().hex[:12]}"
+            cred = ApiCredential(
+                id=key_id,
+                tenant_id=target_id,
+                identity_id=actor_id,
+                name="Primary Production API Key",
+                key_prefix=key_prefix,
+                key_hash=key_hash,
+                scopes=["*"],
+                created_at=now,
+            )
+            s.add(cred)
+
+            # Create tenant audit ledger
+            ledger = TenantAuditLedger(
+                tenant_id=target_id,
+                head_chain_hash="0" * 64,
+                sequence_number=0,
+                created_at=now,
+                updated_at=now,
+            )
+            s.add(ledger)
+
+            # Determine initial budget based on subscription tier
+            tier_budgets = {
+                "developer": 5_000_000,
+                "free": 5_000_000,
+                "business": 500_000_000,
+                "growth": 500_000_000,
+                "enterprise": 5_000_000_000,
+            }
+            total_micros = tier_budgets.get(req.tier.lower(), 500_000_000)
+
+            budget = TenantBudgetRecord(
+                id=f"bg_{uuid.uuid4().hex[:12]}",
+                tenant_id=target_id,
+                currency="USD",
+                total_budget_micros=total_micros,
+                allocated_micros=0,
+                reserved_micros=0,
+                spent_micros=0,
+                reset_period="MONTHLY",
+                hard_limit=True,
+                is_active=True,
+                created_at=now,
+            )
+            s.add(budget)
+
+            # Create default tenant governance policy
+            from db.models import Policy
+
+            default_policy = Policy(
+                id=f"pol_{target_id}_default",
+                tenant_id=target_id,
+                name="default_governance_policy",
+                version=1,
+                rules={
+                    "effect": "ALLOW",
+                    "max_risk": 75,
+                    "deny_indicators": ["prompt_injection", "secret_credential"],
+                },
+                status="active",
+                created_at=now,
+            )
+            s.add(default_policy)
+            await s.flush()
+
+            # Record audit event
+            await self._record_audit(
+                session=s,
+                tenant_id=target_id,
+                action="TENANT_REGISTERED",
+                actor_id=actor_id,
+                details={"name": req.name, "tier": req.tier, "admin_email": req.admin_email},
+            )
+
+            # Issue initial JWT for immediate operator access
+            access_token = create_access_token(
+                tenant_id=target_id,
+                role=Role.TENANT_ADMIN,
+                user_id=req.admin_email,
+            )
+
+            logger.info("Self-registered new enterprise tenant", tenant_id=target_id, name=req.name, tier=req.tier)
+            return TenantRegistrationResponse(
+                tenant_id=target_id,
+                name=req.name,
+                tier=req.tier.lower(),
+                admin_user_id=user_id,
+                admin_identity_id=actor_id,
+                api_key=raw_key,
+                api_key_id=key_id,
+                access_token=access_token,
+                token_type="bearer",
+                created_at=now,
+            )
 
         if session is not None:
             return await _execute(session)
@@ -474,46 +661,16 @@ class TenantService:
         details: dict[str, Any],
     ) -> None:
         """Record an administrative audit event preserving hash chain integrity."""
-        now = datetime.now(UTC)
-        seq_stmt = (
-            select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
-            .where(AuditLogRecord.tenant_id == tenant_id)
-            .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
-            .limit(1)
-        )
-        res = await session.execute(seq_stmt)
-        latest_row = res.first()
-        prev_hash = latest_row[0] if latest_row and latest_row[0] is not None else ("0" * 64)
-        prev_seq = latest_row[1] if latest_row and len(latest_row) > 1 and latest_row[1] is not None else 0
-        seq = prev_seq + 1
-        entry_id = f"aud_{uuid.uuid4().hex}"
-        chain_hash = compute_sha256(f"{prev_hash}:{entry_id}:{action}:{now.isoformat()}")
+        from services.audit_ledger import AuditLedgerService
 
-        rec = AuditLogRecord(
-            entry_id=entry_id,
+        await AuditLedgerService.append_entry(
+            session=session,
             tenant_id=tenant_id,
-            sequence_number=seq,
-            session_id=f"sess_{tenant_id}",
-            trace_id="control-plane",
-            prompt_hash=compute_sha256(""),
-            response_hash=compute_sha256(""),
-            hrs_score=0.0,
-            risk_tier="CONTROL_PLANE",
-            claims_count=0,
-            claims_summary=[],
-            correction_applied=False,
             event_type=f"ADMIN_{action}",
             actor_identity_id=actor_id,
-            transaction_id=None,
-            decision="ALLOWED",
-            policy_reference="tenant_admin_policy",
             reason=f"Administrative operation: {action}",
             event_payload=details,
-            prev_hash=prev_hash,
-            chain_hash=chain_hash,
-            created_at=now,
         )
-        session.add(rec)
 
 
 tenant_service = TenantService()

@@ -32,8 +32,8 @@ export function OutcomeAssuranceView({ isRefreshing, onDataLoaded }) {
   const { tenantId } = useContext(AuthContext);
 
   // Form state
-  const [transactionId, setTransactionId] = useState("txn_demo_default");
-  const [actionId, setActionId] = useState("act_demo_default");
+  const [transactionId, setTransactionId] = useState(() => "txn_" + Math.random().toString(36).substring(2, 10));
+  const [actionId, setActionId] = useState(() => "act_" + Math.random().toString(36).substring(2, 10));
   const [observabilityClass, setObservabilityClass] = useState("OBS_DIRECT");
   const [verifierType, setVerifierType] = useState("SIMULATED");
   const [expectedPostconditions, setExpectedPostconditions] = useState(

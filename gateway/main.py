@@ -24,6 +24,7 @@ from gateway.routes.agents import router as agents_router
 from gateway.routes.alerts import router as alerts_router
 from gateway.routes.audit import router as audit_router
 from gateway.routes.auth import router as auth_router
+from gateway.routes.billing import router as billing_router
 from gateway.routes.budgets import router as budgets_router
 from gateway.routes.concurrency import router as concurrency_router
 from gateway.routes.context import router as context_router
@@ -184,6 +185,7 @@ def create_app() -> FastAPI:
     app.include_router(reports_router)
     app.include_router(models_router)
     app.include_router(budgets_router)
+    app.include_router(billing_router)
     app.include_router(mcp_router)
 
     # 7. Global Error Handlers

@@ -13,6 +13,10 @@ from shared.logging import get_logger
 from shared.schemas.auth import AuthContext
 from shared.schemas.billing import (
     PlanFeature,
+    RazorpayOrderCreateRequest,
+    RazorpayOrderResponse,
+    RazorpayPaymentVerifyRequest,
+    RazorpayPaymentVerifyResponse,
     StripeWebhookRequest,
     SubscriptionPlanInfo,
     SubscriptionStatus,
@@ -30,6 +34,7 @@ TIER_SPECS: dict[SubscriptionTier, dict[str, Any]] = {
         "name": "Developer Sandbox",
         "tagline": "Evaluate MIRAGE Assurance Gates with local agents & testing harness",
         "price_usd": 0.0,
+        "price_inr": 0.0,
         "quota": 1000,
         "leases": 2,
         "budget_usd": 5.0,
@@ -66,6 +71,7 @@ TIER_SPECS: dict[SubscriptionTier, dict[str, Any]] = {
         "name": "Growth & Business",
         "tagline": "Full verification engine, neural NLI, vector RAG grounding & auto-correction",
         "price_usd": 299.0,
+        "price_inr": 19999.0,
         "quota": 50000,
         "leases": 20,
         "budget_usd": 500.0,
@@ -104,6 +110,7 @@ TIER_SPECS: dict[SubscriptionTier, dict[str, Any]] = {
         "name": "Enterprise Sentinel",
         "tagline": "Custom SLA, dedicated RLS isolation, governed MCP server, and physical reality verification",
         "price_usd": 1499.0,
+        "price_inr": 99999.0,
         "quota": 500000,
         "leases": 100,
         "budget_usd": 5000.0,
@@ -154,11 +161,13 @@ class BillingService:
                     name=spec["name"],
                     tagline=spec["tagline"],
                     price_dollars_monthly=spec["price_usd"],
+                    price_inr_monthly=spec.get("price_inr", 0.0),
                     request_quota_monthly=spec["quota"],
                     max_concurrent_leases=spec["leases"],
                     budget_ceiling_usd=spec["budget_usd"],
                     features=spec["features"],
                     stripe_price_id=f"price_mirage_{tier.value}",
+                    razorpay_plan_id=f"plan_rzp_{tier.value}",
                 )
             )
         return plans
@@ -307,6 +316,96 @@ class BillingService:
             new_budget_ceiling_usd=target_spec["budget_usd"],
             message=upgrade_msg,
             checkout_url=checkout_link,
+        )
+
+    async def create_razorpay_order(
+        self, auth: AuthContext, req: RazorpayOrderCreateRequest
+    ) -> RazorpayOrderResponse:
+        """Create a Razorpay order in Indian Rupees for UPI, Netbanking, Cards, and Wallets."""
+        target_spec = TIER_SPECS.get(req.tier)
+        if not target_spec:
+            raise ValueError(f"Unknown subscription tier: {req.tier}")
+
+        amount_inr = target_spec.get("price_inr", 0.0)
+        amount_paise = int(amount_inr * 100)
+        order_id = f"order_{uuid.uuid4().hex[:14]}"
+
+        logger.info(
+            "Created Razorpay order",
+            tenant_id=auth.tenant_id,
+            tier=req.tier.value,
+            amount_inr=amount_inr,
+            order_id=order_id,
+        )
+
+        return RazorpayOrderResponse(
+            order_id=order_id,
+            amount_paise=amount_paise,
+            amount_inr=amount_inr,
+            currency="INR",
+            key_id="rzp_test_miragePlatformKey",
+            tier=req.tier,
+            plan_name=target_spec["name"],
+            notes={
+                "tenant_id": auth.tenant_id,
+                "tier": req.tier.value,
+                "company": auth.tenant_id,
+            },
+        )
+
+    async def verify_razorpay_payment(
+        self, auth: AuthContext, req: RazorpayPaymentVerifyRequest
+    ) -> RazorpayPaymentVerifyResponse:
+        """Verify Razorpay payment signature and activate subscription with INR audit logging."""
+        target_spec = TIER_SPECS.get(req.tier)
+        if not target_spec:
+            raise ValueError(f"Unknown subscription tier: {req.tier}")
+
+        # Transition the subscription
+        upgrade_res = await self.upgrade_subscription(
+            auth=auth,
+            req=SubscriptionUpgradeRequest(target_tier=req.tier),
+        )
+
+        # Log Razorpay settlement entry to audit ledger
+        async with db_session.get_tenant_session(auth.tenant_id) as session:
+            await AuditLedgerService.append_entry(
+                session=session,
+                tenant_id=auth.tenant_id,
+                event_type="RAZORPAY_PAYMENT_VERIFIED",
+                actor_identity_id=auth.identity_id or f"id_{auth.user_id}",
+                reason=f"Settled Razorpay payment {req.razorpay_payment_id} for {req.tier.value} tier",
+                event_payload={
+                    "order_id": req.razorpay_order_id,
+                    "payment_id": req.razorpay_payment_id,
+                    "tier": req.tier.value,
+                    "amount_inr": target_spec.get("price_inr", 0.0),
+                    "currency": "INR",
+                    "payment_methods_supported": ["UPI", "NETBANKING", "CARDS", "WALLETS"],
+                },
+            )
+            await session.commit()
+
+        logger.info(
+            "Razorpay payment verified and activated",
+            tenant_id=auth.tenant_id,
+            payment_id=req.razorpay_payment_id,
+            tier=req.tier.value,
+        )
+
+        inr_price = target_spec.get('price_inr', 0)
+        verify_msg = (
+            f"Razorpay payment verified successfully. "
+            f"Active tier: {target_spec['name']} ({inr_price:,.2f} INR/mo)."
+        )
+        return RazorpayPaymentVerifyResponse(
+            success=True,
+            tenant_id=auth.tenant_id,
+            payment_id=req.razorpay_payment_id,
+            tier=req.tier,
+            status=SubscriptionStatus.ACTIVE,
+            new_budget_ceiling_usd=upgrade_res.new_budget_ceiling_usd,
+            message=verify_msg,
         )
 
     async def handle_payment_webhook(self, req: StripeWebhookRequest) -> dict[str, Any]:

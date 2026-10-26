@@ -34,11 +34,13 @@ class SubscriptionPlanInfo(BaseModel):
     name: str
     tagline: str
     price_dollars_monthly: float
+    price_inr_monthly: float = 0.0
     request_quota_monthly: int
     max_concurrent_leases: int
     budget_ceiling_usd: float
     features: list[PlanFeature]
     stripe_price_id: str | None = None
+    razorpay_plan_id: str | None = None
 
 
 class TenantSubscriptionResponse(BaseModel):
@@ -86,3 +88,40 @@ class StripeWebhookRequest(BaseModel):
     event_type: str
     tenant_id: str | None = None
     data: dict[str, Any] = Field(default_factory=dict)
+
+
+class RazorpayOrderCreateRequest(BaseModel):
+    """Request to generate a Razorpay Indian Rupee order for UPI/Netbanking/Cards."""
+    tier: SubscriptionTier
+    currency: str = Field(default="INR", description="Three-letter currency code (INR)")
+
+
+class RazorpayOrderResponse(BaseModel):
+    """Authoritative Razorpay order details for client-side checkout integration."""
+    order_id: str
+    amount_paise: int
+    amount_inr: float
+    currency: str = "INR"
+    key_id: str
+    tier: SubscriptionTier
+    plan_name: str
+    notes: dict[str, str] = Field(default_factory=dict)
+
+
+class RazorpayPaymentVerifyRequest(BaseModel):
+    """Payload sent by client following successful Razorpay checkout."""
+    razorpay_order_id: str
+    razorpay_payment_id: str
+    razorpay_signature: str
+    tier: SubscriptionTier
+
+
+class RazorpayPaymentVerifyResponse(BaseModel):
+    """Result of verifying a Razorpay transaction."""
+    success: bool
+    tenant_id: str
+    payment_id: str
+    tier: SubscriptionTier
+    status: SubscriptionStatus
+    new_budget_ceiling_usd: float
+    message: str

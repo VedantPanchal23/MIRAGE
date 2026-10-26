@@ -8,6 +8,8 @@ from db.models import Tenant, TenantBudgetRecord
 from services.billing_service import BillingService
 from shared.schemas.auth import AuthContext, Role
 from shared.schemas.billing import (
+    RazorpayOrderCreateRequest,
+    RazorpayPaymentVerifyRequest,
     StripeWebhookRequest,
     SubscriptionStatus,
     SubscriptionTier,
@@ -148,3 +150,45 @@ async def test_handle_payment_webhook() -> None:
     assert res["processed"] is True
     assert res["status"] == "ACCEPTED"
     assert res["event_id"] == "evt_test_9941a"
+
+
+@pytest.mark.asyncio
+async def test_create_razorpay_order(tenant_admin_auth: AuthContext) -> None:
+    """Verify creating Razorpay order in INR paise for Indian payment methods."""
+    service = BillingService()
+    req = RazorpayOrderCreateRequest(tier=SubscriptionTier.BUSINESS, currency="INR")
+    order = await service.create_razorpay_order(auth=tenant_admin_auth, req=req)
+
+    assert order.order_id.startswith("order_")
+    assert order.amount_inr == 19999.0
+    assert order.amount_paise == 1999900
+    assert order.currency == "INR"
+    assert order.key_id.startswith("rzp_")
+    assert order.tier == SubscriptionTier.BUSINESS
+
+
+@pytest.mark.asyncio
+async def test_verify_razorpay_payment(tenant_admin_auth: AuthContext) -> None:
+    """Verify validating Razorpay payment and activating tier with Merkle audit."""
+    service = BillingService()
+    req = RazorpayPaymentVerifyRequest(
+        razorpay_order_id="order_test_123",
+        razorpay_payment_id="pay_upi_987",
+        razorpay_signature="sig_test_abc",
+        tier=SubscriptionTier.BUSINESS,
+    )
+
+    with patch.object(service, "upgrade_subscription", new_callable=AsyncMock) as mock_upgrade, \
+         patch("db.session.get_tenant_session") as mock_get_sess, \
+         patch("services.audit_ledger.AuditLedgerService.append_entry", new_callable=AsyncMock) as mock_append:
+        mock_upgrade.return_value = MagicMock(new_budget_ceiling_usd=500.0)
+        mock_session = AsyncMock()
+        mock_get_sess.return_value.__aenter__.return_value = mock_session
+
+        resp = await service.verify_razorpay_payment(auth=tenant_admin_auth, req=req)
+
+        assert resp.success is True
+        assert resp.payment_id == "pay_upi_987"
+        assert resp.tier == SubscriptionTier.BUSINESS
+        mock_upgrade.assert_awaited_once()
+        mock_append.assert_awaited_once()

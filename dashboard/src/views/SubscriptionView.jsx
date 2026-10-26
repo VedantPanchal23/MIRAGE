@@ -37,6 +37,7 @@ export function SubscriptionView({ isRefreshing, onDataLoaded }) {
   const [successMessage, setSuccessMessage] = useState(null);
   const [selectedTab, setSelectedTab] = useState("proxy");
   const [copiedSnippet, setCopiedSnippet] = useState(false);
+  const [currency, setCurrency] = useState("INR");
 
   const canManageBilling = hasRole(ROLES.SUPER_ADMIN, ROLES.TENANT_ADMIN);
 
@@ -235,12 +236,45 @@ print("Assurance Contract:", res.json())`;
 
       {/* Commercial Plans Matrix */}
       <div>
-        <h2 className="text-base font-semibold text-white mb-3">Available Subscription Plans</h2>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
+          <div>
+            <h2 className="text-base font-semibold text-white">Available Subscription Plans</h2>
+            <p className="text-xs text-slate-400">Choose an assurance tier for local developer sandboxes or production multi-agent enterprises.</p>
+          </div>
+          {/* Currency Switcher */}
+          <div className="flex items-center gap-1 bg-slate-950 p-1 rounded-lg border border-slate-800 self-start">
+            <button
+              onClick={() => setCurrency("INR")}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                currency === "INR"
+                  ? "bg-emerald-500 text-slate-950 shadow"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              ₹ INR (India)
+            </button>
+            <button
+              onClick={() => setCurrency("USD")}
+              className={`px-3 py-1 text-xs font-semibold rounded-md transition-all ${
+                currency === "USD"
+                  ? "bg-cyan-500 text-slate-950 shadow"
+                  : "text-slate-400 hover:text-white"
+              }`}
+            >
+              $ USD (Global)
+            </button>
+          </div>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
           {subscription?.plans?.map((plan) => {
             const isCurrent = (subscription.current_tier || "").toLowerCase() === plan.tier.toLowerCase();
             const isEnterprise = plan.tier === "enterprise";
             const isBusiness = plan.tier === "business";
+            const displayPrice =
+              currency === "INR"
+                ? `₹${(plan.price_inr_monthly || 0).toLocaleString("en-IN")}`
+                : `$${plan.price_dollars_monthly}`;
 
             return (
               <div
@@ -276,7 +310,7 @@ print("Assurance Contract:", res.json())`;
                   <div className="mt-4 mb-6">
                     <div className="flex items-baseline gap-1">
                       <span className="text-3xl font-extrabold text-white font-mono">
-                        ${plan.price_dollars_monthly}
+                        {displayPrice}
                       </span>
                       <span className="text-xs text-slate-400">/ month</span>
                     </div>
@@ -338,6 +372,37 @@ print("Assurance Contract:", res.json())`;
               </div>
             );
           })}
+        </div>
+
+        {/* Global & Indian Payment Gateway Methods Banner */}
+        <div className="mt-4 bg-slate-950/70 border border-slate-800/80 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 font-bold text-sm">
+              ₹/$
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-white uppercase tracking-wider">
+                Instant Multi-Currency Checkout Supported
+              </h4>
+              <p className="text-[11px] text-slate-400">
+                Seamless settlements via Razorpay & Stripe with zero setup fees.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-900 border border-slate-800 text-slate-300">
+              ⚡ UPI (Google Pay, PhonePe, Paytm, BHIM)
+            </span>
+            <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-900 border border-slate-800 text-slate-300">
+              🏦 Netbanking (50+ Banks)
+            </span>
+            <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-900 border border-slate-800 text-slate-300">
+              💳 RuPay / Visa / Mastercard
+            </span>
+            <span className="px-2.5 py-1 rounded-md text-[11px] font-semibold bg-slate-900 border border-slate-800 text-slate-300">
+              🛡️ Test Sandbox (₹0 Free)
+            </span>
+          </div>
         </div>
       </div>
 

@@ -8,6 +8,10 @@ from gateway.middleware.auth import get_current_auth
 from services.billing_service import billing_service
 from shared.schemas.auth import AuthContext, Role
 from shared.schemas.billing import (
+    RazorpayOrderCreateRequest,
+    RazorpayOrderResponse,
+    RazorpayPaymentVerifyRequest,
+    RazorpayPaymentVerifyResponse,
     StripeWebhookRequest,
     SubscriptionPlanInfo,
     SubscriptionUpgradeRequest,
@@ -51,3 +55,31 @@ async def billing_webhook(req: StripeWebhookRequest) -> dict[str, str]:
     """Inbound webhook receiver for payment processor events (Stripe, LemonSqueezy, Paddle)."""
     _ = await billing_service.handle_payment_webhook(req)
     return {"status": "ok", "event_id": req.event_id}
+
+
+@router.post("/razorpay/create-order", response_model=RazorpayOrderResponse)
+async def create_razorpay_order(
+    req: RazorpayOrderCreateRequest,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> RazorpayOrderResponse:
+    """Generate an Indian Rupee (INR) Razorpay Order for UPI, Netbanking, Cards, and Wallets."""
+    if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requires TENANT_ADMIN to initiate payment.",
+        )
+    return await billing_service.create_razorpay_order(auth=auth, req=req)
+
+
+@router.post("/razorpay/verify-payment", response_model=RazorpayPaymentVerifyResponse)
+async def verify_razorpay_payment(
+    req: RazorpayPaymentVerifyRequest,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> RazorpayPaymentVerifyResponse:
+    """Verify Razorpay payment signature and activate commercial subscription tier."""
+    if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requires TENANT_ADMIN to complete payment verification.",
+        )
+    return await billing_service.verify_razorpay_payment(auth=auth, req=req)

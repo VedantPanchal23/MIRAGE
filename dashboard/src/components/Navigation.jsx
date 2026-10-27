@@ -1,231 +1,54 @@
+import React from "react";
 import {
   LayoutDashboard,
-  TrendingUp,
-  ListTree,
-  Radio,
-  AlertCircle,
-  Lock,
-  Layers,
-  Wrench,
-  ShieldCheck,
-  Eye,
-  Network,
-  Building,
-  Server,
-  FileCheck,
+  PlayCircle,
+  CheckSquare,
+  BookOpen,
+  Code2,
   CreditCard,
+  FileCheck2,
 } from "lucide-react";
-import { PERMISSIONS } from "../context/AuthContext";
-
-/**
- * Authoritative Section-to-Permission Requirements mapping.
- *
- * Directly derived from backend endpoint authorization requirements and Security & Access §13.2:
- * - overview: DASHBOARD_READ (backend GET /v1/dashboard/stats)
- * - drift: DASHBOARD_READ (backend GET /v1/drift)
- * - sessions: VERIFY_READ or AUDIT_READ (backend GET /v1/sessions/{session_id})
- * - stream: VERIFY_WRITE (backend WebSocket /v1/verify/stream)
- * - alerts: DASHBOARD_READ (backend GET /v1/alerts)
- * - context: DASHBOARD_READ (backend Gate 2 Context & Memory)
- * - actions: DASHBOARD_READ (backend Gate 3 Action Assurance & Tool Governance)
- * - multiagent: DASHBOARD_READ (backend Phase 8 Agent Governance, Delegations, Handoffs, Leases)
- * - tenants: CONFIG_WRITE (backend SaaS Control Plane & API Credentials)
- * - mcp: CONFIG_WRITE (backend Governed MCP Registry & Tools)
- * - audit: AUDIT_READ (backend Governed Audit Ledger, Hash Chain, & External Anchors)
- */
-export const SECTION_PERMISSIONS = Object.freeze({
-  overview: [PERMISSIONS.DASHBOARD_READ],
-  drift: [PERMISSIONS.DASHBOARD_READ],
-  sessions: [PERMISSIONS.VERIFY_READ, PERMISSIONS.AUDIT_READ],
-  stream: [PERMISSIONS.VERIFY_WRITE],
-  alerts: [PERMISSIONS.DASHBOARD_READ],
-  context: [PERMISSIONS.DASHBOARD_READ],
-  actions: [PERMISSIONS.DASHBOARD_READ],
-  output: [PERMISSIONS.DASHBOARD_READ],
-  outcomes: [PERMISSIONS.DASHBOARD_READ],
-  multiagent: [PERMISSIONS.DASHBOARD_READ],
-  tenants: [PERMISSIONS.CONFIG_WRITE],
-  mcp: [PERMISSIONS.CONFIG_WRITE],
-  audit: [PERMISSIONS.AUDIT_READ],
-  subscription: [PERMISSIONS.DASHBOARD_READ],
-});
 
 export const NAV_ITEMS = [
-  {
-    id: "overview",
-    label: "Overview",
-    icon: LayoutDashboard,
-    requiredPermissions: SECTION_PERMISSIONS.overview,
-  },
-  {
-    id: "subscription",
-    label: "Pricing & Plans",
-    icon: CreditCard,
-    requiredPermissions: SECTION_PERMISSIONS.subscription,
-  },
-  {
-    id: "context",
-    label: "Context Assurance",
-    icon: Layers,
-    requiredPermissions: SECTION_PERMISSIONS.context,
-  },
-  {
-    id: "actions",
-    label: "Action Assurance",
-    icon: Wrench,
-    requiredPermissions: SECTION_PERMISSIONS.actions,
-  },
-  {
-    id: "output",
-    label: "Output Assurance",
-    icon: ShieldCheck,
-    requiredPermissions: SECTION_PERMISSIONS.output,
-  },
-  {
-    id: "outcomes",
-    label: "Outcome Assurance",
-    icon: Eye,
-    requiredPermissions: SECTION_PERMISSIONS.outcomes,
-  },
-  {
-    id: "multiagent",
-    label: "Multi-Agent",
-    icon: Network,
-    requiredPermissions: SECTION_PERMISSIONS.multiagent,
-  },
-  {
-    id: "drift",
-    label: "Drift",
-    icon: TrendingUp,
-    requiredPermissions: SECTION_PERMISSIONS.drift,
-  },
-  {
-    id: "sessions",
-    label: "Sessions",
-    icon: ListTree,
-    requiredPermissions: SECTION_PERMISSIONS.sessions,
-  },
-  {
-    id: "stream",
-    label: "Live Stream",
-    icon: Radio,
-    requiredPermissions: SECTION_PERMISSIONS.stream,
-  },
-  {
-    id: "alerts",
-    label: "Alerts",
-    icon: AlertCircle,
-    requiredPermissions: SECTION_PERMISSIONS.alerts,
-  },
-  {
-    id: "tenants",
-    label: "Tenants & Keys",
-    icon: Building,
-    requiredPermissions: SECTION_PERMISSIONS.tenants,
-  },
-  {
-    id: "mcp",
-    label: "MCP Registry",
-    icon: Server,
-    requiredPermissions: SECTION_PERMISSIONS.mcp,
-  },
-  {
-    id: "audit",
-    label: "Audit Ledger",
-    icon: FileCheck,
-    requiredPermissions: SECTION_PERMISSIONS.audit,
-  },
+  { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "playground", label: "Playground", icon: PlayCircle },
+  { id: "approvals", label: "Approvals", icon: CheckSquare },
+  { id: "knowledge", label: "Knowledge Base", icon: BookOpen },
+  { id: "developer", label: "Developer", icon: Code2 },
+  { id: "billing", label: "Plans & Billing", icon: CreditCard },
+  { id: "audit", label: "Audit Ledger", icon: FileCheck2 },
 ];
 
-/**
- * Check whether an authenticated user has UX permission to view a section.
- *
- * @param {string} sectionId - Section key ("overview", "drift", "sessions", "stream", "alerts")
- * @param {Function} hasPermission - Function from useAuth() checking permission membership
- * @returns {boolean}
- */
-export function isSectionPermitted(sectionId, hasPermission) {
-  if (!hasPermission || typeof hasPermission !== "function") return true;
-  const required = SECTION_PERMISSIONS[sectionId];
-  if (!required || required.length === 0) return true;
-  // Access granted if user possesses any of the required alternative permissions
-  return required.some((perm) => hasPermission(perm));
-}
-
-/**
- * Accessible Navigation bar for the MIRAGE Dashboard shell.
- *
- * Implements keyboard navigation, visible active state, and RBAC UX gating
- * derived exclusively from the authoritative permission matrix.
- */
-export function Navigation({
-  activeTab,
-  onSelectTab,
-  hasPermission,
-  isAuthenticated,
-}) {
+export function Navigation({ activeTab, onTabChange }) {
   return (
-    <nav
-      aria-label="Dashboard Sections"
-      className="border-b border-slate-200 bg-white px-6 shadow-xs"
-    >
-      <div
-        role="tablist"
-        aria-orientation="horizontal"
-        className="flex items-center space-x-1 overflow-x-auto py-2 scrollbar-none"
-      >
-        {NAV_ITEMS.map((item) => {
-          const Icon = item.icon;
-          const isActive = activeTab === item.id;
-          const isPermitted = isAuthenticated
-            ? isSectionPermitted(item.id, hasPermission)
-            : true;
-
-          const baseClasses =
-            "flex items-center space-x-2 px-3 py-1.5 rounded-lg text-xs font-medium transition focus:outline-none focus:ring-2 focus:ring-sky-500 whitespace-nowrap";
-
-          if (!isPermitted) {
+    <nav className="border-b border-apple-border bg-apple-bg/70 backdrop-blur-md sticky top-16 z-30">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex items-center space-x-1 py-2 overflow-x-auto no-scrollbar">
+          {NAV_ITEMS.map((item) => {
+            const Icon = item.icon;
+            const isActive = activeTab === item.id;
             return (
               <button
                 key={item.id}
-                role="tab"
-                id={`tab-${item.id}`}
-                aria-selected={false}
-                aria-disabled="true"
-                disabled
-                title={`Access restricted: requires permission ${item.requiredPermissions.join(" or ")}`}
-                className={`${baseClasses} text-slate-400 opacity-50 cursor-not-allowed border border-transparent`}
+                type="button"
+                onClick={() => onTabChange(item.id)}
+                className={`flex items-center space-x-2 px-3.5 py-1.5 rounded-full text-xs sm:text-sm font-medium transition-all whitespace-nowrap ${
+                  isActive
+                    ? "bg-apple-surface text-apple-text shadow-apple-sm border border-apple-border"
+                    : "text-apple-secondary hover:text-apple-text hover:bg-apple-subtle/80"
+                }`}
               >
-                <Icon className="w-3.5 h-3.5 text-slate-400" aria-hidden="true" />
+                <Icon
+                  className={`w-4 h-4 transition-colors ${
+                    isActive ? "text-apple-blue" : "text-apple-muted"
+                  }`}
+                />
                 <span>{item.label}</span>
-                <Lock className="w-3 h-3 text-slate-400 ml-1" aria-hidden="true" />
               </button>
             );
-          }
-
-          const stateClasses = isActive
-            ? "bg-sky-50 text-sky-700 border border-sky-200 font-semibold shadow-xs"
-            : "text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-transparent";
-
-          return (
-            <button
-              key={item.id}
-              role="tab"
-              id={`tab-${item.id}`}
-              aria-selected={isActive}
-              aria-controls={`panel-${item.id}`}
-              tabIndex={isActive ? 0 : -1}
-              onClick={() => onSelectTab(item.id)}
-              className={`${baseClasses} ${stateClasses}`}
-            >
-              <Icon className="w-3.5 h-3.5" aria-hidden="true" />
-              <span>{item.label}</span>
-            </button>
-          );
-        })}
+          })}
+        </div>
       </div>
     </nav>
   );
 }
-
-export default Navigation;

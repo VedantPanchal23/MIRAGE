@@ -1,186 +1,151 @@
-/**
- * Centralized API Client Barrel Export for MIRAGE Dashboard.
- */
-
-export {
-  apiFetch,
-  setApiToken,
-  getApiToken,
-  onUnauthorized,
-  ApiError,
-} from "./client";
-
-export {
-  getDashboardStats,
-  getDashboardSessions,
-  getSessionById,
-  getDriftReport,
-} from "./dashboard";
-
-export {
-  getAlerts,
-  acknowledgeAlert,
-} from "./alerts";
-
-export {
-  getStreamWebSocketUrl,
-} from "./stream";
-
-export {
-  getHealth,
-  getReadiness,
-} from "./health";
-
-export {
-  getIdentity,
-} from "./auth";
-
-export {
-  generateReport,
-  getReportById,
-  getReportPdf,
-  verifyAuditChain,
-  getSessionAuditReport,
-  getSessionCertificatePdf,
-  exportAuditLogs,
-  queryAuditLogs,
-} from "./reports";
-
-export {
-  assembleContext,
-  getMemories,
-  createMemory,
-  deleteMemory,
-  searchMemories,
-  updateMemory,
-  disputeMemory,
-  setLegalHold,
-  sweepMemories,
-  getMemoryProvenance,
-} from "./context";
-
-export {
-  getTools,
-  registerTool,
-  proposeAction,
-  proposeActionBatch,
-  executeAction,
-  getAction,
-  getPendingApprovals,
-  grantApproval,
-  denyApproval,
-} from "./actions";
-
-export {
-  assureOutput,
-  getOutputAssuranceRecord,
-} from "./output";
-
-export {
-  listAgents,
-  getAgent,
-  registerAgent,
-  activateAgent,
-  suspendAgent,
-  revokeAgent,
-  listDelegations,
-  getDelegation,
-  createDelegation,
-  activateDelegation,
-  revokeDelegation,
-  validateDelegation,
-  listHandoffs,
-  getHandoff,
-  createHandoff,
-  acceptHandoff,
-  cancelHandoff,
-  completeHandoff,
-  listLeases,
-  acquireLease,
-  releaseLease,
-  renewLease,
-  getTransactionHierarchy,
-} from "./multiagent";
-
-export {
-  listTenants,
-  createTenant,
-  getTenant,
-  updateTenant,
-  suspendTenant,
-  reactivateTenant,
-  offboardTenant,
-} from "./tenants";
-
-export {
-  listApiKeys,
-  createApiKey,
-  getApiKey,
-  rotateApiKey,
-  revokeApiKey,
-} from "./apikeys";
-
-export {
-  listMCPServers,
-  registerMCPServer,
-  getMCPServer,
-  updateMCPServerTrust,
-  discoverMCPTools,
-} from "./mcp";
-
-export {
-  getAuditEvents,
-  getAuditIntegrity,
-  exportEvidenceBundle,
-  commitAuditAnchor,
-} from "./audit";
-
-export {
-  getBillingPlans,
-  getTenantSubscription,
-  subscribePlan,
-} from "./billing";
-
-import * as dashboard from "./dashboard";
-import * as alerts from "./alerts";
-import * as stream from "./stream";
-import * as health from "./health";
-import * as reports from "./reports";
-import * as auth from "./auth";
-import * as context from "./context";
-import * as actions from "./actions";
-import * as output from "./output";
-import * as multiagent from "./multiagent";
-import * as tenants from "./tenants";
-import * as apikeys from "./apikeys";
-import * as mcp from "./mcp";
-import * as audit from "./audit";
-import * as billing from "./billing";
-import { apiFetch, setApiToken, getApiToken, onUnauthorized, ApiError } from "./client";
+import { apiRequest } from "./client";
 
 export const api = {
-  fetch: apiFetch,
-  setToken: setApiToken,
-  getToken: getApiToken,
-  onUnauthorized,
-  ApiError,
-  dashboard,
-  alerts,
-  stream,
-  health,
-  reports,
-  auth,
-  context,
-  actions,
-  output,
-  multiagent,
-  tenants,
-  apikeys,
-  mcp,
-  audit,
-  billing,
+  // 1. Dashboard Stats & Sessions
+  async getDashboardStats(tenantId) {
+    const q = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : "";
+    return apiRequest(`/v1/dashboard/stats${q}`);
+  },
+
+  async getSessions(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.risk_tier) searchParams.append("risk_tier", params.risk_tier);
+    if (params.page) searchParams.append("page", params.page);
+    if (params.page_size) searchParams.append("page_size", params.page_size);
+    const q = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return apiRequest(`/v1/dashboard/sessions${q}`);
+  },
+
+  // 2. Interactive Assurance Playground (Gate 1 - 4 + Verification Orchestrator)
+  async verifyCompletion(payload) {
+    return apiRequest("/v1/verify", {
+      method: "POST",
+      body: payload,
+    });
+  },
+
+  async proposeAction(payload) {
+    return apiRequest("/v1/actions/propose", {
+      method: "POST",
+      body: payload,
+    });
+  },
+
+  // 3. HITL Approvals Queue (Gate 3 L4)
+  async getPendingApprovals() {
+    return apiRequest("/v1/approvals/pending");
+  },
+
+  async grantApproval(approvalId, reason = "Approved via Operator Dashboard") {
+    return apiRequest(`/v1/approvals/${approvalId}/grant`, {
+      method: "POST",
+      body: { reason },
+    });
+  },
+
+  async denyApproval(approvalId, reason = "Denied via Operator Dashboard") {
+    return apiRequest(`/v1/approvals/${approvalId}/deny`, {
+      method: "POST",
+      body: { reason },
+    });
+  },
+
+  // 4. Knowledge Base (Gate 2 RAG)
+  async getKBDocuments() {
+    return apiRequest("/v1/kb/documents");
+  },
+
+  async uploadKBDocument(filename, content, collectionName = "default_kb") {
+    return apiRequest("/v1/kb/upload", {
+      method: "POST",
+      body: {
+        filename,
+        content,
+        collection_name: collectionName,
+      },
+    });
+  },
+
+  async deleteKBDocument(documentId) {
+    return apiRequest(`/v1/kb/documents/${documentId}`, {
+      method: "DELETE",
+    });
+  },
+
+  // 5. Developer Console (API Keys & Integrations)
+  async getApiKeys() {
+    return apiRequest("/v1/auth/api-keys");
+  },
+
+  async createApiKey(name, description = "", role = "admin") {
+    return apiRequest("/v1/auth/api-keys", {
+      method: "POST",
+      body: {
+        name,
+        description,
+        role,
+      },
+    });
+  },
+
+  async revokeApiKey(keyId) {
+    return apiRequest(`/v1/auth/api-keys/${keyId}`, {
+      method: "DELETE",
+    });
+  },
+
+  // 6. Subscriptions & Billing (Razorpay INR & Stripe USD)
+  async getBillingPlans() {
+    return apiRequest("/v1/billing/plans");
+  },
+
+  async getSubscription() {
+    return apiRequest("/v1/billing/subscription");
+  },
+
+  async getBillingUsage() {
+    return apiRequest("/v1/billing/usage");
+  },
+
+  async createRazorpayOrder(planId) {
+    return apiRequest("/v1/billing/razorpay/create-order", {
+      method: "POST",
+      body: { plan_id: planId },
+    });
+  },
+
+  async verifyRazorpayPayment(orderId, paymentId, signature, planId) {
+    return apiRequest("/v1/billing/razorpay/verify-payment", {
+      method: "POST",
+      body: {
+        razorpay_order_id: orderId,
+        razorpay_payment_id: paymentId,
+        razorpay_signature: signature,
+        plan_id: planId,
+      },
+    });
+  },
+
+  // 7. Cryptographic Audit Ledger
+  async getAuditIntegrity() {
+    return apiRequest("/v1/audit/integrity");
+  },
+
+  async getAuditEvents(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.event_type) searchParams.append("event_type", params.event_type);
+    if (params.limit) searchParams.append("limit", params.limit);
+    if (params.offset) searchParams.append("offset", params.offset);
+    const q = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return apiRequest(`/v1/audit/events${q}`);
+  },
+
+  async exportAuditJsonl() {
+    return apiRequest("/v1/audit/export");
+  },
+
+  // System Health
+  async getSystemHealth() {
+    return apiRequest("/v1/health");
+  },
 };
-
-export default api;
-
-

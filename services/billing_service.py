@@ -411,6 +411,41 @@ class BillingService:
     async def handle_payment_webhook(self, req: StripeWebhookRequest) -> dict[str, Any]:
         """Idempotent payment webhook processor for subscription settlements."""
         logger.info("Processing billing webhook event", event_id=req.event_id, event_type=req.event_type)
+
+        data = req.data or {}
+        tenant_id = req.tenant_id or data.get("tenant_id") or (data.get("notes") or {}).get("tenant_id")
+        target_tier_str = data.get("tier") or (data.get("notes") or {}).get("tier")
+
+        if tenant_id and target_tier_str:
+            try:
+                target_tier = SubscriptionTier(str(target_tier_str).lower())
+                mock_auth = AuthContext(
+                    tenant_id=str(tenant_id),
+                    user_id="webhook_service",
+                    role=Role.TENANT_ADMIN,
+                )
+                await self.upgrade_subscription(
+                    auth=mock_auth,
+                    req=SubscriptionUpgradeRequest(target_tier=target_tier),
+                )
+                async with db_session.get_tenant_session(str(tenant_id)) as session:
+                    await AuditLedgerService.append_entry(
+                        session=session,
+                        tenant_id=str(tenant_id),
+                        event_type="BILLING_WEBHOOK_FULFILLED",
+                        actor_identity_id="webhook_service",
+                        reason=f"Asynchronous webhook {req.event_type} fulfilled for tier {target_tier.value}",
+                        event_payload={
+                            "event_id": req.event_id,
+                            "event_type": req.event_type,
+                            "tier": target_tier.value,
+                        },
+                    )
+                    await session.commit()
+                logger.info("Asynchronous webhook upgraded tenant", tenant_id=tenant_id, tier=target_tier.value)
+            except Exception as exc:
+                logger.warning("Webhook fulfillment adjustment failed", error=str(exc))
+
         return {
             "processed": True,
             "event_id": req.event_id,

@@ -148,4 +148,20 @@ export const api = {
   async getSystemHealth() {
     return apiRequest("/v1/health");
   },
+
+  // 8. Public Inquiries & Lead Capture
+  async createInquiry(payload) {
+    return apiRequest("/v1/inquiries", {
+      method: "POST",
+      body: payload,
+    });
+  },
+
+  // 9. Tenant Registration & Auth
+  async registerTenant(payload) {
+    return apiRequest("/v1/auth/register-tenant", {
+      method: "POST",
+      body: payload,
+    });
+  },
 };

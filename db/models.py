@@ -1125,3 +1125,21 @@ class ResourceLease(Base):
             postgresql_where=text("status = 'ACQUIRED' AND concurrency_mode = 'EXCLUSIVE'"),
         ),
     )
+
+
+class InquiryRecord(Base):
+    """Enterprise contact and demo inquiries submitted via commercial storefront."""
+
+    __tablename__ = "inquiries"
+
+    id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+    email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    company: Mapped[str] = mapped_column(String(255), nullable=False)
+    team_size: Mapped[str] = mapped_column(String(64), default="1-10", nullable=False)
+    use_case: Mapped[str] = mapped_column(String(128), default="Agent Governance", nullable=False)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), default="PENDING", nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )

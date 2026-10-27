@@ -292,3 +292,5 @@ export function AssuranceGateVisualizer3D({ currentStage = 0, isEvaluating = fal
     </div>
   );
 }
+
+export default AssuranceGateVisualizer3D;

@@ -1,0 +1,14 @@
+# MIRAGE AI Execution Assurance Platform — robots.txt
+User-agent: *
+Allow: /
+Allow: /terms
+Allow: /privacy
+Allow: /contact
+Allow: /docs
+
+# Disallow authenticated tenant workspaces and internal execution APIs
+Disallow: /app/
+Disallow: /api/
+Disallow: /v1/
+
+Sitemap: https://mirage-assurance.com/sitemap.xml

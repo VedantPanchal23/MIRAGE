@@ -8,7 +8,7 @@ and multi-tenant isolation under high concurrency against the live production ga
 import asyncio
 import statistics
 import time
-from typing import Any
+from typing import Any, cast
 
 import httpx
 
@@ -73,8 +73,9 @@ async def execute_user_request(
     url = f"{GATEWAY_BASE_URL}{scenario['path']}"
 
     payload = None
-    if "payload_factory" in scenario:
-        payload = scenario["payload_factory"](user_id, tenant)
+    factory = scenario.get("payload_factory")
+    if callable(factory):
+        payload = cast(dict[str, Any], factory(user_id, tenant))
 
     async with semaphore:
         start_time = time.perf_counter()
@@ -174,7 +175,7 @@ async def run_load_test() -> None:
         print(f" - {scen['name']:<35}: {scen_success}/{len(scen_results)} OK | avg {avg_l:.1f}ms | p95 {p95_l:.1f}ms")
 
     print("\nTENANT ISOLATION SANITY CHECK:")
-    tenant_counts = {}
+    tenant_counts: dict[str, int] = {}
     for r in successes:
         tenant_counts[r["tenant"]] = tenant_counts.get(r["tenant"], 0) + 1
     for tenant, count in sorted(tenant_counts.items()):

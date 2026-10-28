@@ -1,6 +1,7 @@
 """Unit tests for Tenant Administration and Lifecycle Service."""
 
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -307,7 +308,7 @@ async def test_offboard_tenant_success(super_admin_auth: AuthContext) -> None:
     mock_res_audit = MagicMock()
     mock_res_audit.first.return_value = None
 
-    def mock_exec_side_effect(stmt, *_args, **_kwargs):
+    def mock_exec_side_effect(stmt: Any, *_args: Any, **_kwargs: Any) -> Any:
         if "api_credentials" in str(stmt).lower():
             return mock_res_creds
         return mock_res_audit

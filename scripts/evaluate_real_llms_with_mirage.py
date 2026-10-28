@@ -8,6 +8,7 @@ Allam 2 7B / Qwen 2.5 via Groq) across 4 complexity levels through MIRAGE's
 import os
 import sys
 import uuid
+from typing import Any
 
 import httpx
 from dotenv import load_dotenv
@@ -42,7 +43,8 @@ def query_llm(provider: str, model: str, prompt: str) -> str:
             timeout=15.0,
         )
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        content = resp.json()["choices"][0]["message"]["content"]
+        return str(content).strip()
     elif provider == "openrouter":
         resp = httpx.post(
             "https://openrouter.ai/api/v1/chat/completions",
@@ -56,7 +58,8 @@ def query_llm(provider: str, model: str, prompt: str) -> str:
             timeout=15.0,
         )
         resp.raise_for_status()
-        return resp.json()["choices"][0]["message"]["content"].strip()
+        content = resp.json()["choices"][0]["message"]["content"]
+        return str(content).strip()
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -110,7 +113,7 @@ def run_evaluation() -> bool:
     assert kb_resp.status_code in (200, 201, 202)
     print(f"{C_GREEN}[PASS] Reference knowledge base indexed in Qdrant.{C_RESET}\n")
 
-    test_scenarios = [
+    test_scenarios: list[dict[str, Any]] = [
         {
             "level": "LEVEL 1: CLINICAL PHARMACOLOGY PRECISION",
             "provider": "openrouter",

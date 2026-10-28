@@ -1,18 +1,19 @@
 """Unit tests for enterprise inquiries API route."""
 
 import pytest
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 
 from gateway.main import create_app
 
 
 @pytest.fixture
-def app():
+def app() -> FastAPI:
     return create_app()
 
 
 @pytest.mark.asyncio
-async def test_submit_inquiry_success(app):
+async def test_submit_inquiry_success(app: FastAPI) -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         payload = {
@@ -34,7 +35,7 @@ async def test_submit_inquiry_success(app):
 
 
 @pytest.mark.asyncio
-async def test_submit_inquiry_validation_failure(app):
+async def test_submit_inquiry_validation_failure(app: FastAPI) -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         # Invalid email and short message

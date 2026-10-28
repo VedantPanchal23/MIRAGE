@@ -1519,7 +1519,7 @@ class DelegationService:
         parent_transaction_id: str | None = None,
         parent_agent_id: str | None = None,
         child_agent_id: str | None = None,
-        status: DelegationStatus | None = None,
+        status_param: DelegationStatus | None = None,
         status_filter: DelegationStatus | None = None,
         limit: int = DEFAULT_PAGE_LIMIT,
         offset: int = 0,
@@ -1529,7 +1529,7 @@ class DelegationService:
         if not auth.tenant_id:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Authoritative tenant is required")
 
-        effective_status = status_filter or status
+        effective_status = status_filter or status_param
 
         async def _execute_list(s: AsyncSession) -> list[DelegationGrantResponse]:
             stmt = select(AgentDelegation).where(AgentDelegation.tenant_id == auth.tenant_id)
@@ -1541,7 +1541,7 @@ class DelegationService:
             if child_agent_id:
                 stmt = stmt.where(AgentDelegation.child_agent_id == child_agent_id)
             if effective_status:
-                stmt = stmt.where(AgentDelegation.status == status_filter.value)
+                stmt = stmt.where(AgentDelegation.status == effective_status.value)
 
             stmt = stmt.order_by(AgentDelegation.created_at.desc(), AgentDelegation.id.desc())
             clamped_limit = min(max(1, limit), MAX_PAGE_LIMIT)

@@ -28,11 +28,9 @@ from sqlalchemy import select, text
 from db import session as db_session
 from db.models import (
     ActionContract,
-    AITransaction,
     AuditLogRecord,
     OutcomeVerificationRecord,
     TenantAuditLedger,
-    ToolDefinition,
 )
 from shared.config import EnvironmentType, get_settings
 from shared.logging import get_logger

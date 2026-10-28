@@ -16,7 +16,7 @@ from typing import Any
 
 import httpx
 from fastapi import HTTPException, status
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from db import session as db_session
 from db.models import WebhookSubscriptionRecord
@@ -111,13 +111,10 @@ class WebhookService:
             )
 
         async with db_session.get_tenant_session(auth.tenant_id) as session:
-            stmt = delete(WebhookSubscriptionRecord).where(
-                WebhookSubscriptionRecord.tenant_id == auth.tenant_id,
-                WebhookSubscriptionRecord.id == webhook_id,
-            )
-            res = await session.execute(stmt)
-            if res.rowcount == 0:
+            rec = await session.get(WebhookSubscriptionRecord, webhook_id)
+            if not rec or rec.tenant_id != auth.tenant_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook subscription not found")
+            await session.delete(rec)
             await session.commit()
 
         return True

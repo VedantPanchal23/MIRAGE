@@ -35,16 +35,16 @@ TIER_SPECS: dict[SubscriptionTier, dict[str, Any]] = {
         "tagline": "Evaluate MIRAGE Assurance Gates with local agents & testing harness",
         "price_usd": 0.0,
         "price_inr": 0.0,
-        "quota": 1000,
+        "quota": 10000,
         "leases": 2,
-        "budget_usd": 5.0,
+        "budget_usd": 10.0,
         "features": [
             PlanFeature(
                 title="All 5 Assurance Gates",
                 description="Input, Context, Action, Output, Outcome verification",
             ),
             PlanFeature(
-                title="1,000 Requests / Month",
+                title="10,000 Requests / Month",
                 description="Developer tier sandbox volume",
             ),
             PlanFeature(
@@ -68,24 +68,24 @@ TIER_SPECS: dict[SubscriptionTier, dict[str, Any]] = {
         ],
     },
     SubscriptionTier.BUSINESS: {
-        "name": "Growth & Business",
-        "tagline": "Full verification engine, neural NLI, vector RAG grounding & auto-correction",
-        "price_usd": 299.0,
-        "price_inr": 19999.0,
-        "quota": 50000,
-        "leases": 20,
-        "budget_usd": 500.0,
+        "name": "Pro / Starter",
+        "tagline": "Production assurance for indie developers and high-growth AI applications",
+        "price_usd": 29.0,
+        "price_inr": 1999.0,
+        "quota": 75000,
+        "leases": 10,
+        "budget_usd": 150.0,
         "features": [
             PlanFeature(
                 title="All 5 Assurance Gates",
                 description="Full verification ladder with TreeSHAP and Conformal Bounds",
             ),
             PlanFeature(
-                title="50,000 Requests / Month",
-                description="Production business workload",
+                title="75,000 Requests / Month",
+                description="Production developer & startup workload",
             ),
             PlanFeature(
-                title="20 Concurrent Resource Leases",
+                title="10 Concurrent Resource Leases",
                 description="Distributed concurrency control with monotonic tokens",
             ),
             PlanFeature(
@@ -109,18 +109,18 @@ TIER_SPECS: dict[SubscriptionTier, dict[str, Any]] = {
     SubscriptionTier.ENTERPRISE: {
         "name": "Enterprise Sentinel",
         "tagline": "Custom SLA, dedicated RLS isolation, governed MCP server, and physical reality verification",
-        "price_usd": 1499.0,
-        "price_inr": 99999.0,
-        "quota": 500000,
+        "price_usd": 299.0,
+        "price_inr": 24999.0,
+        "quota": 2000000,
         "leases": 100,
-        "budget_usd": 5000.0,
+        "budget_usd": 2500.0,
         "features": [
             PlanFeature(
                 title="High-Throughput Verification Engine",
                 description="Sub-50ms p95 latency with GPU acceleration",
             ),
             PlanFeature(
-                title="500,000+ Requests / Month",
+                title="2,000,000+ Requests / Month",
                 description="High-scale multi-agent enterprise deployment",
             ),
             PlanFeature(

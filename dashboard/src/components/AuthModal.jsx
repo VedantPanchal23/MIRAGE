@@ -227,8 +227,8 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
                     className="w-full px-3 py-2 text-xs border border-apple-border rounded-xl bg-apple-bg focus:bg-white focus:outline-none focus:ring-2 focus:ring-apple-blue/20 focus:border-apple-blue transition-all"
                   >
                     <option value="developer">Developer (Free / $0 — 10k req/mo)</option>
-                    <option value="team">Team ($149 / ₹12,499 — 250k req/mo)</option>
-                    <option value="enterprise">Enterprise ($999 / ₹82,999 — 2M req/mo)</option>
+                    <option value="team">Pro / Starter ($29 / ₹1,999 — 75k req/mo)</option>
+                    <option value="enterprise">Enterprise ($299 / ₹24,999 — 2M req/mo)</option>
                   </select>
                 </div>
 

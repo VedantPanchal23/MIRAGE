@@ -41,14 +41,14 @@ def test_get_available_plans() -> None:
     assert SubscriptionTier.ENTERPRISE in tiers
 
     biz_plan = next(p for p in plans if p.tier == SubscriptionTier.BUSINESS)
-    assert biz_plan.price_dollars_monthly == 299.0
-    assert biz_plan.budget_ceiling_usd == 500.0
-    assert biz_plan.request_quota_monthly == 50000
+    assert biz_plan.price_dollars_monthly == 29.0
+    assert biz_plan.budget_ceiling_usd == 150.0
+    assert biz_plan.request_quota_monthly == 75000
 
     ent_plan = next(p for p in plans if p.tier == SubscriptionTier.ENTERPRISE)
-    assert ent_plan.price_dollars_monthly == 1499.0
-    assert ent_plan.budget_ceiling_usd == 5000.0
-    assert ent_plan.request_quota_monthly == 500000
+    assert ent_plan.price_dollars_monthly == 299.0
+    assert ent_plan.budget_ceiling_usd == 2500.0
+    assert ent_plan.request_quota_monthly == 2000000
 
 
 @pytest.mark.asyncio
@@ -130,9 +130,9 @@ async def test_upgrade_subscription_success(tenant_admin_auth: AuthContext) -> N
 
         assert resp.success is True
         assert resp.new_tier == SubscriptionTier.ENTERPRISE
-        assert resp.new_budget_ceiling_usd == 5000.0
+        assert resp.new_budget_ceiling_usd == 2500.0
         assert mock_tenant.tier == "enterprise"
-        assert mock_budget.total_budget_micros == 5_000_000_000
+        assert mock_budget.total_budget_micros == 2_500_000_000
         mock_append_entry.assert_awaited_once()
 
 
@@ -160,8 +160,8 @@ async def test_create_razorpay_order(tenant_admin_auth: AuthContext) -> None:
     order = await service.create_razorpay_order(auth=tenant_admin_auth, req=req)
 
     assert order.order_id.startswith("order_")
-    assert order.amount_inr == 19999.0
-    assert order.amount_paise == 1999900
+    assert order.amount_inr == 1999.0
+    assert order.amount_paise == 199900
     assert order.currency == "INR"
     assert order.key_id.startswith("rzp_")
     assert order.tier == SubscriptionTier.BUSINESS
@@ -181,7 +181,7 @@ async def test_verify_razorpay_payment(tenant_admin_auth: AuthContext) -> None:
     with patch.object(service, "upgrade_subscription", new_callable=AsyncMock) as mock_upgrade, \
          patch("db.session.get_tenant_session") as mock_get_sess, \
          patch("services.audit_ledger.AuditLedgerService.append_entry", new_callable=AsyncMock) as mock_append:
-        mock_upgrade.return_value = MagicMock(new_budget_ceiling_usd=500.0)
+        mock_upgrade.return_value = MagicMock(new_budget_ceiling_usd=150.0)
         mock_session = AsyncMock()
         mock_get_sess.return_value.__aenter__.return_value = mock_session
 

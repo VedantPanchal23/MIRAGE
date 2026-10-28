@@ -506,6 +506,30 @@ class MirageClient:
         data = self._request("POST", f"/v1/mcp/servers/{server_id}/discover", is_mutating=True)
         return MCPToolDiscoveryResult.model_validate(data)
 
+    # -------------------------------------------------------------------------
+    # Commercial Billing & Subscription Operations
+    # -------------------------------------------------------------------------
+
+    def get_billing_plans(self) -> list[dict[str, Any]]:
+        """Fetch available commercial pricing catalog and tier entitlement specifications."""
+        return self._request("GET", "/v1/billing/plans", is_mutating=False)
+
+    def get_subscription(self) -> dict[str, Any]:
+        """Retrieve current tenant subscription tier, headroom, and budget utilization."""
+        return self._request("GET", "/v1/billing/subscription", is_mutating=False)
+
+    # -------------------------------------------------------------------------
+    # Inquiries & Tenant Self-Service Registration
+    # -------------------------------------------------------------------------
+
+    def create_inquiry(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Submit an enterprise sales inquiry, architecture review request, or custom SLA ticket."""
+        return self._request("POST", "/v1/inquiries", json_data=request, is_mutating=True)
+
+    def register_tenant(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Self-service enterprise onboarding provisioning tenant, admin user, and production API key."""
+        return self._request("POST", "/v1/auth/register-tenant", json_data=request, is_mutating=True)
+
 
 # =============================================================================
 # Asynchronous AsyncMirageClient
@@ -862,3 +886,27 @@ class AsyncMirageClient:
         """Discover tools from a TRUSTED MCP server, calculate schema fingerprints, and sync tools."""
         data = await self._request("POST", f"/v1/mcp/servers/{server_id}/discover", is_mutating=True)
         return MCPToolDiscoveryResult.model_validate(data)
+
+    # -------------------------------------------------------------------------
+    # Commercial Billing & Subscription Operations
+    # -------------------------------------------------------------------------
+
+    async def get_billing_plans(self) -> list[dict[str, Any]]:
+        """Fetch available commercial pricing catalog and tier entitlement specifications."""
+        return await self._request("GET", "/v1/billing/plans", is_mutating=False)
+
+    async def get_subscription(self) -> dict[str, Any]:
+        """Retrieve current tenant subscription tier, headroom, and budget utilization."""
+        return await self._request("GET", "/v1/billing/subscription", is_mutating=False)
+
+    # -------------------------------------------------------------------------
+    # Inquiries & Tenant Self-Service Registration
+    # -------------------------------------------------------------------------
+
+    async def create_inquiry(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Submit an enterprise sales inquiry, architecture review request, or custom SLA ticket."""
+        return await self._request("POST", "/v1/inquiries", json_data=request, is_mutating=True)
+
+    async def register_tenant(self, request: dict[str, Any]) -> dict[str, Any]:
+        """Self-service enterprise onboarding provisioning tenant, admin user, and production API key."""
+        return await self._request("POST", "/v1/auth/register-tenant", json_data=request, is_mutating=True)

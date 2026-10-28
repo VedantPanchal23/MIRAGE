@@ -597,3 +597,85 @@ class TestAsyncClientEquivalency:
             assert isinstance(res, VerificationResponse)
             assert res.request_id == "req_async_001"
             assert res.hrs_result.hrs == 0.02
+
+    @pytest.mark.asyncio
+    async def test_async_billing_and_inquiry_contract(self) -> None:
+        """AsyncMirageClient retrieves billing plans and submits inquiry asynchronously."""
+        async_transport = httpx.ASGITransport(app=app)
+        async with AsyncMirageClient(
+            api_key="sdk_test_read_key",
+            base_url="http://testserver",
+            transport=async_transport,
+        ) as client:
+            plans = await client.get_billing_plans()
+            assert isinstance(plans, list)
+            business_plan = next(p for p in plans if p["tier"] == "business")
+            assert business_plan["price_dollars_monthly"] == 29.0
+            assert business_plan["price_inr_monthly"] == 1999.0
+
+            inquiry = await client.create_inquiry({
+                "name": "Jane Doe",
+                "email": "jane@startup.io",
+                "company": "Startup AI",
+                "team_size": "1-10",
+                "use_case": "Gate 1 Guardrails",
+                "message": "Testing async client inquiry submission.",
+            })
+            assert isinstance(inquiry, dict)
+            assert inquiry["id"].startswith("inq_")
+            assert inquiry["name"] == "Jane Doe"
+
+
+# =============================================================================
+# 8. Commercial Billing, Subscriptions & Inquiries Contract
+# =============================================================================
+
+
+class TestBillingAndInquiriesContract:
+    """Contract tests for commercial billing, tier catalogs, and enterprise inquiries."""
+
+    def test_get_billing_plans_contract(self) -> None:
+        """SDK client retrieves available commercial billing plans and verifies new accessible pricing."""
+        with MirageClient(
+            api_key="sdk_test_read_key",
+            base_url="http://testserver",
+            transport=sync_transport,
+        ) as client:
+            plans = client.get_billing_plans()
+            assert isinstance(plans, list)
+            assert len(plans) >= 3
+
+            # Verify recalibrated accessible tiers
+            plan_tiers = {p["tier"]: p for p in plans}
+            assert "developer" in plan_tiers
+            assert "business" in plan_tiers
+            assert "enterprise" in plan_tiers
+
+            assert plan_tiers["business"]["price_dollars_monthly"] == 29.0
+            assert plan_tiers["business"]["price_inr_monthly"] == 1999.0
+            assert plan_tiers["enterprise"]["price_dollars_monthly"] == 299.0
+            assert plan_tiers["enterprise"]["price_inr_monthly"] == 24999.0
+
+    def test_create_inquiry_contract(self) -> None:
+        """SDK client submits enterprise contact and demo inquiry."""
+        with MirageClient(
+            api_key="sdk_test_read_key",
+            base_url="http://testserver",
+            transport=sync_transport,
+        ) as client:
+            payload = {
+                "name": "Alex Mercer",
+                "email": "alex@genentech-ai.org",
+                "company": "Genentech AI Labs",
+                "team_size": "11-50",
+                "use_case": "Autonomous Clinical Actions",
+                "message": "We need Gate 5 reality verification for diagnostic tool calls.",
+            }
+            res = client.create_inquiry(payload)
+            assert isinstance(res, dict)
+            assert res["id"].startswith("inq_")
+            assert res["name"] == "Alex Mercer"
+            assert res["email"] == "alex@genentech-ai.org"
+            assert res["status"] == "PENDING"
+            assert "4 hours" in res["confirmation_message"]
+

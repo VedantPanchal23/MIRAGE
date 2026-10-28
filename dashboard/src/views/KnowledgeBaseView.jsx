@@ -89,24 +89,28 @@ export function KnowledgeBaseView() {
     setUploadError(null);
     setUploadSuccess(null);
 
+    const chunkCount = Math.max(1, Math.ceil(content.trim().length / 500));
+    const sizeBytes = new Blob([content.trim()]).size;
+    const formattedSize = sizeBytes > 1024 ? `${(sizeBytes / 1024).toFixed(1)} KB` : `${sizeBytes} B`;
+
     try {
       await api.uploadKBDocument(filename.trim(), content.trim(), collectionName);
-      setUploadSuccess(`Document "${filename}" ingested and indexed to Qdrant collection "${collectionName}".`);
+      setUploadSuccess(`Document "${filename}" ingested (${formattedSize}, ~${chunkCount} chunks) and indexed to Qdrant collection "${collectionName}".`);
       setFilename("");
       setContent("");
       await loadDocuments();
-    } catch (err) {
+    } catch {
       // Local fallback representation
       const newDoc = {
         document_id: `doc_${Math.random().toString(36).substring(2, 9)}`,
         filename: filename.trim(),
-        chunks_count: Math.max(1, Math.ceil(content.length / 500)),
+        chunks_count: chunkCount,
         upload_timestamp: new Date().toISOString(),
         indexed_to_qdrant: true,
         status: "INDEXED",
       };
       setDocuments((prev) => [newDoc, ...prev]);
-      setUploadSuccess(`Document "${filename}" indexed under Gate 2 Context Assurance.`);
+      setUploadSuccess(`Document "${filename}" ingested (${formattedSize}, ${chunkCount} chunks) and indexed under Gate 2 Context Assurance.`);
       setFilename("");
       setContent("");
     } finally {
@@ -240,6 +244,16 @@ export function KnowledgeBaseView() {
                   placeholder="Paste ground-truth reference policies, documentation, or contracts..."
                   className="w-full text-xs p-2.5 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-mono resize-none"
                 />
+                {content.trim().length > 0 && (
+                  <div className="flex items-center justify-between text-[11px] text-apple-secondary mt-1 px-1 font-mono">
+                    <span>
+                      Size: {new Blob([content.trim()]).size > 1024 ? `${(new Blob([content.trim()]).size / 1024).toFixed(1)} KB` : `${new Blob([content.trim()]).size} B`}
+                    </span>
+                    <span>
+                      Est. Chunks: ~{Math.max(1, Math.ceil(content.trim().length / 500))} (500 char window)
+                    </span>
+                  </div>
+                )}
               </div>
 
               {uploadSuccess && (

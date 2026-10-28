@@ -20,6 +20,7 @@ export default function LandingView({
 
   // Currency Toggle: USD or INR
   const [currency, setCurrency] = useState('USD'); // 'USD' | 'INR'
+  const [billingCycle, setBillingCycle] = useState('monthly'); // 'monthly' | 'annual'
 
   // Interactive Live Sandbox State
   const [sandboxPrompt, setSandboxPrompt] = useState('Initiate wire transfer of $25,000 to vendor account #883921 for server maintenance');
@@ -70,7 +71,7 @@ export default function LandingView({
     const failureRate = 0.0015; // 0.15% average agent anomaly rate
     const potentialIncidents = Math.max(1, Math.round(monthlyAgentCalls * failureRate));
     const potentialExposure = potentialIncidents * 18500;
-    const mirageCost = monthlyAgentCalls > 250000 ? 999 * 12 : 149 * 12;
+    const mirageCost = monthlyAgentCalls > 250000 ? 299 * 12 : 29 * 12;
     const netSavings = potentialExposure - mirageCost;
     return { potentialIncidents, potentialExposure, netSavings };
   };
@@ -576,30 +577,58 @@ return ExecutionStatus.VERIFIED_SUCCESS;`,
             Deploy on cloud multi-tenant or dedicated institutional VPC. Zero hidden per-token markups.
           </p>
 
-          {/* Currency Toggle */}
-          <div className="mt-6 inline-flex p-1 bg-apple-card border border-apple-border rounded-xl">
-            <button
-              type="button"
-              onClick={() => setCurrency('USD')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                currency === 'USD'
-                  ? 'bg-apple-blue text-white shadow-sm'
-                  : 'text-apple-subtext hover:text-apple-text'
-              }`}
-            >
-              $ USD (Global / Stripe)
-            </button>
-            <button
-              type="button"
-              onClick={() => setCurrency('INR')}
-              className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${
-                currency === 'INR'
-                  ? 'bg-apple-blue text-white shadow-sm'
-                  : 'text-apple-subtext hover:text-apple-text'
-              }`}
-            >
-              ₹ INR (India / Razorpay)
-            </button>
+          {/* Currency & Billing Cycle Toggles */}
+          <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
+            <div className="inline-flex p-1 bg-apple-card border border-apple-border rounded-xl">
+              <button
+                type="button"
+                onClick={() => setCurrency('USD')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  currency === 'USD'
+                    ? 'bg-apple-blue text-white shadow-sm'
+                    : 'text-apple-subtext hover:text-apple-text'
+                }`}
+              >
+                $ USD (Global / Stripe)
+              </button>
+              <button
+                type="button"
+                onClick={() => setCurrency('INR')}
+                className={`px-4 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                  currency === 'INR'
+                    ? 'bg-apple-blue text-white shadow-sm'
+                    : 'text-apple-subtext hover:text-apple-text'
+                }`}
+              >
+                ₹ INR (India / Razorpay)
+              </button>
+            </div>
+
+            <div className="inline-flex p-1 bg-apple-card border border-apple-border rounded-xl text-xs font-medium">
+              <button
+                type="button"
+                onClick={() => setBillingCycle('monthly')}
+                className={`px-3 py-1.5 rounded-lg transition-all ${
+                  billingCycle === 'monthly'
+                    ? 'bg-apple-bg text-apple-text font-semibold shadow-xs'
+                    : 'text-apple-subtext hover:text-apple-text'
+                }`}
+              >
+                Monthly
+              </button>
+              <button
+                type="button"
+                onClick={() => setBillingCycle('annual')}
+                className={`px-3 py-1.5 rounded-lg transition-all flex items-center space-x-1 ${
+                  billingCycle === 'annual'
+                    ? 'bg-apple-green/15 text-apple-green font-semibold shadow-xs'
+                    : 'text-apple-subtext hover:text-apple-text'
+                }`}
+              >
+                <span>Annual</span>
+                <span className="text-[10px] bg-apple-green text-white px-1.5 py-0.2 rounded-full font-bold">Save 20%</span>
+              </button>
+            </div>
           </div>
         </div>
 
@@ -609,14 +638,14 @@ return ExecutionStatus.VERIFIED_SUCCESS;`,
             <div>
               <div className="flex justify-between items-center mb-4">
                 <span className="text-xs font-bold uppercase tracking-wider text-apple-gray">Developer</span>
-                <span className="text-[10px] bg-apple-bg px-2 py-0.5 rounded font-mono text-apple-subtext">Self-Serve</span>
+                <span className="text-[10px] bg-apple-bg px-2 py-0.5 rounded font-mono text-apple-subtext">Free Forever</span>
               </div>
               <div className="text-3xl font-bold text-apple-text">
                 {currency === 'USD' ? '$0' : '₹0'}
                 <span className="text-xs font-normal text-apple-subtext ml-1">/ month</span>
               </div>
               <p className="text-xs text-apple-subtext mt-2">
-                For evaluation, rapid prototyping, and single-agent testing.
+                For prototyping, local evaluation, and building single agents with 5-gate assurance.
               </p>
 
               <ul className="mt-6 space-y-2.5 text-xs text-apple-subtext border-t border-apple-border pt-6">
@@ -634,7 +663,7 @@ return ExecutionStatus.VERIFIED_SUCCESS;`,
                 </li>
                 <li className="flex items-center space-x-2">
                   <span className="text-apple-green font-bold">✓</span>
-                  <span>Community Discord support</span>
+                  <span>Community Discord & Docs</span>
                 </li>
               </ul>
             </div>
@@ -649,32 +678,34 @@ return ExecutionStatus.VERIFIED_SUCCESS;`,
             </div>
           </div>
 
-          {/* Plan 2: Team (Featured) */}
+          {/* Plan 2: Pro / Starter (Featured) */}
           <div className="bg-apple-card border-2 border-apple-blue rounded-2xl p-6 shadow-apple-md flex flex-col justify-between relative">
             <span className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-apple-blue text-white text-[10px] font-bold uppercase tracking-wider rounded-full shadow-sm">
-              Most Popular
+              Best Value for Builders
             </span>
             <div>
               <div className="flex justify-between items-center mb-4">
-                <span className="text-xs font-bold uppercase tracking-wider text-apple-blue">Team</span>
-                <span className="text-[10px] bg-apple-blue/10 text-apple-blue px-2 py-0.5 rounded font-mono">Growth</span>
+                <span className="text-xs font-bold uppercase tracking-wider text-apple-blue">Pro / Starter</span>
+                <span className="text-[10px] bg-apple-blue/10 text-apple-blue px-2 py-0.5 rounded font-mono">Accessible</span>
               </div>
               <div className="text-3xl font-bold text-apple-text">
-                {currency === 'USD' ? '$149' : '₹12,499'}
+                {currency === 'USD'
+                  ? (billingCycle === 'annual' ? '$24' : '$29')
+                  : (billingCycle === 'annual' ? '₹1,650' : '₹1,999')}
                 <span className="text-xs font-normal text-apple-subtext ml-1">/ month</span>
               </div>
               <p className="text-xs text-apple-subtext mt-2">
-                For growth teams running multi-agent workflows in production.
+                For indie hackers, creators, and startups running production agent workflows.
               </p>
 
               <ul className="mt-6 space-y-2.5 text-xs text-apple-subtext border-t border-apple-border pt-6">
                 <li className="flex items-center space-x-2">
                   <span className="text-apple-green font-bold">✓</span>
-                  <span>250,000 governed requests/mo</span>
+                  <span>75,000 governed requests/mo</span>
                 </li>
                 <li className="flex items-center space-x-2">
                   <span className="text-apple-green font-bold">✓</span>
-                  <span>20 concurrent lease fencers</span>
+                  <span>10 concurrent lease fencers</span>
                 </li>
                 <li className="flex items-center space-x-2">
                   <span className="text-apple-green font-bold">✓</span>
@@ -682,11 +713,11 @@ return ExecutionStatus.VERIFIED_SUCCESS;`,
                 </li>
                 <li className="flex items-center space-x-2">
                   <span className="text-apple-green font-bold">✓</span>
-                  <span>HITL approval queue & webhooks</span>
+                  <span>OpenAI drop-in proxy & webhooks</span>
                 </li>
                 <li className="flex items-center space-x-2">
                   <span className="text-apple-green font-bold">✓</span>
-                  <span>Priority email support & 99.9% uptime</span>
+                  <span>Fast email support</span>
                 </li>
               </ul>
             </div>
@@ -696,7 +727,7 @@ return ExecutionStatus.VERIFIED_SUCCESS;`,
                 onClick={onOpenAuth}
                 className="w-full py-2.5 px-4 bg-apple-blue text-white rounded-xl text-xs font-medium hover:bg-apple-blue/90 shadow-sm transition-all"
               >
-                Upgrade to Team &rarr;
+                Upgrade to Pro &rarr;
               </button>
             </div>
           </div>
@@ -709,11 +740,13 @@ return ExecutionStatus.VERIFIED_SUCCESS;`,
                 <span className="text-[10px] bg-purple-50 text-purple-700 px-2 py-0.5 rounded font-mono">Dedicated</span>
               </div>
               <div className="text-3xl font-bold text-apple-text">
-                {currency === 'USD' ? '$999' : '₹82,999'}
+                {currency === 'USD'
+                  ? (billingCycle === 'annual' ? '$249' : '$299')
+                  : (billingCycle === 'annual' ? '₹19,999' : '₹24,999')}
                 <span className="text-xs font-normal text-apple-subtext ml-1">/ month</span>
               </div>
               <p className="text-xs text-apple-subtext mt-2">
-                For banks, healthcare, and institutions requiring zero data leakage.
+                For high-consequence banking, health, and institutional AI swarms.
               </p>
 
               <ul className="mt-6 space-y-2.5 text-xs text-apple-subtext border-t border-apple-border pt-6">
@@ -727,7 +760,7 @@ return ExecutionStatus.VERIFIED_SUCCESS;`,
                 </li>
                 <li className="flex items-center space-x-2">
                   <span className="text-apple-green font-bold">✓</span>
-                  <span>Dedicated VPC or On-Premise airgap</span>
+                  <span>Dedicated PostgreSQL RLS partition</span>
                 </li>
                 <li className="flex items-center space-x-2">
                   <span className="text-apple-green font-bold">✓</span>

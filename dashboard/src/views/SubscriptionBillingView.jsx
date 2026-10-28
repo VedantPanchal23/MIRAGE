@@ -18,14 +18,14 @@ import { useAuth } from "../context/AuthContext";
 export function SubscriptionBillingView() {
   const { tenantId } = useAuth();
   const [currency, setCurrency] = useState("INR"); // 'INR' or 'USD'
-  const [activePlanId, setActivePlanId] = useState("growth");
+  const [activePlanId, setActivePlanId] = useState("business");
   const [loading, setLoading] = useState(false);
   const [paymentModal, setPaymentModal] = useState(null); // plan object if open
   const [paymentMethod, setPaymentMethod] = useState("upi"); // 'upi', 'netbanking', 'card'
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(null);
 
-  const plans = [
+  const defaultPlans = [
     {
       id: "developer",
       name: "Developer Sandbox",
@@ -35,24 +35,24 @@ export function SubscriptionBillingView() {
       description: "Ideal for prototyping, evaluation, and local development test suites.",
       features: [
         "10,000 Assured transactions / mo",
-        "100 Knowledge base documents (Qdrant)",
-        "Gate 1 Input & Gate 4 Output Assurance",
-        "Community support & docs",
+        "2 Concurrent Lease Fencers",
+        "Full 5-Gate Pipeline Verification",
+        "Community Support & Docs",
       ],
       popular: false,
     },
     {
-      id: "growth",
-      name: "Growth & Business",
-      priceINR: "₹19,999",
-      priceUSD: "$299",
+      id: "business",
+      name: "Pro / Starter",
+      priceINR: "₹1,999",
+      priceUSD: "$29",
       period: "per month",
-      description: "Full commercial assurance for production AI applications and agent teams.",
+      description: "Accessible production assurance for indie developers and growth AI agent teams.",
       features: [
-        "250,000 Assured transactions / mo",
-        "2,500 Knowledge base documents",
-        "Full 5-Gate Assurance Pipeline",
-        "Gate 3 HITL Approvals & Lease Fencing",
+        "75,000 Assured transactions / mo",
+        "10 Concurrent Lease Fencers",
+        "Managed Qdrant Vector Memory",
+        "OpenAI Drop-In Gateway Proxy",
         "LangGraph Self-Healing Auto-Correction",
         "Cryptographic SHA-256 Audit Ledger",
       ],
@@ -61,21 +61,47 @@ export function SubscriptionBillingView() {
     {
       id: "enterprise",
       name: "Enterprise Sentinel",
-      priceINR: "₹99,999",
-      priceUSD: "$1,499",
+      priceINR: "₹24,999",
+      priceUSD: "$299",
       period: "per month",
       description: "Dedicated isolation, custom SLAs, and high-frequency real-world mediation.",
       features: [
-        "2,000,000 Assured transactions / mo",
-        "Unlimited Knowledge Base documents",
+        "2,000,000+ Assured transactions / mo",
+        "Unlimited Distributed Lease Fencers",
         "Dedicated PostgreSQL RLS schema isolation",
         "Custom Reality Verification Adapters",
-        "99.99% Execution SLA guarantee",
-        "24/7 Technical escalation engineer",
+        "99.95% Execution SLA guarantee",
+        "24/7 Designated Escalation Engineer",
       ],
       popular: false,
     },
   ];
+
+  const [plans, setPlans] = useState(defaultPlans);
+
+  useEffect(() => {
+    async function loadDynamicPlans() {
+      try {
+        const backendPlans = await api.getBillingPlans();
+        if (Array.isArray(backendPlans) && backendPlans.length > 0) {
+          const mapped = backendPlans.map((bp) => ({
+            id: bp.tier?.toLowerCase() || bp.id,
+            name: bp.name,
+            priceINR: `₹${Number(bp.price_inr_monthly || 0).toLocaleString("en-IN")}`,
+            priceUSD: `$${bp.price_dollars_monthly || 0}`,
+            period: bp.tier?.toLowerCase() === "developer" ? "forever" : "per month",
+            description: bp.tagline || "",
+            features: (bp.features || []).map((f) => (typeof f === "object" ? f.title : f)),
+            popular: bp.tier?.toLowerCase() === "business",
+          }));
+          setPlans(mapped);
+        }
+      } catch {
+        // Retain default calibrated plans
+      }
+    }
+    loadDynamicPlans();
+  }, []);
 
   const handleOpenCheckout = (plan) => {
     if (plan.id === "developer") {

@@ -105,18 +105,33 @@ export function AuditLedgerView() {
     }
   };
 
-  const handleExport = () => {
-    const dataStr =
-      "data:text/json;charset=utf-8," +
-      encodeURIComponent(
-        events.map((e) => JSON.stringify(e)).join("\n")
-      );
-    const downloadAnchor = document.createElement("a");
-    downloadAnchor.setAttribute("href", dataStr);
-    downloadAnchor.setAttribute("download", `mirage_audit_ledger_${tenantId}.jsonl`);
-    document.body.appendChild(downloadAnchor);
-    downloadAnchor.click();
-    downloadAnchor.remove();
+  const handleExport = async () => {
+    try {
+      const data = await api.exportAuditJsonl();
+      const content = typeof data === "string" ? data : JSON.stringify(data);
+      const blob = new Blob([content], { type: "application/x-ndjson" });
+      const url = URL.createObjectURL(blob);
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.setAttribute("href", url);
+      downloadAnchor.setAttribute("download", `mirage_audit_ledger_${tenantId}.jsonl`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Resilient fallback to local events if export endpoint is unreachable in demo
+      const dataStr =
+        "data:text/json;charset=utf-8," +
+        encodeURIComponent(
+          events.map((e) => JSON.stringify(e)).join("\n")
+        );
+      const downloadAnchor = document.createElement("a");
+      downloadAnchor.setAttribute("href", dataStr);
+      downloadAnchor.setAttribute("download", `mirage_audit_ledger_${tenantId}.jsonl`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+    }
   };
 
   const filteredEvents =

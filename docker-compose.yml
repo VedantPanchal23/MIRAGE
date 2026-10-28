@@ -174,9 +174,6 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
-    ports:
-      - "15672:15672"
-      - "5672:5672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-mirage}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-mirage_rabbit_secret}

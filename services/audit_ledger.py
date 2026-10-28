@@ -22,7 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from db.models import AuditCheckpointRecord, AuditLogRecord, TenantAuditLedger
 from services.audit_anchor import AnchorUnavailableError, get_anchor_backend
-from shared.config import EnvironmentType, get_settings
 from shared.logging import get_logger
 from shared.schemas.audit import (
     GENESIS_ROOT_HASH,
@@ -78,7 +77,6 @@ class AuditLedgerService:
         4. Computes deterministic canonical SHA-256 hash.
         """
         now = created_at or datetime.now(UTC)
-        settings = get_settings()
         bind = session.bind
         url_str = ""
         if bind is not None:
@@ -86,9 +84,7 @@ class AuditLedgerService:
                 url_str = str(getattr(bind, "url", ""))
             elif hasattr(bind, "engine"):
                 url_str = str(getattr(bind.engine, "url", ""))
-        is_postgres = (
-            "postgresql" in url_str and getattr(settings, "environment", EnvironmentType.TEST) != EnvironmentType.TEST
-        )
+        is_postgres = "postgresql" in url_str
 
         # 1. Ensure tenant audit ledger head exists
         await session.execute(
@@ -111,25 +107,44 @@ class AuditLedgerService:
 
         ledger_head_row = (await session.execute(ledger_stmt)).scalar_one_or_none()
 
+        # Query max existing audit sequence number for defense-in-depth against sequence collision
+        max_audit_stmt = (
+            select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
+            .where(AuditLogRecord.tenant_id == tenant_id)
+            .order_by(AuditLogRecord.sequence_number.desc())
+            .limit(1)
+        )
+        audit_res = await session.execute(max_audit_stmt)
+        latest_audit = audit_res.first() if hasattr(audit_res, "first") else None
+
+        last_audit_seq = 0
+        last_audit_hash = GENESIS_ROOT_HASH
+        if latest_audit and len(latest_audit) >= 2:
+            if isinstance(latest_audit[0], str):
+                last_audit_hash = latest_audit[0]
+            if isinstance(latest_audit[1], int):
+                last_audit_seq = latest_audit[1]
+
+        ledger_seq = 0
+        if ledger_head_row is not None and isinstance(getattr(ledger_head_row, "sequence_number", None), int):
+            ledger_seq = int(ledger_head_row.sequence_number)
+
         if ledger_head_row is not None and isinstance(getattr(ledger_head_row, "head_chain_hash", None), str):
-            prev_hash = str(ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH)
-            new_seq = int(ledger_head_row.sequence_number or 0) + 1
+            ledger_hash = str(ledger_head_row.head_chain_hash or GENESIS_ROOT_HASH)
         else:
-            # Fallback for mock/sqlite environments without tenant_audit_ledgers row
-            latest_audit_stmt = (
-                select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
-                .where(AuditLogRecord.tenant_id == tenant_id)
-                .order_by(AuditLogRecord.sequence_number.desc())
-                .limit(1)
-            )
-            audit_res = await session.execute(latest_audit_stmt)
-            latest_row = audit_res.first() if hasattr(audit_res, "first") else None
-            prev_hash = GENESIS_ROOT_HASH
-            last_seq = 0
-            if latest_row and len(latest_row) >= 2:
-                prev_hash = str(latest_row[0]) if isinstance(latest_row[0], str) else GENESIS_ROOT_HASH
-                last_seq = int(latest_row[1]) if isinstance(latest_row[1], int) else 0
-            new_seq = last_seq + 1
+            ledger_hash = GENESIS_ROOT_HASH
+
+        # Monotonic sequence is strictly greater than both ledger head and any existing audit record
+        if (
+            ledger_seq >= last_audit_seq
+            and ledger_head_row is not None
+            and isinstance(getattr(ledger_head_row, "head_chain_hash", None), str)
+        ):
+            prev_hash = ledger_hash
+            new_seq = ledger_seq + 1
+        else:
+            prev_hash = last_audit_hash if last_audit_seq > 0 else ledger_hash
+            new_seq = max(ledger_seq, last_audit_seq) + 1
             if ledger_head_row is not None and not isinstance(getattr(ledger_head_row, "head_chain_hash", None), str):
                 ledger_head_row = None
 

@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import session as db_session
-from db.models import ActorIdentity, ApiCredential, AuditLogRecord, Tenant
+from db.models import ActorIdentity, ApiCredential, Tenant
 from shared.logging import get_logger
 from shared.schemas.api_key import (
     ApiKeyCreatedResponse,
@@ -417,46 +417,16 @@ class ApiKeyService:
         details: dict[str, Any],
     ) -> None:
         """Record an API key audit event without ever leaking credentials."""
-        now = datetime.now(UTC)
-        seq_stmt = (
-            select(AuditLogRecord.chain_hash, AuditLogRecord.sequence_number)
-            .where(AuditLogRecord.tenant_id == tenant_id)
-            .order_by(AuditLogRecord.created_at.desc(), AuditLogRecord.entry_id.desc())
-            .limit(1)
-        )
-        res = await session.execute(seq_stmt)
-        latest_row = res.first()
-        prev_hash = latest_row[0] if latest_row and latest_row[0] is not None else ("0" * 64)
-        prev_seq = latest_row[1] if latest_row and len(latest_row) > 1 and latest_row[1] is not None else 0
-        seq = prev_seq + 1
-        entry_id = f"aud_{uuid.uuid4().hex}"
-        chain_hash = compute_sha256(f"{prev_hash}:{entry_id}:{action}:{now.isoformat()}")
+        from services.audit_ledger import AuditLedgerService
 
-        rec = AuditLogRecord(
-            entry_id=entry_id,
+        await AuditLedgerService.append_entry(
+            session=session,
             tenant_id=tenant_id,
-            sequence_number=seq,
-            session_id=f"sess_{tenant_id}",
-            trace_id="control-plane",
-            prompt_hash=compute_sha256(""),
-            response_hash=compute_sha256(""),
-            hrs_score=0.0,
-            risk_tier="CONTROL_PLANE",
-            claims_count=0,
-            claims_summary=[],
-            correction_applied=False,
             event_type=f"AUTH_{action}",
             actor_identity_id=actor_id,
-            transaction_id=None,
-            decision="ALLOWED",
-            policy_reference="api_key_policy",
             reason=f"Credential lifecycle: {action}",
             event_payload=details,
-            prev_hash=prev_hash,
-            chain_hash=chain_hash,
-            created_at=now,
         )
-        session.add(rec)
 
 
 api_key_service = ApiKeyService()

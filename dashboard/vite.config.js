@@ -33,5 +33,6 @@ export default defineConfig({
     globals: true,
     environment: "jsdom",
     passWithNoTests: true,
+    include: ["src/**/*.{test,spec}.{js,jsx}"],
   },
 });

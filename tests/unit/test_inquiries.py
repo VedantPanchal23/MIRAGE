@@ -4,7 +4,6 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from gateway.main import create_app
-from shared.schemas.auth import AuthContext, Role
 
 
 @pytest.fixture

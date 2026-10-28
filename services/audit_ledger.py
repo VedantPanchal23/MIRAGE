@@ -124,8 +124,11 @@ class AuditLedgerService:
             )
             audit_res = await session.execute(latest_audit_stmt)
             latest_row = audit_res.first() if hasattr(audit_res, "first") else None
-            prev_hash = str(latest_row[0]) if latest_row and len(latest_row) > 0 and isinstance(latest_row[0], str) else GENESIS_ROOT_HASH
-            last_seq = int(latest_row[1]) if latest_row and len(latest_row) > 1 and isinstance(latest_row[1], int) else 0
+            prev_hash = GENESIS_ROOT_HASH
+            last_seq = 0
+            if latest_row and len(latest_row) >= 2:
+                prev_hash = str(latest_row[0]) if isinstance(latest_row[0], str) else GENESIS_ROOT_HASH
+                last_seq = int(latest_row[1]) if isinstance(latest_row[1], int) else 0
             new_seq = last_seq + 1
             if ledger_head_row is not None and not isinstance(getattr(ledger_head_row, "head_chain_hash", None), str):
                 ledger_head_row = None

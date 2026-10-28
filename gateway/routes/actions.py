@@ -85,6 +85,15 @@ async def batch_propose_endpoint(
     return await governor_service.propose_and_authorize_batch(auth, req)
 
 
+@router.get("/actions/stranded", response_model=list[StrandedActionInfo])
+async def list_stranded_actions_endpoint(
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    older_than_seconds: int = Query(default=60, ge=0),
+) -> list[StrandedActionInfo]:
+    """Find actions stranded in EXECUTING or EXECUTION_UNCERTAIN state after worker crash/restart."""
+    return await governor_service.list_stranded_actions(auth, older_than_seconds=older_than_seconds)
+
+
 @router.get("/actions/{action_id}")
 async def get_action_contract_endpoint(
     action_id: str, auth: Annotated[AuthContext, Depends(get_current_auth)]
@@ -134,15 +143,6 @@ async def execute_action_endpoint(
 ) -> ActionExecutionResult:
     """Execute an authorized action contract strictly through the Tool Proxy."""
     return await governor_service.execute_action(auth, req)
-
-
-@router.get("/actions/stranded", response_model=list[StrandedActionInfo])
-async def list_stranded_actions_endpoint(
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
-    older_than_seconds: int = Query(default=60, ge=0),
-) -> list[StrandedActionInfo]:
-    """Find actions stranded in EXECUTING or EXECUTION_UNCERTAIN state after worker crash/restart."""
-    return await governor_service.list_stranded_actions(auth, older_than_seconds=older_than_seconds)
 
 
 @router.post("/actions/{action_id}/reconcile", response_model=ActionExecutionResult)

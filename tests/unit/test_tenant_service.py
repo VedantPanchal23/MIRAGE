@@ -307,7 +307,7 @@ async def test_offboard_tenant_success(super_admin_auth: AuthContext) -> None:
     mock_res_audit = MagicMock()
     mock_res_audit.first.return_value = None
 
-    def mock_exec_side_effect(stmt, *args, **kwargs):
+    def mock_exec_side_effect(stmt, *_args, **_kwargs):
         if "api_credentials" in str(stmt).lower():
             return mock_res_creds
         return mock_res_audit

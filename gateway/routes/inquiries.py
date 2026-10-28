@@ -64,7 +64,9 @@ async def submit_inquiry(req: InquiryCreateRequest) -> InquiryResponse:
         use_case=req.use_case,
         status="PENDING",
         created_at=now.isoformat(),
-        confirmation_message="Thank you for reaching out. An enterprise assurance engineer will review your inquiry within 4 hours.",
+        confirmation_message=(
+            "Thank you for reaching out. An enterprise assurance engineer will review your inquiry within 4 hours."
+        ),
     )
 
 

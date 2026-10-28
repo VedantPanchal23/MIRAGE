@@ -24,14 +24,49 @@ from mirage_sdk import (
 
 
 def main() -> None:
-    api_key = os.environ.get("MIRAGE_API_KEY", "mirage_test_key_sample")
+    api_key = os.environ.get("MIRAGE_API_KEY")
     base_url = os.environ.get("MIRAGE_BASE_URL", "http://localhost:8000")
+
+    # If no valid API key is set in environment, auto-provision a local sandbox tenant
+    if not api_key or api_key == "mirage_test_key_sample":
+        print("[DX] No MIRAGE_API_KEY detected. Provisioning local sandbox developer tenant...")
+        try:
+            with MirageClient(api_key="bootstrap_temp", base_url=base_url) as boot_client:
+                tenant_res = boot_client.register_tenant({
+                    "name": "Local Dev Sandbox",
+                    "admin_email": f"developer_{uuid.uuid4().hex[:6]}@mirage.local",
+                    "tier": "developer",
+                })
+                api_key = tenant_res["api_key"]
+                print(f"[OK] Onboarded sandbox tenant '{tenant_res['tenant_id']}' with active API key.\n")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] Sandbox onboarding skipped ({exc}). Falling back to test key.")
+            api_key = api_key or "mirage_test_key_sample"
 
     with MirageClient(api_key=api_key, base_url=base_url) as client:
         tx_id = f"tx_{uuid.uuid4().hex[:12]}"
         order_id = "ord_45678"
 
-        print(f"1. Proposing action contract for transaction {tx_id}...")
+        print("1. Registering tool 'database.update_order_status' in Gate 3 registry...")
+        client.register_tool({
+            "name": "database.update_order_status",
+            "description": "Updates order fulfillment status in relational database",
+            "tool_type": "NATIVE",
+            "egress_type": "INTERNAL_ISOLATED",
+            "trust_level": "VERIFIED",
+            "required_capability": "orders:write",
+            "parameters_schema": {
+                "type": "object",
+                "properties": {
+                    "order_id": {"type": "string"},
+                    "status": {"type": "string"},
+                },
+                "required": ["order_id", "status"],
+            },
+            "active": True,
+        })
+
+        print(f"\n2. Proposing action contract for transaction {tx_id}...")
         proposal = ActionProposal(
             transaction_id=tx_id,
             tool_name="database.update_order_status",
@@ -70,24 +105,28 @@ def main() -> None:
             print(f"Action not permitted: {decision.reason}")
             return
 
-        print("\n2. Executing authorized action contract through Governed Tool Proxy...")
+        print("\n3. Executing authorized action contract through Governed Tool Proxy...")
         exec_result = client.execute_action(decision.action_id)
         print(f"   Execution State:   {exec_result.state}")
         print(f"   Observed Output:   {exec_result.observed_output}")
 
         # IMPORTANT: Epistemic Outcome Independence
         # Tool response HTTP 200 does not prove the database row was safely updated!
-        print("\n3. Performing independent Gate 5 Reality Verification...")
+        print("\n4. Performing independent Gate 5 Reality Verification...")
         # Simulate independent observation gathered from DB read replica / audit log:
         observation = IndependentObservation(
-            observer_identity="postgres_read_replica_probe",
-            observed_state={"order_id": order_id, "status": "COMPLETED"},
-            evidence_source="DIRECT_DATABASE_PROBE",
+            target_resource=f"orders:{order_id}",
+            observed_state={
+                f"orders:{order_id}.status": "COMPLETED",
+                "order_id": order_id,
+                "status": "COMPLETED",
+            },
         )
 
         outcome = client.verify_outcome(
             action_id=decision.action_id,
             request=OutcomeVerificationRequest(
+                transaction_id=tx_id,
                 action_id=decision.action_id,
                 expected_postconditions={"status": "COMPLETED"},
                 observation=observation,

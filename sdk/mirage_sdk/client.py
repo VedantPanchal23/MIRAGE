@@ -20,7 +20,7 @@ import asyncio
 import json
 import time
 from types import TracebackType
-from typing import Any, Self
+from typing import Any, Self, cast
 
 import httpx
 
@@ -40,7 +40,6 @@ from mirage_sdk.models import (
     ActionExecutionRequest,
     ActionExecutionResult,
     ActionProposal,
-    ActionReconciliationRequest,
     ActionState,
     ApprovalDecisionRequest,
     ApprovalResponse,
@@ -54,6 +53,7 @@ from mirage_sdk.models import (
     OutcomeVerificationContract,
     OutcomeVerificationRequest,
     StrandedActionInfo,
+    ToolResponse,
     VerificationRequest,
     VerificationResponse,
 )
@@ -67,7 +67,7 @@ def _extract_request_id(headers: httpx.Headers, body: Any) -> str | None:
     req_id = headers.get("X-Request-ID") or headers.get("x-request-id")
     if not req_id and isinstance(body, dict):
         req_id = body.get("request_id") or body.get("trace_id")
-    return req_id
+    return str(req_id) if req_id is not None else None
 
 
 def _handle_error_response(response: httpx.Response, action_id: str | None = None) -> None:
@@ -324,6 +324,16 @@ class MirageClient:
     # Gate 3: Action Assurance & Tool Governance
     # -------------------------------------------------------------------------
 
+    def register_tool(self, tool: dict[str, Any]) -> ToolResponse:
+        """Register or update a tool in Gate 3 tenant tool registry."""
+        data = self._request("POST", "/v1/tools", json_data=tool, is_mutating=True)
+        return ToolResponse.model_validate(data)
+
+    def list_tools(self) -> list[ToolResponse]:
+        """List all registered tools for the authenticated tenant."""
+        data = self._request("GET", "/v1/tools", is_mutating=False)
+        return [ToolResponse.model_validate(item) for item in data]
+
     def propose_action(
         self,
         proposal: ActionProposal | dict[str, Any],
@@ -377,16 +387,24 @@ class MirageClient:
     ) -> ActionExecutionResult:
         """Idempotently reconcile a stranded action to a terminal verified state."""
         state_str = resolution_state.value if isinstance(resolution_state, ActionState) else str(resolution_state)
-        req = ActionReconciliationRequest(
-            action_id=action_id,
-            resolution_state=ActionState(state_str),
-            rationale=rationale,
-            verified_evidence=verified_evidence or {},
-        )
+        resolution_map = {
+            "FAILED": "MARK_FAILED",
+            "COMPLETED": "MARK_COMPLETED",
+            "EXECUTION_UNCERTAIN": "MARK_UNCERTAIN",
+            "MARK_FAILED": "MARK_FAILED",
+            "MARK_COMPLETED": "MARK_COMPLETED",
+            "MARK_UNCERTAIN": "MARK_UNCERTAIN",
+        }
+        req_payload = {
+            "action_id": action_id,
+            "resolution": resolution_map.get(state_str, state_str),
+            "notes": rationale,
+            "observed_evidence": verified_evidence or {},
+        }
         data = self._request(
             "POST",
             f"/v1/actions/{action_id}/reconcile",
-            json_data=req.model_dump(mode="json"),
+            json_data=req_payload,
             is_mutating=True,
             action_id=action_id,
         )
@@ -512,11 +530,11 @@ class MirageClient:
 
     def get_billing_plans(self) -> list[dict[str, Any]]:
         """Fetch available commercial pricing catalog and tier entitlement specifications."""
-        return self._request("GET", "/v1/billing/plans", is_mutating=False)
+        return cast(list[dict[str, Any]], self._request("GET", "/v1/billing/plans", is_mutating=False))
 
     def get_subscription(self) -> dict[str, Any]:
         """Retrieve current tenant subscription tier, headroom, and budget utilization."""
-        return self._request("GET", "/v1/billing/subscription", is_mutating=False)
+        return cast(dict[str, Any], self._request("GET", "/v1/billing/subscription", is_mutating=False))
 
     # -------------------------------------------------------------------------
     # Inquiries & Tenant Self-Service Registration
@@ -524,11 +542,11 @@ class MirageClient:
 
     def create_inquiry(self, request: dict[str, Any]) -> dict[str, Any]:
         """Submit an enterprise sales inquiry, architecture review request, or custom SLA ticket."""
-        return self._request("POST", "/v1/inquiries", json_data=request, is_mutating=True)
+        return cast(dict[str, Any], self._request("POST", "/v1/inquiries", json_data=request, is_mutating=True))
 
     def register_tenant(self, request: dict[str, Any]) -> dict[str, Any]:
         """Self-service enterprise onboarding provisioning tenant, admin user, and production API key."""
-        return self._request("POST", "/v1/auth/register-tenant", json_data=request, is_mutating=True)
+        return cast(dict[str, Any], self._request("POST", "/v1/auth/register-tenant", json_data=request, is_mutating=True))
 
 
 # =============================================================================
@@ -703,6 +721,16 @@ class AsyncMirageClient:
     # Gate 3: Action Assurance & Tool Governance
     # -------------------------------------------------------------------------
 
+    async def register_tool(self, tool: dict[str, Any]) -> ToolResponse:
+        """Register or update a tool in Gate 3 tenant tool registry."""
+        data = await self._request("POST", "/v1/tools", json_data=tool, is_mutating=True)
+        return ToolResponse.model_validate(data)
+
+    async def list_tools(self) -> list[ToolResponse]:
+        """List all registered tools for the authenticated tenant."""
+        data = await self._request("GET", "/v1/tools", is_mutating=False)
+        return [ToolResponse.model_validate(item) for item in data]
+
     async def propose_action(
         self,
         proposal: ActionProposal | dict[str, Any],
@@ -753,16 +781,24 @@ class AsyncMirageClient:
     ) -> ActionExecutionResult:
         """Idempotently reconcile a stranded action to a terminal verified state."""
         state_str = resolution_state.value if isinstance(resolution_state, ActionState) else str(resolution_state)
-        req = ActionReconciliationRequest(
-            action_id=action_id,
-            resolution_state=ActionState(state_str),
-            rationale=rationale,
-            verified_evidence=verified_evidence or {},
-        )
+        resolution_map = {
+            "FAILED": "MARK_FAILED",
+            "COMPLETED": "MARK_COMPLETED",
+            "EXECUTION_UNCERTAIN": "MARK_UNCERTAIN",
+            "MARK_FAILED": "MARK_FAILED",
+            "MARK_COMPLETED": "MARK_COMPLETED",
+            "MARK_UNCERTAIN": "MARK_UNCERTAIN",
+        }
+        req_payload = {
+            "action_id": action_id,
+            "resolution": resolution_map.get(state_str, state_str),
+            "notes": rationale,
+            "observed_evidence": verified_evidence or {},
+        }
         data = await self._request(
             "POST",
             f"/v1/actions/{action_id}/reconcile",
-            json_data=req.model_dump(mode="json"),
+            json_data=req_payload,
             is_mutating=True,
             action_id=action_id,
         )
@@ -893,11 +929,11 @@ class AsyncMirageClient:
 
     async def get_billing_plans(self) -> list[dict[str, Any]]:
         """Fetch available commercial pricing catalog and tier entitlement specifications."""
-        return await self._request("GET", "/v1/billing/plans", is_mutating=False)
+        return cast(list[dict[str, Any]], await self._request("GET", "/v1/billing/plans", is_mutating=False))
 
     async def get_subscription(self) -> dict[str, Any]:
         """Retrieve current tenant subscription tier, headroom, and budget utilization."""
-        return await self._request("GET", "/v1/billing/subscription", is_mutating=False)
+        return cast(dict[str, Any], await self._request("GET", "/v1/billing/subscription", is_mutating=False))
 
     # -------------------------------------------------------------------------
     # Inquiries & Tenant Self-Service Registration
@@ -905,8 +941,8 @@ class AsyncMirageClient:
 
     async def create_inquiry(self, request: dict[str, Any]) -> dict[str, Any]:
         """Submit an enterprise sales inquiry, architecture review request, or custom SLA ticket."""
-        return await self._request("POST", "/v1/inquiries", json_data=request, is_mutating=True)
+        return cast(dict[str, Any], await self._request("POST", "/v1/inquiries", json_data=request, is_mutating=True))
 
     async def register_tenant(self, request: dict[str, Any]) -> dict[str, Any]:
         """Self-service enterprise onboarding provisioning tenant, admin user, and production API key."""
-        return await self._request("POST", "/v1/auth/register-tenant", json_data=request, is_mutating=True)
+        return cast(dict[str, Any], await self._request("POST", "/v1/auth/register-tenant", json_data=request, is_mutating=True))

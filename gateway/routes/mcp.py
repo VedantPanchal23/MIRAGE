@@ -1,10 +1,11 @@
 """API routes for Governed MCP (Model Context Protocol) Server Registry & Tools."""
 
-from typing import Annotated
+from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, status
 
 from gateway.middleware.auth import get_current_auth
+from mcp_server.server import MirageMCPServer
 from services.mcp_registry_service import MCPRegistryService
 from shared.schemas.auth import AuthContext
 from shared.schemas.mcp import (
@@ -17,6 +18,16 @@ from shared.schemas.mcp import (
 
 router = APIRouter(prefix="/v1/mcp", tags=["Governed MCP Integration"])
 mcp_registry_service = MCPRegistryService()
+_mcp_server = MirageMCPServer()
+
+
+@router.post("/rpc")
+async def mcp_json_rpc(
+    req: dict[str, Any],
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> dict[str, Any]:
+    """Execute MCP JSON-RPC 2.0 tool invocation or discovery (Claude Desktop, Cursor, Antigravity)."""
+    return await _mcp_server.handle_rpc_request(req, auth=auth)
 
 
 @router.post("/servers", response_model=MCPServerResponse, status_code=status.HTTP_201_CREATED)

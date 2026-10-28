@@ -1,6 +1,8 @@
 """Model Context Protocol (MCP) server exposing MIRAGE factual verification tools."""
 
+import asyncio
 import json
+import sys
 from typing import Any
 
 from shared.logging import get_logger
@@ -308,3 +310,42 @@ class MirageMCPServer:
             "id": msg_id,
             "error": {"code": -32601, "message": f"Method '{method}' not supported"},
         }
+
+
+def stdio_server_loop(tenant_id: str = "mcp_client") -> None:
+    """Standard I/O JSON-RPC 2.0 loop for Claude Desktop, Cursor, and external MCP clients."""
+    server = MirageMCPServer()
+
+    for line in sys.stdin:
+        line_str = line.strip()
+        if not line_str:
+            continue
+        try:
+            req = json.loads(line_str)
+            if "params" in req and isinstance(req["params"], dict) and "arguments" in req["params"]:
+                req["params"]["arguments"].setdefault("tenant_id", tenant_id)
+            resp = asyncio.run(server.handle_rpc_request(req))
+            sys.stdout.write(json.dumps(resp) + "\n")
+            sys.stdout.flush()
+        except Exception as exc:
+            err = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": str(exc)}}
+            sys.stdout.write(json.dumps(err) + "\n")
+            sys.stdout.flush()
+
+
+def main() -> None:
+    """CLI entry point for running Mirage MCP server as an external tool."""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="MIRAGE Model Context Protocol (MCP) Server")
+    parser.add_argument("--tenant-id", default="mcp_client", help="Tenant ID for assurance policy attribution")
+    args = parser.parse_args()
+    try:
+        stdio_server_loop(tenant_id=args.tenant_id)
+    except (KeyboardInterrupt, BrokenPipeError):
+        pass
+
+
+if __name__ == "__main__":
+    main()
+

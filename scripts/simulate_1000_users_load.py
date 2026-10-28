@@ -9,6 +9,7 @@ import asyncio
 import statistics
 import time
 from typing import Any
+
 import httpx
 
 GATEWAY_BASE_URL = "http://localhost:8000"
@@ -109,7 +110,7 @@ async def execute_user_request(
 async def run_load_test() -> None:
     """Coordinate 1,000 asynchronous concurrent user requests."""
     print("=" * 80)
-    print(f"MIRAGE 3.0 — 1,000 CONCURRENT USERS LOAD SIMULATION")
+    print("MIRAGE 3.0 — 1,000 CONCURRENT USERS LOAD SIMULATION")
     print(f"Target Gateway: {GATEWAY_BASE_URL}")
     print(f"Total Users: {TOTAL_CONCURRENT_USERS} across {len(TENANT_IDS)} enterprise tenants")
     print(f"Concurrency Pool: {CONCURRENCY_LIMIT} simultaneous workers")

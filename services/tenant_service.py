@@ -16,7 +16,6 @@ from db import session as db_session
 from db.models import (
     ActorIdentity,
     ApiCredential,
-    AuditLogRecord,
     Tenant,
     TenantAuditLedger,
     TenantBudgetRecord,

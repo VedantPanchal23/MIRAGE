@@ -10,7 +10,7 @@ from db import session as db_session
 from db.models import Tenant, TenantBudgetRecord
 from services.audit_ledger import AuditLedgerService
 from shared.logging import get_logger
-from shared.schemas.auth import AuthContext
+from shared.schemas.auth import AuthContext, Role
 from shared.schemas.billing import (
     PlanFeature,
     RazorpayOrderCreateRequest,

@@ -9,6 +9,7 @@ Demonstrates:
 
 import os
 import sys
+import uuid
 
 from mirage_sdk import (
     MCPServerCreateRequest,
@@ -20,8 +21,24 @@ from mirage_sdk import (
 
 
 def main() -> None:
-    api_key = os.environ.get("MIRAGE_API_KEY", "mirage_test_key_sample")
+    api_key = os.environ.get("MIRAGE_API_KEY")
     base_url = os.environ.get("MIRAGE_BASE_URL", "http://localhost:8000")
+
+    # If no valid API key is set in environment, auto-provision a local sandbox tenant
+    if not api_key or api_key == "mirage_test_key_sample":
+        print("[DX] No MIRAGE_API_KEY detected. Provisioning local sandbox developer tenant...")
+        try:
+            with MirageClient(api_key="bootstrap_temp", base_url=base_url) as boot_client:
+                tenant_res = boot_client.register_tenant({
+                    "name": "Local Dev Sandbox",
+                    "admin_email": f"developer_{uuid.uuid4().hex[:6]}@mirage.local",
+                    "tier": "developer",
+                })
+                api_key = tenant_res["api_key"]
+                print(f"[OK] Onboarded sandbox tenant '{tenant_res['tenant_id']}' with active API key.\n")
+        except Exception as exc:  # noqa: BLE001
+            print(f"[WARN] Sandbox onboarding skipped ({exc}). Falling back to test key.")
+            api_key = api_key or "mirage_test_key_sample"
 
     with MirageClient(api_key=api_key, base_url=base_url) as client:
         print("1. Registering external MCP server...")

@@ -408,6 +408,7 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - AUDIT_ANCHOR_DIR=/app/data/audit_anchors
       - NOTARY_KEYS_JSON=${NOTARY_KEYS_JSON:-}
+      - MPLCONFIGDIR=/tmp
     depends_on:
       migration:
         condition: service_completed_successfully
@@ -484,6 +485,7 @@ services:
       - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
       - AUDIT_ANCHOR_DIR=/app/data/audit_anchors
       - NOTARY_KEYS_JSON=${NOTARY_KEYS_JSON:-}
+      - MPLCONFIGDIR=/tmp
     depends_on:
       migration:
         condition: service_completed_successfully

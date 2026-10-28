@@ -4,11 +4,14 @@ Models conform strictly to MIRAGE 3.0 gateway API contracts while tolerating
 newly added server fields (extra="ignore") to maintain backwards compatibility.
 """
 
-from datetime import datetime
+import hashlib
+import json
+import uuid
+from datetime import UTC, datetime
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 # -----------------------------------------------------------------------------
 # Enums
@@ -409,14 +412,34 @@ class IndependentObservation(BaseModel):
 
     model_config = ConfigDict(extra="ignore")
 
-    observation_id: str
-    source_id: str
-    target_resource: str
-    observed_at: datetime
+    observation_id: str = Field(default_factory=lambda: f"obs_{uuid.uuid4().hex[:12]}")
+    source_id: str = "DATABASE"
+    target_resource: str = ""
+    observed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     observed_state: dict[str, Any] = Field(default_factory=dict)
-    evidence_digest: str
+    evidence_digest: str = ""
     signature: str | None = None
     epistemic_confidence: float = 1.0
+
+    @model_validator(mode="before")
+    @classmethod
+    def _populate_defaults_and_digest(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            if not data.get("observation_id"):
+                data["observation_id"] = f"obs_{uuid.uuid4().hex[:12]}"
+            if not data.get("source_id"):
+                data["source_id"] = "DATABASE"
+            if not data.get("observed_at"):
+                data["observed_at"] = datetime.now(UTC)
+            if not data.get("evidence_digest") and data.get("observed_state"):
+                canonical_bytes = json.dumps(
+                    data["observed_state"],
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+                data["evidence_digest"] = hashlib.sha256(canonical_bytes).hexdigest()
+        return data
 
 
 class OutcomeVerificationRequest(BaseModel):
@@ -559,3 +582,21 @@ class MCPToolDiscoveryResult(BaseModel):
     tools_discovered_count: int = 0
     tools_registered: list[str] = Field(default_factory=list)
     tools: list[MCPDiscoveredTool] = Field(default_factory=list)
+
+
+class ToolResponse(BaseModel):
+    """Public representation of registered tool in Gate 3 tenant registry."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    id: str
+    tenant_id: str
+    name: str
+    description: str = ""
+    tool_type: str
+    egress_type: str
+    trust_level: str
+    required_capability: str
+    parameters_schema: dict[str, Any] = Field(default_factory=dict)
+    active: bool = True
+    created_at: str

@@ -826,6 +826,12 @@ class ActionGovernorService:
                             "Execution blocked."
                         ),
                     )
+            elif (
+                "*" in auth.capabilities
+                or contract.required_capability in auth.capabilities
+                or auth.role in (Role.SUPER_ADMIN, Role.TENANT_ADMIN)
+            ):
+                pass
             else:
                 raise HTTPException(
                     status_code=status.HTTP_403_FORBIDDEN,
@@ -1550,7 +1556,7 @@ class ActionGovernorService:
                         else {**(matching_cap.resource_scope or {}), **cap_scope},
                         max_autonomy_level=cap_autonomy,
                     )
-            elif not granted_capabilities:
+            elif matching_cap is None:
                 return ActionAuthorizationDecision(
                     action_id=f"act_err_{uuid.uuid4().hex[:8]}",
                     decision=Decision.DENY,

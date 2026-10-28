@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 class SubscriptionTier(StrEnum):
     """Authoritative commercial subscription tiers."""
+
     DEVELOPER = "developer"
     BUSINESS = "business"
     ENTERPRISE = "enterprise"
@@ -15,6 +16,7 @@ class SubscriptionTier(StrEnum):
 
 class SubscriptionStatus(StrEnum):
     """Lifecycle status of a tenant's commercial subscription."""
+
     ACTIVE = "active"
     TRIALING = "trialing"
     PAST_DUE = "past_due"
@@ -23,6 +25,7 @@ class SubscriptionStatus(StrEnum):
 
 class PlanFeature(BaseModel):
     """Feature item included in a plan."""
+
     title: str
     description: str
     included: bool = True
@@ -30,6 +33,7 @@ class PlanFeature(BaseModel):
 
 class SubscriptionPlanInfo(BaseModel):
     """Public specification of a commercial subscription plan."""
+
     tier: SubscriptionTier
     name: str
     tagline: str
@@ -45,6 +49,7 @@ class SubscriptionPlanInfo(BaseModel):
 
 class TenantSubscriptionResponse(BaseModel):
     """Active subscription status and usage for a tenant."""
+
     tenant_id: str
     current_tier: SubscriptionTier
     status: SubscriptionStatus
@@ -59,6 +64,7 @@ class TenantSubscriptionResponse(BaseModel):
 
 class SubscriptionUpgradeRequest(BaseModel):
     """Request to subscribe or transition subscription tiers."""
+
     target_tier: SubscriptionTier
     payment_method_id: str | None = Field(
         default=None,
@@ -72,6 +78,7 @@ class SubscriptionUpgradeRequest(BaseModel):
 
 class SubscriptionUpgradeResponse(BaseModel):
     """Result of a subscription change."""
+
     success: bool
     tenant_id: str
     previous_tier: SubscriptionTier
@@ -84,6 +91,7 @@ class SubscriptionUpgradeResponse(BaseModel):
 
 class StripeWebhookRequest(BaseModel):
     """Inbound webhook event from payment processor."""
+
     event_id: str
     event_type: str
     tenant_id: str | None = None
@@ -92,12 +100,14 @@ class StripeWebhookRequest(BaseModel):
 
 class RazorpayOrderCreateRequest(BaseModel):
     """Request to generate a Razorpay Indian Rupee order for UPI/Netbanking/Cards."""
+
     tier: SubscriptionTier
     currency: str = Field(default="INR", description="Three-letter currency code (INR)")
 
 
 class RazorpayOrderResponse(BaseModel):
     """Authoritative Razorpay order details for client-side checkout integration."""
+
     order_id: str
     amount_paise: int
     amount_inr: float
@@ -110,6 +120,7 @@ class RazorpayOrderResponse(BaseModel):
 
 class RazorpayPaymentVerifyRequest(BaseModel):
     """Payload sent by client following successful Razorpay checkout."""
+
     razorpay_order_id: str
     razorpay_payment_id: str
     razorpay_signature: str
@@ -118,6 +129,7 @@ class RazorpayPaymentVerifyRequest(BaseModel):
 
 class RazorpayPaymentVerifyResponse(BaseModel):
     """Result of verifying a Razorpay transaction."""
+
     success: bool
     tenant_id: str
     payment_id: str

@@ -124,8 +124,7 @@ async def run_load_test() -> None:
 
     async with httpx.AsyncClient(limits=limits) as client:
         tasks = [
-            execute_user_request(client, user_id=i, semaphore=semaphore)
-            for i in range(1, TOTAL_CONCURRENT_USERS + 1)
+            execute_user_request(client, user_id=i, semaphore=semaphore) for i in range(1, TOTAL_CONCURRENT_USERS + 1)
         ]
         results = await asyncio.gather(*tasks)
 
@@ -150,7 +149,7 @@ async def run_load_test() -> None:
     print("EXECUTION BENCHMARK RESULTS")
     print("=" * 80)
     print(f"Total Simulated Requests : {len(results):,}")
-    print(f"Successful Requests (2xx): {len(successes):,} ({(len(successes)/len(results))*100:.2f}%)")
+    print(f"Successful Requests (2xx): {len(successes):,} ({(len(successes) / len(results)) * 100:.2f}%)")
     print(f"Failed Requests (non-2xx): {len(failures):,}")
     print(f"Total Benchmark Time     : {total_wall_time:.2f} seconds")
     print(f"Sustained Throughput     : {rps:.2f} Requests / Second (RPS)")

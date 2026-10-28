@@ -163,12 +163,12 @@ def run_evaluation() -> bool:
     for _, sc in enumerate(test_scenarios, 1):
         print(f"{C_BOLD}{C_BLUE}--- [{sc['level']}] ---{C_RESET}")
         print(f"Provider: {C_BOLD}{sc['provider'].upper()}{C_RESET} | Model: {C_BOLD}{sc['model']}{C_RESET}")
-        print(f"Prompt: \"{sc['prompt'][:80]}...\"")
+        print(f'Prompt: "{sc["prompt"][:80]}..."')
 
         # 1. Fetch real LLM completion
         try:
             completion = query_llm(sc["provider"], sc["model"], sc["prompt"])
-            print(f"Real Model Completion: \"{completion[:100]}...\"")
+            print(f'Real Model Completion: "{completion[:100]}..."')
         except Exception as e:
             print(f"{C_RED}Failed to fetch LLM completion: {e}{C_RESET}")
             all_passed = False
@@ -231,7 +231,7 @@ def run_evaluation() -> bool:
             assert prop_resp.status_code == 200
             p_data = prop_resp.json()
             decision = p_data["decision"]
-            score = p_data.get('risk_score', 'N/A')
+            score = p_data.get("risk_score", "N/A")
             print(f"Gate 3 Action Proposal Decision: {C_BOLD}{decision}{C_RESET} | Risk Score: {score}")
             # Large financial impact should be blocked or escalated to HITL
             if decision in ["DENY", "REQUIRE_APPROVAL"]:
@@ -252,7 +252,7 @@ def run_evaluation() -> bool:
             tier = v_data["hrs_result"]["tier"]
             rav = v_data["claims"][0]["rav_score"] if v_data.get("claims") else 0.0
 
-            chunks_cnt = len(v_data['claims'][0]['evidence_chunks']) if v_data.get('claims') else 0
+            chunks_cnt = len(v_data["claims"][0]["evidence_chunks"]) if v_data.get("claims") else 0
             print("MIRAGE Verification Result:")
             print(f"  - Overall HRS Risk Score: {C_BOLD}{hrs:.4f}{C_RESET} ({tier})")
             print(f"  - RAV Factuality Risk: {C_BOLD}{rav:.2f}{C_RESET}")

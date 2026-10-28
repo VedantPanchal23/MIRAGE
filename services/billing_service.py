@@ -176,17 +176,11 @@ class BillingService:
         """Retrieve current subscription tier, budget utilization, and available upgrade plans."""
         async with db_session.get_tenant_session(auth.tenant_id) as session:
             # Query Tenant
-            tenant = (
-                await session.execute(
-                    select(Tenant).where(Tenant.id == auth.tenant_id)
-                )
-            ).scalar_one_or_none()
+            tenant = (await session.execute(select(Tenant).where(Tenant.id == auth.tenant_id))).scalar_one_or_none()
 
             # Query Budget
             budget = (
-                await session.execute(
-                    select(TenantBudgetRecord).where(TenantBudgetRecord.tenant_id == auth.tenant_id)
-                )
+                await session.execute(select(TenantBudgetRecord).where(TenantBudgetRecord.tenant_id == auth.tenant_id))
             ).scalar_one_or_none()
 
             tier_str = (tenant.tier if tenant and tenant.tier else "developer").lower()
@@ -226,16 +220,10 @@ class BillingService:
 
         async with db_session.get_tenant_session(auth.tenant_id) as session:
             # 1. Update Tenant record
-            tenant = (
-                await session.execute(
-                    select(Tenant).where(Tenant.id == auth.tenant_id)
-                )
-            ).scalar_one_or_none()
+            tenant = (await session.execute(select(Tenant).where(Tenant.id == auth.tenant_id))).scalar_one_or_none()
 
             previous_tier = (
-                SubscriptionTier(tenant.tier.lower())
-                if tenant and tenant.tier
-                else SubscriptionTier.DEVELOPER
+                SubscriptionTier(tenant.tier.lower()) if tenant and tenant.tier else SubscriptionTier.DEVELOPER
             )
 
             if tenant:
@@ -244,9 +232,7 @@ class BillingService:
 
             # 2. Adjust Budget Record
             budget = (
-                await session.execute(
-                    select(TenantBudgetRecord).where(TenantBudgetRecord.tenant_id == auth.tenant_id)
-                )
+                await session.execute(select(TenantBudgetRecord).where(TenantBudgetRecord.tenant_id == auth.tenant_id))
             ).scalar_one_or_none()
 
             new_budget_micros = int(target_spec["budget_usd"] * 1_000_000)
@@ -302,9 +288,7 @@ class BillingService:
             f"${target_spec['budget_usd']:,.2f} budget headroom."
         )
         checkout_link = (
-            f"https://checkout.mirage.ai/session/{uuid.uuid4().hex[:12]}"
-            if target_spec["price_usd"] > 0
-            else None
+            f"https://checkout.mirage.ai/session/{uuid.uuid4().hex[:12]}" if target_spec["price_usd"] > 0 else None
         )
 
         return SubscriptionUpgradeResponse(
@@ -318,9 +302,7 @@ class BillingService:
             checkout_url=checkout_link,
         )
 
-    async def create_razorpay_order(
-        self, auth: AuthContext, req: RazorpayOrderCreateRequest
-    ) -> RazorpayOrderResponse:
+    async def create_razorpay_order(self, auth: AuthContext, req: RazorpayOrderCreateRequest) -> RazorpayOrderResponse:
         """Create a Razorpay order in Indian Rupees for UPI, Netbanking, Cards, and Wallets."""
         target_spec = TIER_SPECS.get(req.tier)
         if not target_spec:
@@ -393,10 +375,9 @@ class BillingService:
             tier=req.tier.value,
         )
 
-        inr_price = target_spec.get('price_inr', 0)
+        inr_price = target_spec.get("price_inr", 0)
         verify_msg = (
-            f"Razorpay payment verified successfully. "
-            f"Active tier: {target_spec['name']} ({inr_price:,.2f} INR/mo)."
+            f"Razorpay payment verified successfully. Active tier: {target_spec['name']} ({inr_price:,.2f} INR/mo)."
         )
         return RazorpayPaymentVerifyResponse(
             success=True,

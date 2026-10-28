@@ -381,4 +381,3 @@ async def test_register_tenant_success() -> None:
         assert ApiCredential in types_added
         assert TenantBudgetRecord in types_added
         assert TenantAuditLedger in types_added
-

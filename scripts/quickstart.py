@@ -197,8 +197,10 @@ def verify_gate3_and_gate5(client: httpx.Client, api_key: str) -> bool:
             )
             if r_out.status_code in (200, 201):
                 out_data = r_out.json()
-                print(f"  [PASS] Gate 5 Reality Verification: Status={out_data.get('outcome_status')} "
-                      f"(Confidence: {out_data.get('epistemic_confidence', 0)*100:.1f}%)")
+                print(
+                    f"  [PASS] Gate 5 Reality Verification: Status={out_data.get('outcome_status')} "
+                    f"(Confidence: {out_data.get('epistemic_confidence', 0) * 100:.1f}%)"
+                )
         return True
     except Exception as exc:
         print(f"  [FAIL] Gate 3 / Gate 5 validation exception: {exc}")

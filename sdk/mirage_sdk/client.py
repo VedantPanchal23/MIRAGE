@@ -546,7 +546,9 @@ class MirageClient:
 
     def register_tenant(self, request: dict[str, Any]) -> dict[str, Any]:
         """Self-service enterprise onboarding provisioning tenant, admin user, and production API key."""
-        return cast(dict[str, Any], self._request("POST", "/v1/auth/register-tenant", json_data=request, is_mutating=True))
+        return cast(
+            dict[str, Any], self._request("POST", "/v1/auth/register-tenant", json_data=request, is_mutating=True)
+        )
 
 
 # =============================================================================
@@ -945,4 +947,6 @@ class AsyncMirageClient:
 
     async def register_tenant(self, request: dict[str, Any]) -> dict[str, Any]:
         """Self-service enterprise onboarding provisioning tenant, admin user, and production API key."""
-        return cast(dict[str, Any], await self._request("POST", "/v1/auth/register-tenant", json_data=request, is_mutating=True))
+        return cast(
+            dict[str, Any], await self._request("POST", "/v1/auth/register-tenant", json_data=request, is_mutating=True)
+        )

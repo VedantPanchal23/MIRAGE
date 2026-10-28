@@ -81,9 +81,11 @@ class WebhookService:
     async def list_webhooks(self, auth: AuthContext) -> WebhookListResponse:
         """List registered webhooks under tenant isolation."""
         async with db_session.get_tenant_session(auth.tenant_id) as session:
-            stmt = select(WebhookSubscriptionRecord).where(
-                WebhookSubscriptionRecord.tenant_id == auth.tenant_id
-            ).order_by(WebhookSubscriptionRecord.created_at.desc())
+            stmt = (
+                select(WebhookSubscriptionRecord)
+                .where(WebhookSubscriptionRecord.tenant_id == auth.tenant_id)
+                .order_by(WebhookSubscriptionRecord.created_at.desc())
+            )
             res = await session.execute(stmt)
             records = res.scalars().all()
 

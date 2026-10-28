@@ -29,11 +29,13 @@ def main() -> None:
         print("[DX] No MIRAGE_API_KEY detected. Provisioning local sandbox developer tenant...")
         try:
             with MirageClient(api_key="bootstrap_temp", base_url=base_url) as boot_client:
-                tenant_res = boot_client.register_tenant({
-                    "name": "Local Dev Sandbox",
-                    "admin_email": f"developer_{uuid.uuid4().hex[:6]}@mirage.local",
-                    "tier": "developer",
-                })
+                tenant_res = boot_client.register_tenant(
+                    {
+                        "name": "Local Dev Sandbox",
+                        "admin_email": f"developer_{uuid.uuid4().hex[:6]}@mirage.local",
+                        "tier": "developer",
+                    }
+                )
                 api_key = tenant_res["api_key"]
                 print(f"[OK] Onboarded sandbox tenant '{tenant_res['tenant_id']}' with active API key.\n")
         except Exception as exc:  # noqa: BLE001

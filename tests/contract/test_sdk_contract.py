@@ -613,14 +613,16 @@ class TestAsyncClientEquivalency:
             assert business_plan["price_dollars_monthly"] == 29.0
             assert business_plan["price_inr_monthly"] == 1999.0
 
-            inquiry = await client.create_inquiry({
-                "name": "Jane Doe",
-                "email": "jane@startup.io",
-                "company": "Startup AI",
-                "team_size": "1-10",
-                "use_case": "Gate 1 Guardrails",
-                "message": "Testing async client inquiry submission.",
-            })
+            inquiry = await client.create_inquiry(
+                {
+                    "name": "Jane Doe",
+                    "email": "jane@startup.io",
+                    "company": "Startup AI",
+                    "team_size": "1-10",
+                    "use_case": "Gate 1 Guardrails",
+                    "message": "Testing async client inquiry submission.",
+                }
+            )
             assert isinstance(inquiry, dict)
             assert inquiry["id"].startswith("inq_")
             assert inquiry["name"] == "Jane Doe"
@@ -678,4 +680,3 @@ class TestBillingAndInquiriesContract:
             assert res["email"] == "alex@genentech-ai.org"
             assert res["status"] == "PENDING"
             assert "4 hours" in res["confirmation_message"]
-

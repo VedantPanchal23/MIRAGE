@@ -122,8 +122,10 @@ async def test_upgrade_subscription_success(tenant_admin_auth: AuthContext) -> N
 
     req = SubscriptionUpgradeRequest(target_tier=SubscriptionTier.ENTERPRISE)
 
-    with patch("db.session.get_tenant_session") as mock_get_sess, \
-         patch("services.audit_ledger.AuditLedgerService.append_entry", new_callable=AsyncMock) as mock_append_entry:
+    with (
+        patch("db.session.get_tenant_session") as mock_get_sess,
+        patch("services.audit_ledger.AuditLedgerService.append_entry", new_callable=AsyncMock) as mock_append_entry,
+    ):
         mock_get_sess.return_value.__aenter__.return_value = mock_session
 
         resp = await service.upgrade_subscription(auth=tenant_admin_auth, req=req)
@@ -178,9 +180,11 @@ async def test_verify_razorpay_payment(tenant_admin_auth: AuthContext) -> None:
         tier=SubscriptionTier.BUSINESS,
     )
 
-    with patch.object(service, "upgrade_subscription", new_callable=AsyncMock) as mock_upgrade, \
-         patch("db.session.get_tenant_session") as mock_get_sess, \
-         patch("services.audit_ledger.AuditLedgerService.append_entry", new_callable=AsyncMock) as mock_append:
+    with (
+        patch.object(service, "upgrade_subscription", new_callable=AsyncMock) as mock_upgrade,
+        patch("db.session.get_tenant_session") as mock_get_sess,
+        patch("services.audit_ledger.AuditLedgerService.append_entry", new_callable=AsyncMock) as mock_append,
+    ):
         mock_upgrade.return_value = MagicMock(new_budget_ceiling_usd=150.0)
         mock_session = AsyncMock()
         mock_get_sess.return_value.__aenter__.return_value = mock_session

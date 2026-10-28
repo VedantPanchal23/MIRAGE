@@ -109,4 +109,3 @@ class TenantRegistrationResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     created_at: datetime
-

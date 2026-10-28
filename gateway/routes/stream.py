@@ -14,15 +14,18 @@ Implements Technical Architecture Document §3.4 & §7, and Security & Access Do
 import asyncio
 import json
 import uuid
+from collections.abc import AsyncGenerator
+from typing import Annotated
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect, status
+from fastapi.responses import StreamingResponse
 
-from gateway.middleware.auth import decode_access_token
+from gateway.middleware.auth import decode_access_token, get_current_auth
 from models.flan_t5.decomposer import AtomicClaimDecomposer
 from services.output_assurance import output_assurance_service
 from shared.logging import get_logger
 from shared.schemas import VerificationRequest
-from shared.schemas.auth import ROLE_PERMISSIONS, Permission
+from shared.schemas.auth import ROLE_PERMISSIONS, AuthContext, Permission
 from workers.orchestrator import VerificationOrchestrator
 
 router = APIRouter(prefix="/v1", tags=["Streaming"])
@@ -352,3 +355,66 @@ async def websocket_verification_stream(websocket: WebSocket) -> None:
             await websocket.close()
         except Exception:
             pass
+
+
+@router.post("/verify/stream")
+async def sse_verification_stream(
+    request: VerificationRequest,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> StreamingResponse:
+    """Stream progressive claim-by-claim verification events over Server-Sent Events (SSE)."""
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        trace_id = uuid.uuid4().hex
+        # Initial event: connected
+        yield f"event: connected\ndata: {json.dumps({'trace_id': trace_id, 'tenant_id': auth.tenant_id})}\n\n"
+
+        # Execute claims decomposition
+        claims = _decomposer.decompose(request.response)
+        yield f"event: claims_extracted\ndata: {json.dumps({'trace_id': trace_id, 'claims_count': len(claims)})}\n\n"
+
+        # Verification through orchestrator
+        req_with_tenant = request.model_copy(update={"tenant_id": auth.tenant_id})
+        result = await _orchestrator.verify_request(req_with_tenant)
+
+        # Emit claim-by-claim evaluation
+        for c in result.claims:
+            claim_payload = {
+                "claim_id": c.claim.claim_id,
+                "text": c.claim.text,
+                "status": c.status.value,
+                "risk_score": c.risk_score,
+                "attribution": {
+                    "rav": c.rav_score,
+                    "scs": c.scs_score,
+                    "nli": c.nli_score,
+                    "ics": c.ics_score,
+                },
+            }
+            yield f"event: claim_verified\ndata: {json.dumps(claim_payload)}\n\n"
+
+        # Final completion event
+        complete_payload = {
+            "trace_id": trace_id,
+            "request_id": result.request_id,
+            "verified_response": result.verified_response,
+            "hrs_score": result.hrs_result.hrs,
+            "risk_tier": result.hrs_result.tier.value,
+            "conformal_interval": {
+                "lower": result.hrs_result.conformal_interval.lower,
+                "upper": result.hrs_result.conformal_interval.upper,
+            },
+            "claims_count": result.hrs_result.claims_count,
+            "contradicted_claims_count": result.hrs_result.contradicted_claims_count,
+        }
+        yield f"event: verification_complete\ndata: {json.dumps(complete_payload)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )

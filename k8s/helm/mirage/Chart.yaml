@@ -1,0 +1,15 @@
+apiVersion: v2
+name: mirage
+description: Production Helm chart for MIRAGE 3.0 AI Execution Assurance Platform
+type: application
+version: 3.0.0
+appVersion: "3.0.0"
+keywords:
+  - ai-assurance
+  - security
+  - governance
+  - execution-assurance
+  - reality-verification
+maintainers:
+  - name: MIRAGE Core Engineering Team
+    email: engineering@mirage.ai

@@ -330,13 +330,13 @@ class TestMigrationPreflightAutomation:
     """Validate migration preflight detection on clean and configured databases."""
 
     def test_preflight_detects_target_head(self, tmp_path: Path) -> None:
-        """Preflight identifies Alembic target head as 023_governed_mcp_servers."""
+        """Preflight identifies Alembic target head as 025_webhooks_table."""
         sqlite_file = tmp_path / "preflight_test.db"
         report = check_database_migration_status(database_url=f"sqlite:///{sqlite_file}")
-        assert report["target_head_revision"] == "023_governed_mcp_servers"
+        assert report["target_head_revision"] == "025_webhooks_table"
         assert report["connected"] is True
         assert report["status"] == "FRESH_DATABASE_PENDING_MIGRATION"
-        assert len(report["pending_revisions"]) == 23
+        assert len(report["pending_revisions"]) == 25
 
 
 # =============================================================================

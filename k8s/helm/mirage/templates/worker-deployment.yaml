@@ -1,0 +1,56 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "mirage.fullname" . }}-worker
+  labels:
+    {{- include "mirage.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  replicas: {{ .Values.worker.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "mirage.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+  template:
+    metadata:
+      labels:
+        {{- include "mirage.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: worker
+    spec:
+      securityContext:
+        {{- toYaml .Values.worker.podSecurityContext | nindent 8 }}
+      containers:
+        - name: worker
+          image: "{{ .Values.worker.image.repository }}:{{ .Values.worker.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.worker.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.worker.securityContext | nindent 12 }}
+          env:
+            - name: ENVIRONMENT
+              value: {{ .Values.global.environment | quote }}
+            - name: DATABASE_URL
+              value: "postgresql://postgres:$(POSTGRES_PASSWORD)@{{ .Values.config.postgresHost }}:{{ .Values.config.postgresPort }}/{{ .Values.config.postgresDb }}"
+            - name: REDIS_URL
+              value: "redis://{{ .Values.config.redisHost }}:{{ .Values.config.redisPort }}/0"
+            - name: CELERY_BROKER_URL
+              value: "amqp://guest:$(RABBITMQ_PASSWORD)@{{ .Values.config.rabbitmqHost }}:{{ .Values.config.rabbitmqPort }}//"
+            - name: CELERY_RESULT_BACKEND
+              value: "redis://{{ .Values.config.redisHost }}:{{ .Values.config.redisPort }}/1"
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecretName | default (printf "%s-secrets" (include "mirage.fullname" .)) }}
+                  key: postgres-password
+            - name: RABBITMQ_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.secrets.existingSecretName | default (printf "%s-secrets" (include "mirage.fullname" .)) }}
+                  key: rabbitmq-password
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            {{- toYaml .Values.worker.resources | nindent 12 }}
+      volumes:
+        - name: tmp
+          emptyDir: {}

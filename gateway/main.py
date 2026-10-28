@@ -44,6 +44,7 @@ from gateway.routes.sessions import router as sessions_router
 from gateway.routes.stream import router as stream_router
 from gateway.routes.transactions import router as transactions_router
 from gateway.routes.verify import router as verify_router
+from gateway.routes.webhooks import router as webhooks_router
 from shared.config import EnvironmentType, get_settings
 from shared.logging import configure_logging, get_logger
 from shared.telemetry import export_metrics, record_request_metric
@@ -189,6 +190,7 @@ def create_app() -> FastAPI:
     app.include_router(billing_router)
     app.include_router(mcp_router)
     app.include_router(inquiries_router)
+    app.include_router(webhooks_router)
 
     # 7. Global Error Handlers
     @app.exception_handler(StarletteHTTPException)

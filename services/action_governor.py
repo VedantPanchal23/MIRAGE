@@ -30,6 +30,7 @@ from services.agent_governance import agent_governance_service
 from services.concurrency_service import canonicalize_resource_uri, concurrency_service
 from services.delegation_service import delegation_service
 from services.mcp_client import GovernedMCPClient, MCPExecutionUncertainError
+from services.webhook_service import webhook_service
 from shared.schemas.action import (
     ActionAuthorizationDecision,
     ActionBatchProposal,
@@ -1826,6 +1827,32 @@ class ActionGovernorService:
                 },
             )
             await session.flush()
+
+            if requires_human_approval:
+                await webhook_service.dispatch_event(
+                    tenant_id=auth.tenant_id,
+                    event_type="ACTION_AWAITING_APPROVAL",
+                    payload={
+                        "action_id": action_id,
+                        "transaction_id": req.transaction_id,
+                        "tool_name": tool.name,
+                        "risk_score": single_action_risk,
+                        "approval_id": approval_id,
+                        "reason": decision_reason,
+                    },
+                )
+            elif final_decision in (Decision.BLOCK, Decision.DENY):
+                await webhook_service.dispatch_event(
+                    tenant_id=auth.tenant_id,
+                    event_type="ACTION_BLOCKED",
+                    payload={
+                        "action_id": action_id,
+                        "transaction_id": req.transaction_id,
+                        "tool_name": tool.name,
+                        "risk_score": single_action_risk,
+                        "reason": decision_reason,
+                    },
+                )
 
             return ActionAuthorizationDecision(
                 action_id=action_id,

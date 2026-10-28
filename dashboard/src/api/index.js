@@ -164,4 +164,49 @@ export const api = {
       body: payload,
     });
   },
+
+  // 10. Action Assurance & Reality Verification (Gate 3 & 5)
+  async executeAction(actionId, approvalToken = null) {
+    return apiRequest("/v1/actions/execute", {
+      method: "POST",
+      body: { action_id: actionId, approval_token: approvalToken },
+    });
+  },
+
+  async verifyOutcome(payload) {
+    return apiRequest("/v1/outcomes/verify", {
+      method: "POST",
+      body: payload,
+    });
+  },
+
+  async listTools() {
+    return apiRequest("/v1/tools");
+  },
+
+  // 11. Governed MCP Integration
+  async executeMcpRpc(rpcPayload) {
+    return apiRequest("/v1/mcp/rpc", {
+      method: "POST",
+      body: rpcPayload,
+    });
+  },
+
+  // 12. Outbound Webhook Alerting
+  async listWebhooks() {
+    return apiRequest("/v1/webhooks");
+  },
+
+  async createWebhook(payload) {
+    return apiRequest("/v1/webhooks", {
+      method: "POST",
+      body: payload,
+    });
+  },
+
+  async deleteWebhook(webhookId) {
+    return apiRequest(`/v1/webhooks/${webhookId}`, {
+      method: "DELETE",
+    });
+  },
 };

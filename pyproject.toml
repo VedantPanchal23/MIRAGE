@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mirage"
-version = "2.1.0"
+version = "3.0.0"
 description = "Autonomous Multimodal Hallucination Detection and Factual Consistency Verification System for Production LLMs"
 readme = "README.md"
 authors = [
@@ -71,9 +71,12 @@ dev = [
     "pika>=1.3.2",
 ]
 
+[project.scripts]
+mirage = "cli.main:main"
+
 [tool.setuptools.packages.find]
 where = [".", "sdk"]
-include = ["shared*", "gateway*", "services*", "workers*", "models*", "hrs_engine*", "correction_agent*", "analytics*", "db*", "mcp_server*", "mirage_sdk*"]
+include = ["cli*", "shared*", "gateway*", "services*", "workers*", "models*", "hrs_engine*", "correction_agent*", "analytics*", "db*", "mcp_server*", "mirage_sdk*"]
 
 [tool.ruff]
 line-length = 120

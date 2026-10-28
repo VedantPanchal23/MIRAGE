@@ -13,7 +13,7 @@ Runs against the local Docker development environment:
 import os
 import sys
 import uuid
-from typing import Any
+from typing import Any, cast
 
 try:
     import httpx
@@ -75,7 +75,7 @@ def provision_sandbox_tenant(client: httpx.Client) -> dict[str, Any] | None:
         with open(".env.local", "w", encoding="utf-8") as f:
             f.write(env_content)
         print("  [PASS] Saved credentials to .env.local")
-        return data
+        return cast(dict[str, Any], data)
     except Exception as exc:
         print(f"  [FAIL] Exception during sandbox tenant provisioning: {exc}")
         return None

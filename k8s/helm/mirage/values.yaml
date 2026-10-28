@@ -1,0 +1,171 @@
+# Default values for mirage helm chart.
+# Production-ready configuration for MIRAGE 3.0 AI Execution Assurance Platform.
+
+global:
+  environment: production
+  clusterDomain: cluster.local
+
+gateway:
+  replicaCount: 3
+  image:
+    repository: mirage/gateway
+    pullPolicy: IfNotPresent
+    tag: "3.0.0"
+  service:
+    type: ClusterIP
+    port: 8000
+    targetPort: 8000
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2048Mi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  podSecurityContext:
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  autoscaling:
+    enabled: true
+    minReplicas: 3
+    maxReplicas: 15
+    targetCPUUtilizationPercentage: 75
+    targetMemoryUtilizationPercentage: 80
+  livenessProbe:
+    httpGet:
+      path: /v1/health
+      port: 8000
+    initialDelaySeconds: 15
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  readinessProbe:
+    httpGet:
+      path: /v1/ready
+      port: 8000
+    initialDelaySeconds: 10
+    periodSeconds: 5
+    timeoutSeconds: 3
+    failureThreshold: 2
+
+worker:
+  replicaCount: 2
+  image:
+    repository: mirage/worker
+    pullPolicy: IfNotPresent
+    tag: "3.0.0"
+  resources:
+    limits:
+      cpu: 2000m
+      memory: 2048Mi
+    requests:
+      cpu: 500m
+      memory: 512Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  podSecurityContext:
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+  autoscaling:
+    enabled: true
+    minReplicas: 2
+    maxReplicas: 10
+    targetCPUUtilizationPercentage: 80
+
+dashboard:
+  replicaCount: 2
+  image:
+    repository: mirage/dashboard
+    pullPolicy: IfNotPresent
+    tag: "3.0.0"
+  service:
+    type: ClusterIP
+    port: 3000
+    targetPort: 3000
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop:
+        - ALL
+  podSecurityContext:
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-body-size: "16m"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+  hosts:
+    - host: api.mirage.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: gateway
+    - host: app.mirage.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+          service: dashboard
+  tls:
+    - secretName: mirage-tls-cert
+      hosts:
+        - api.mirage.example.com
+        - app.mirage.example.com
+
+networkPolicy:
+  enabled: true
+  allowExternalEgress: true
+
+config:
+  postgresHost: "postgres.mirage.svc.cluster.local"
+  postgresPort: 5432
+  postgresDb: "mirage"
+  redisHost: "redis.mirage.svc.cluster.local"
+  redisPort: 6379
+  rabbitmqHost: "rabbitmq.mirage.svc.cluster.local"
+  rabbitmqPort: 5672
+  qdrantHost: "qdrant.mirage.svc.cluster.local"
+  qdrantPort: 6333
+  logLevel: "INFO"
+  corsOrigins: "https://app.mirage.example.com"
+
+secrets:
+  existingSecretName: "" # If set, use existing k8s secret
+  jwtSecret: "change-me-in-production-mirage-jwt-secret-min-32-bytes"
+  postgresPassword: "mirage_secure_production_password"
+  rabbitmqPassword: "mirage_rabbitmq_password"
+  adminApiKey: "mirage-prod-admin-root-key"

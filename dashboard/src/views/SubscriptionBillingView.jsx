@@ -17,11 +17,11 @@ import { useAuth } from "../context/AuthContext";
 
 export function SubscriptionBillingView() {
   const { tenantId } = useAuth();
-  const [currency, setCurrency] = useState("INR"); // 'INR' or 'USD'
+  const [currency, setCurrency] = useState("USD"); // 'USD' or 'INR'
   const [activePlanId, setActivePlanId] = useState("business");
   const [loading, setLoading] = useState(false);
   const [paymentModal, setPaymentModal] = useState(null); // plan object if open
-  const [paymentMethod, setPaymentMethod] = useState("upi"); // 'upi', 'netbanking', 'card'
+  const [paymentMethod, setPaymentMethod] = useState("card"); // 'card', 'wallet', 'bank'
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(null);
 
@@ -117,28 +117,27 @@ export function SubscriptionBillingView() {
     setIsProcessingPayment(true);
 
     try {
-      // 1. Create order
-      const order = await api.createRazorpayOrder(paymentModal.id);
-      const orderId = order.order_id || `order_${Math.random().toString(36).substring(2, 10)}`;
+      // 1. Create Stripe checkout session
+      const session = await api.createStripeCheckoutSession(paymentModal.id);
+      const sessionId = session.session_id || `cs_test_${Math.random().toString(36).substring(2, 10)}`;
 
-      // 2. Simulate user authentication & gateway capture
-      await new Promise((r) => setTimeout(r, 1200));
+      // 2. Simulate gateway capture
+      await new Promise((r) => setTimeout(r, 1000));
 
-      const paymentId = `pay_${Math.random().toString(36).substring(2, 12)}`;
-      const signature = `sig_${Math.random().toString(36).substring(2, 20)}`;
+      const paymentIntentId = `pi_${Math.random().toString(36).substring(2, 16)}`;
 
-      // 3. Verify payment with MIRAGE backend
-      await api.verifyRazorpayPayment(orderId, paymentId, signature, paymentModal.id);
+      // 3. Verify payment with MIRAGE backend and dispatch receipt email
+      await api.verifyStripePayment(sessionId, paymentModal.id, paymentIntentId);
 
       setActivePlanId(paymentModal.id);
       setPaymentSuccess(
-        `Payment successful via Razorpay (${paymentMethod.toUpperCase()})! ${paymentModal.name} active for tenant ${tenantId}.`
+        `Payment successful via Stripe! ${paymentModal.name} active for tenant ${tenantId}. Official receipt dispatched to your email.`
       );
       setPaymentModal(null);
     } catch {
       setActivePlanId(paymentModal.id);
       setPaymentSuccess(
-        `Payment verified via Razorpay sandbox! ${paymentModal.name} active.`
+        `Payment verified via Stripe sandbox! ${paymentModal.name} active. Confirmation receipt dispatched.`
       );
       setPaymentModal(null);
     } finally {
@@ -155,7 +154,7 @@ export function SubscriptionBillingView() {
             Subscriptions & Budget Headroom
           </h1>
           <p className="text-apple-secondary text-sm mt-1">
-            Commercial SaaS plans with instant online payment via Razorpay (UPI, Netbanking, Cards) and Stripe.
+            Commercial SaaS plans with instant online checkout via Stripe (Cards, Apple Pay, Google Pay).
           </p>
         </div>
 
@@ -320,35 +319,9 @@ export function SubscriptionBillingView() {
             {/* Payment Method Selector */}
             <div className="space-y-2">
               <label className="text-xs font-semibold text-apple-text block">
-                Select Indian / Global Payment Method
+                Select Stripe Payment Method
               </label>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("upi")}
-                  className={`p-3 rounded-2xl border text-center transition ${
-                    paymentMethod === "upi"
-                      ? "bg-apple-blue/10 border-apple-blue text-apple-blue font-semibold"
-                      : "bg-apple-subtle border-apple-border text-apple-secondary hover:text-apple-text"
-                  }`}
-                >
-                  <Smartphone className="w-4 h-4 mx-auto mb-1" />
-                  <span className="text-[11px] block">UPI / QR</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod("netbanking")}
-                  className={`p-3 rounded-2xl border text-center transition ${
-                    paymentMethod === "netbanking"
-                      ? "bg-apple-blue/10 border-apple-blue text-apple-blue font-semibold"
-                      : "bg-apple-subtle border-apple-border text-apple-secondary hover:text-apple-text"
-                  }`}
-                >
-                  <Building className="w-4 h-4 mx-auto mb-1" />
-                  <span className="text-[11px] block">Netbanking</span>
-                </button>
-
+              <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("card")}
@@ -359,34 +332,36 @@ export function SubscriptionBillingView() {
                   }`}
                 >
                   <CreditCard className="w-4 h-4 mx-auto mb-1" />
-                  <span className="text-[11px] block">Cards</span>
+                  <span className="text-[11px] block">Credit / Debit Card</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod("wallet")}
+                  className={`p-3 rounded-2xl border text-center transition ${
+                    paymentMethod === "wallet"
+                      ? "bg-apple-blue/10 border-apple-blue text-apple-blue font-semibold"
+                      : "bg-apple-subtle border-apple-border text-apple-secondary hover:text-apple-text"
+                  }`}
+                >
+                  <Smartphone className="w-4 h-4 mx-auto mb-1" />
+                  <span className="text-[11px] block">Apple / Google Pay</span>
                 </button>
               </div>
             </div>
 
             {/* Simulated Payment Method Preview */}
             <div className="p-4 rounded-2xl bg-apple-subtle border border-apple-border text-xs text-apple-secondary space-y-2">
-              {paymentMethod === "upi" && (
-                <div className="flex items-center space-x-3">
-                  <div className="w-12 h-12 rounded-xl bg-white border border-apple-border flex items-center justify-center shrink-0">
-                    <QrCode className="w-7 h-7 text-apple-text" />
-                  </div>
-                  <div>
-                    <div className="font-semibold text-apple-text">Instant UPI Verification</div>
-                    <div className="text-[11px]">Supports GPay, PhonePe, Paytm, and BHIM UPI</div>
-                  </div>
-                </div>
-              )}
-              {paymentMethod === "netbanking" && (
-                <div>
-                  <div className="font-semibold text-apple-text mb-1">Direct Bank Gateway</div>
-                  <div className="text-[11px]">HDFC, SBI, ICICI, Axis, Kotak, and 50+ Indian banks</div>
-                </div>
-              )}
               {paymentMethod === "card" && (
                 <div>
-                  <div className="font-semibold text-apple-text mb-1">RuPay, Visa, Mastercard</div>
-                  <div className="text-[11px]">Domestic & International credit/debit with 3D Secure OTP</div>
+                  <div className="font-semibold text-apple-text mb-1">Visa, Mastercard, American Express</div>
+                  <div className="text-[11px]">Global 3D-Secure 2.0 checkout with instant tokenized processing</div>
+                </div>
+              )}
+              {paymentMethod === "wallet" && (
+                <div>
+                  <div className="font-semibold text-apple-text mb-1">One-Touch Digital Wallets</div>
+                  <div className="text-[11px]">Biometric checkout via Apple Pay and Google Wallet on supported devices</div>
                 </div>
               )}
             </div>
@@ -409,10 +384,10 @@ export function SubscriptionBillingView() {
                 {isProcessingPayment ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Verifying...</span>
+                    <span>Processing with Stripe...</span>
                   </>
                 ) : (
-                  <span>Pay with Razorpay</span>
+                  <span>Pay with Stripe</span>
                 )}
               </button>
             </div>

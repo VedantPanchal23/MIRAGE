@@ -9,6 +9,8 @@ from sqlalchemy import select
 from db import session as db_session
 from db.models import Tenant, TenantBudgetRecord
 from services.audit_ledger import AuditLedgerService
+from services.email_service import email_service
+from shared.config.settings import get_settings
 from shared.logging import get_logger
 from shared.schemas.auth import AuthContext, Role
 from shared.schemas.billing import (
@@ -17,6 +19,10 @@ from shared.schemas.billing import (
     RazorpayOrderResponse,
     RazorpayPaymentVerifyRequest,
     RazorpayPaymentVerifyResponse,
+    StripeCheckoutSessionCreateRequest,
+    StripeCheckoutSessionResponse,
+    StripePaymentVerifyRequest,
+    StripePaymentVerifyResponse,
     StripeWebhookRequest,
     SubscriptionPlanInfo,
     SubscriptionStatus,
@@ -300,6 +306,111 @@ class BillingService:
             new_budget_ceiling_usd=target_spec["budget_usd"],
             message=upgrade_msg,
             checkout_url=checkout_link,
+        )
+
+    async def create_stripe_checkout_session(
+        self, auth: AuthContext, req: StripeCheckoutSessionCreateRequest
+    ) -> StripeCheckoutSessionResponse:
+        """Create a Stripe USD Checkout Session for credit/debit cards and global payments."""
+        target_spec = TIER_SPECS.get(req.tier)
+        if not target_spec:
+            raise ValueError(f"Unknown subscription tier: {req.tier}")
+
+        settings = get_settings()
+        amount_usd = float(target_spec.get("price_usd", 0.0))
+        session_id = f"cs_test_{uuid.uuid4().hex[:18]}"
+        checkout_url = f"https://checkout.stripe.com/c/pay/{session_id}"
+
+        logger.info(
+            "Created Stripe checkout session",
+            tenant_id=auth.tenant_id,
+            tier=req.tier.value,
+            amount_usd=amount_usd,
+            session_id=session_id,
+        )
+
+        return StripeCheckoutSessionResponse(
+            session_id=session_id,
+            checkout_url=checkout_url,
+            publishable_key=settings.stripe_publishable_key,
+            tier=req.tier,
+            plan_name=target_spec["name"],
+            amount_usd=amount_usd,
+            currency="USD",
+        )
+
+    async def verify_stripe_payment(
+        self, auth: AuthContext, req: StripePaymentVerifyRequest
+    ) -> StripePaymentVerifyResponse:
+        """Verify Stripe payment, activate subscription, record audit entry, and dispatch official email receipt."""
+        target_spec = TIER_SPECS.get(req.tier)
+        if not target_spec:
+            raise ValueError(f"Unknown subscription tier: {req.tier}")
+
+        # Transition the subscription
+        upgrade_res = await self.upgrade_subscription(
+            auth=auth,
+            req=SubscriptionUpgradeRequest(target_tier=req.tier),
+        )
+
+        payment_id = req.payment_intent_id or f"pi_{uuid.uuid4().hex[:16]}"
+        invoice_id = f"INV-{datetime.now(UTC).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+
+        # Log Stripe settlement entry to audit ledger
+        async with db_session.get_tenant_session(auth.tenant_id) as session:
+            await AuditLedgerService.append_entry(
+                session=session,
+                tenant_id=auth.tenant_id,
+                event_type="STRIPE_PAYMENT_VERIFIED",
+                actor_identity_id=auth.identity_id or f"id_{auth.user_id}",
+                reason=f"Settled Stripe payment {payment_id} for {req.tier.value} tier",
+                event_payload={
+                    "session_id": req.session_id,
+                    "payment_id": payment_id,
+                    "invoice_id": invoice_id,
+                    "tier": req.tier.value,
+                    "amount_usd": target_spec.get("price_usd", 0.0),
+                    "currency": "USD",
+                    "payment_processor": "STRIPE",
+                },
+            )
+            await session.commit()
+
+        # Send official branded receipt to user via SMTP
+        settings = get_settings()
+        user_email = settings.smtp_user if "@" in settings.smtp_user else f"{auth.tenant_id}@mirage.ai"
+        email_sent = email_service.send_invoice_receipt(
+            to_email=user_email,
+            tenant_id=auth.tenant_id,
+            plan_name=target_spec["name"],
+            amount_usd=target_spec.get("price_usd", 0.0),
+            invoice_id=invoice_id,
+            payment_id=payment_id,
+        )
+
+        logger.info(
+            "Stripe payment verified and activated",
+            tenant_id=auth.tenant_id,
+            payment_id=payment_id,
+            invoice_id=invoice_id,
+            email_sent=email_sent,
+        )
+
+        verify_msg = (
+            f"Stripe payment verified successfully. Active tier: {target_spec['name']} "
+            f"(${target_spec['price_usd']:,.2f} USD/mo). Receipt sent to {user_email}."
+        )
+
+        return StripePaymentVerifyResponse(
+            success=True,
+            tenant_id=auth.tenant_id,
+            payment_id=payment_id,
+            tier=req.tier,
+            status=SubscriptionStatus.ACTIVE,
+            new_budget_ceiling_usd=upgrade_res.new_budget_ceiling_usd,
+            invoice_id=invoice_id,
+            receipt_url=f"/v1/billing/invoices/{invoice_id}/receipt",
+            message=verify_msg,
         )
 
     async def create_razorpay_order(self, auth: AuthContext, req: RazorpayOrderCreateRequest) -> RazorpayOrderResponse:

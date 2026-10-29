@@ -98,6 +98,67 @@ class StripeWebhookRequest(BaseModel):
     data: dict[str, Any] = Field(default_factory=dict)
 
 
+class StripeCheckoutSessionCreateRequest(BaseModel):
+    """Request to generate a Stripe USD Checkout Session."""
+
+    tier: SubscriptionTier
+    success_url: str | None = None
+    cancel_url: str | None = None
+
+
+class StripeCheckoutSessionResponse(BaseModel):
+    """Authoritative Stripe checkout session details."""
+
+    session_id: str
+    checkout_url: str
+    publishable_key: str
+    tier: SubscriptionTier
+    plan_name: str
+    amount_usd: float
+    currency: str = "USD"
+
+
+class StripePaymentVerifyRequest(BaseModel):
+    """Payload sent by client to verify Stripe session payment and activate tier."""
+
+    session_id: str
+    tier: SubscriptionTier
+    payment_intent_id: str | None = None
+
+
+class StripePaymentVerifyResponse(BaseModel):
+    """Result of verifying a Stripe transaction."""
+
+    success: bool
+    tenant_id: str
+    payment_id: str
+    tier: SubscriptionTier
+    status: SubscriptionStatus
+    new_budget_ceiling_usd: float
+    invoice_id: str
+    receipt_url: str | None = None
+    message: str
+
+
+class InvoiceReceipt(BaseModel):
+    """Authoritative B2B Tax Invoice & Payment Receipt."""
+
+    invoice_id: str
+    receipt_number: str
+    tenant_id: str
+    customer_email: str
+    tier: SubscriptionTier
+    plan_name: str
+    amount_usd: float
+    currency: str = "USD"
+    payment_method: str = "STRIPE_CARD"
+    payment_id: str
+    session_id: str
+    issued_at: str
+    status: str = "PAID"
+    receipt_html: str
+
+
 class RazorpayOrderCreateRequest(BaseModel):
     """Request to generate a Razorpay Indian Rupee order for UPI/Netbanking/Cards."""
 

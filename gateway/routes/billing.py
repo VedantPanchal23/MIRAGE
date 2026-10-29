@@ -12,6 +12,10 @@ from shared.schemas.billing import (
     RazorpayOrderResponse,
     RazorpayPaymentVerifyRequest,
     RazorpayPaymentVerifyResponse,
+    StripeCheckoutSessionCreateRequest,
+    StripeCheckoutSessionResponse,
+    StripePaymentVerifyRequest,
+    StripePaymentVerifyResponse,
     StripeWebhookRequest,
     SubscriptionPlanInfo,
     SubscriptionUpgradeRequest,
@@ -55,6 +59,34 @@ async def billing_webhook(req: StripeWebhookRequest) -> dict[str, str]:
     """Inbound webhook receiver for payment processor events (Stripe, LemonSqueezy, Paddle)."""
     _ = await billing_service.handle_payment_webhook(req)
     return {"status": "ok", "event_id": req.event_id}
+
+
+@router.post("/stripe/create-checkout-session", response_model=StripeCheckoutSessionResponse)
+async def create_stripe_checkout_session(
+    req: StripeCheckoutSessionCreateRequest,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> StripeCheckoutSessionResponse:
+    """Generate a Stripe USD Checkout Session for credit/debit cards and global payments."""
+    if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requires TENANT_ADMIN to initiate Stripe checkout.",
+        )
+    return await billing_service.create_stripe_checkout_session(auth=auth, req=req)
+
+
+@router.post("/stripe/verify-payment", response_model=StripePaymentVerifyResponse)
+async def verify_stripe_payment(
+    req: StripePaymentVerifyRequest,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> StripePaymentVerifyResponse:
+    """Verify Stripe checkout payment, activate subscription tier, and dispatch official email receipt."""
+    if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Requires TENANT_ADMIN to complete payment verification.",
+        )
+    return await billing_service.verify_stripe_payment(auth=auth, req=req)
 
 
 @router.post("/razorpay/create-order", response_model=RazorpayOrderResponse)

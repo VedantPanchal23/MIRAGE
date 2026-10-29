@@ -94,7 +94,7 @@ export const api = {
     });
   },
 
-  // 6. Subscriptions & Billing (Razorpay INR & Stripe USD)
+  // 6. Subscriptions & Billing (Stripe USD Checkout)
   async getBillingPlans() {
     return apiRequest("/v1/billing/plans");
   },
@@ -105,6 +105,24 @@ export const api = {
 
   async getBillingUsage() {
     return apiRequest("/v1/billing/usage");
+  },
+
+  async createStripeCheckoutSession(tier) {
+    return apiRequest("/v1/billing/stripe/create-checkout-session", {
+      method: "POST",
+      body: { tier },
+    });
+  },
+
+  async verifyStripePayment(sessionId, tier, paymentIntentId = null) {
+    return apiRequest("/v1/billing/stripe/verify-payment", {
+      method: "POST",
+      body: {
+        session_id: sessionId,
+        tier: tier,
+        payment_intent_id: paymentIntentId,
+      },
+    });
   },
 
   async createRazorpayOrder(planId) {

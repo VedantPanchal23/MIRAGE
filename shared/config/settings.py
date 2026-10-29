@@ -265,12 +265,38 @@ class Settings(BaseSettings):
     # --------------------------------------------------------------------------
     # Model Thresholds & Parameters
     # --------------------------------------------------------------------------
-    default_primary_model: str = Field(default="allam-2-7b")
+    default_primary_model: str = Field(default="llama-3.3-70b-versatile")
     scs_sample_count: int = Field(default=5, ge=1, le=10)
     scs_temperature: float = Field(default=0.7, ge=0.0, le=2.0)
     clip_threshold: float = Field(default=0.85, ge=0.0, le=1.0)
     hrs_correction_threshold: float = Field(default=0.60, ge=0.0, le=1.0)
     max_correction_retries: int = Field(default=2, ge=1, le=5)
+
+    # --------------------------------------------------------------------------
+    # Stripe Payment Gateway Configuration
+    # --------------------------------------------------------------------------
+    stripe_secret_key: str = Field(
+        default="sk_test_miragePlatformKey",
+        description="Stripe API Secret Key (sk_test_... or sk_live_...)",
+    )
+    stripe_publishable_key: str = Field(
+        default="pk_test_miragePlatformKey",
+        description="Stripe Publishable Key (pk_test_... or pk_live_...)",
+    )
+    stripe_webhook_secret: str = Field(
+        default="whsec_mirage_test_secret",
+        description="Stripe Webhook Signing Secret",
+    )
+
+    # --------------------------------------------------------------------------
+    # SMTP Email Delivery Configuration
+    # --------------------------------------------------------------------------
+    smtp_host: str = Field(default="smtp.gmail.com", description="SMTP server hostname")
+    smtp_port: int = Field(default=587, description="SMTP server port (587 for TLS)")
+    smtp_user: str = Field(default="vedantwork1402@gmail.com", description="SMTP username / email")
+    smtp_password: str = Field(default="fisiwtzwspcgvnxf", description="SMTP app password / API token")
+    smtp_from_email: str = Field(default="vedantwork1402@gmail.com", description="Sender email address")
+    smtp_from_name: str = Field(default="MIRAGE AI Execution Assurance", description="Sender display name")
 
     # --------------------------------------------------------------------------
     # Object Storage Configuration (ADR 0005)

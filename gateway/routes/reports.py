@@ -166,6 +166,24 @@ async def generate_audit_report(
     )
 
 
+@router.get("/dossier")
+async def download_compliance_dossier(
+    tenant_id: Annotated[str, Depends(require_permission(Permission.AUDIT_EXPORT))],
+) -> Response:
+    """Download the complete, sealed regulatory compliance evidence dossier (ZIP bundle)."""
+    from db.session import get_tenant_session
+    from services.compliance_dossier_service import compliance_dossier_service
+
+    async with get_tenant_session(tenant_id) as session:
+        zip_bytes = await compliance_dossier_service.generate_dossier_zip(session=session, tenant_id=tenant_id)
+
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="mirage_compliance_dossier_{tenant_id}.zip"'},
+    )
+
+
 @router.get("/{report_id}", response_model=ReportDetailResponse)
 async def get_report_detail(
     report_id: str,

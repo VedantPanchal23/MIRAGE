@@ -21,6 +21,7 @@ export function AuditLedgerView() {
   const [selectedEvent, setSelectedEvent] = useState(null);
   const [integrityStatus, setIntegrityStatus] = useState("VERIFIED");
   const [isVerifying, setIsVerifying] = useState(false);
+  const [isDownloadingDossier, setIsDownloadingDossier] = useState(false);
   const [filterType, setFilterType] = useState("ALL");
 
   const fallbackEvents = [
@@ -134,6 +135,17 @@ export function AuditLedgerView() {
     }
   };
 
+  const handleDownloadDossier = async () => {
+    setIsDownloadingDossier(true);
+    try {
+      await api.downloadComplianceDossier();
+    } catch (err) {
+      console.error("Dossier download failed:", err);
+    } finally {
+      setIsDownloadingDossier(false);
+    }
+  };
+
   const filteredEvents =
     filterType === "ALL"
       ? events
@@ -165,10 +177,20 @@ export function AuditLedgerView() {
           <button
             type="button"
             onClick={handleExport}
-            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-apple-blue hover:bg-apple-blueHover text-white text-xs font-semibold transition shadow-apple-sm"
+            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-apple-surface border border-apple-border text-apple-text text-xs font-semibold hover:bg-apple-subtle transition shadow-apple-sm"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Export JSONL</span>
+          </button>
+
+          <button
+            type="button"
+            disabled={isDownloadingDossier}
+            onClick={handleDownloadDossier}
+            className="flex items-center space-x-2 px-3.5 py-2 rounded-xl bg-apple-blue hover:bg-apple-blueHover text-white text-xs font-semibold transition shadow-apple-sm disabled:opacity-50"
+          >
+            <ShieldCheck className={`w-3.5 h-3.5 ${isDownloadingDossier ? "animate-spin" : ""}`} />
+            <span>EU AI Act & SOC2 Dossier</span>
           </button>
         </div>
       </div>

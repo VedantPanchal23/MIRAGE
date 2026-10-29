@@ -209,4 +209,27 @@ export const api = {
       method: "DELETE",
     });
   },
+
+  // 13. Regulatory Compliance Dossier (EU AI Act & SOC2)
+  async downloadComplianceDossier() {
+    const token = localStorage.getItem("mirage_auth_token") || "mock_super_admin_jwt";
+    const apiKey = localStorage.getItem("mirage_api_key") || "mirage_live_default";
+    const headers = {
+      Authorization: `Bearer ${token}`,
+      "X-API-Key": apiKey,
+    };
+    const response = await fetch("/v1/reports/dossier", { headers });
+    if (!response.ok) {
+      throw new Error(`Failed to download dossier: HTTP ${response.status}`);
+    }
+    const blob = await response.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `mirage_compliance_dossier_${Date.now()}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    window.URL.revokeObjectURL(url);
+  },
 };

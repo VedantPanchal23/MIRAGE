@@ -128,7 +128,16 @@ def cmd_verify(args: argparse.Namespace) -> int:
 
 
 def cmd_mcp(args: argparse.Namespace) -> int:
-    """Launch the Governed Model Context Protocol (MCP) stdio server."""
+    """Launch the Governed Model Context Protocol (MCP) stdio server or shield."""
+    if getattr(args, "shield", False):
+        import asyncio
+
+        from mcp_server.shield import GovernedMCPShield
+
+        shield = GovernedMCPShield(tenant_id=args.tenant_id)
+        asyncio.run(shield.run_stdio_async())
+        return 0
+
     from mcp_server.server import main as mcp_main
 
     sys.argv = ["mcp_server", "--tenant-id", args.tenant_id]
@@ -197,8 +206,9 @@ def main() -> None:
     p_verify.set_defaults(func=cmd_verify)
 
     # mcp
-    p_mcp = subparsers.add_parser("mcp", help="Run the Governed MCP stdio server")
+    p_mcp = subparsers.add_parser("mcp", help="Run the Governed MCP stdio server or shield")
     p_mcp.add_argument("--tenant-id", default="mcp_client", help="Tenant ID for tenant isolation")
+    p_mcp.add_argument("--shield", action="store_true", help="Run in Governed MCP Shield mode (tool proxy & firewall)")
     p_mcp.set_defaults(func=cmd_mcp)
 
     # tools

@@ -32,6 +32,71 @@ from shared.schemas.webhook import (
 logger = get_logger("webhook_service")
 
 
+def format_slack_block_kit(event_type: str, tenant_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Format an assurance or approval event into Slack Block Kit."""
+    risk = str(payload.get("risk_score", "N/A"))
+    tool = str(payload.get("tool_name", payload.get("action_name", "N/A")))
+    reason = str(payload.get("reason", payload.get("message", "Policy evaluation checkpoint")))
+
+    return {
+        "text": f"🛡️ [MIRAGE Alert]: {event_type}",
+        "blocks": [
+            {
+                "type": "header",
+                "text": {"type": "plain_text", "text": f"🛡️ MIRAGE Security Alert: {event_type}"},
+            },
+            {
+                "type": "section",
+                "fields": [
+                    {"type": "mrkdwn", "text": f"*Event Type:*\n`{event_type}`"},
+                    {"type": "mrkdwn", "text": f"*Tenant:*\n`{tenant_id}`"},
+                    {"type": "mrkdwn", "text": f"*Tool/Action:*\n`{tool}`"},
+                    {"type": "mrkdwn", "text": f"*Risk Score:*\n*{risk}*"},
+                ],
+            },
+            {
+                "type": "section",
+                "text": {"type": "mrkdwn", "text": f"*Details:*\n>{reason}"},
+            },
+            {
+                "type": "actions",
+                "elements": [
+                    {
+                        "type": "button",
+                        "text": {"type": "plain_text", "text": "Review in Dashboard"},
+                        "url": "http://localhost:3000/approvals",
+                        "style": "primary",
+                    }
+                ],
+            },
+        ],
+    }
+
+
+def format_discord_embed(event_type: str, tenant_id: str, timestamp: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Format an assurance or approval event into a Discord Embed."""
+    tool = str(payload.get("tool_name", payload.get("action_name", "N/A")))
+    reason = str(payload.get("reason", payload.get("message", "Policy evaluation checkpoint")))
+    is_alert = "BLOCKED" in event_type or "DISCREPANCY" in event_type
+    color = 16724530 if is_alert else 3447003
+
+    return {
+        "content": "🛡️ **MIRAGE Assurance Notification**",
+        "embeds": [
+            {
+                "title": f"Assurance Event: {event_type}",
+                "color": color,
+                "fields": [
+                    {"name": "Tenant", "value": f"`{tenant_id}`", "inline": True},
+                    {"name": "Tool/Action", "value": f"`{tool}`", "inline": True},
+                    {"name": "Details", "value": reason, "inline": False},
+                ],
+                "timestamp": timestamp,
+            }
+        ],
+    }
+
+
 class WebhookService:
     """Manages outbound webhook subscriptions and dispatches security/assurance alerts."""
 
@@ -166,15 +231,27 @@ class WebhookService:
             ).encode("utf-8")
 
             for sub in matching_subs:
-                signature = hmac.new(sub.secret_key.encode("utf-8"), canonical_bytes, hashlib.sha256).hexdigest()
-                headers = {
-                    "Content-Type": "application/json",
-                    "X-Mirage-Signature-256": f"sha256={signature}",
-                    "X-Mirage-Event": event_type,
-                    "X-Mirage-Event-ID": event_id,
-                }
+                url_lower = sub.url.lower()
+                if "hooks.slack.com" in url_lower:
+                    send_payload = format_slack_block_kit(event_type, tenant_id, payload)
+                    send_bytes = json.dumps(send_payload).encode("utf-8")
+                    headers = {"Content-Type": "application/json"}
+                elif "discord.com" in url_lower or "discordapp.com" in url_lower:
+                    send_payload = format_discord_embed(event_type, tenant_id, timestamp, payload)
+                    send_bytes = json.dumps(send_payload).encode("utf-8")
+                    headers = {"Content-Type": "application/json"}
+                else:
+                    signature = hmac.new(sub.secret_key.encode("utf-8"), canonical_bytes, hashlib.sha256).hexdigest()
+                    send_bytes = canonical_bytes
+                    headers = {
+                        "Content-Type": "application/json",
+                        "X-Mirage-Signature-256": f"sha256={signature}",
+                        "X-Mirage-Event": event_type,
+                        "X-Mirage-Event-ID": event_id,
+                    }
+
                 try:
-                    r = await self.http_client.post(sub.url, content=canonical_bytes, headers=headers)
+                    r = await self.http_client.post(sub.url, content=send_bytes, headers=headers)
                     logger.info(
                         "Webhook dispatched",
                         webhook_id=sub.id,

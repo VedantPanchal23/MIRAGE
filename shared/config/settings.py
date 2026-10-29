@@ -273,7 +273,23 @@ class Settings(BaseSettings):
     max_correction_retries: int = Field(default=2, ge=1, le=5)
 
     # --------------------------------------------------------------------------
-    # Stripe Payment Gateway Configuration
+    # Razorpay Payment Gateway Configuration
+    # --------------------------------------------------------------------------
+    razorpay_key_id: str = Field(
+        default="rzp_test_miragePlatformKey",
+        description="Razorpay API Key ID (rzp_test_... or rzp_live_...)",
+    )
+    razorpay_key_secret: str = Field(
+        default="test_razorpay_secret_key",
+        description="Razorpay API Key Secret",
+    )
+    razorpay_webhook_secret: str = Field(
+        default="test_razorpay_webhook_secret",
+        description="Razorpay Webhook Signing Secret",
+    )
+
+    # --------------------------------------------------------------------------
+    # Stripe Payment Gateway Configuration (Optional Global Fallback)
     # --------------------------------------------------------------------------
     stripe_secret_key: str = Field(
         default="sk_test_miragePlatformKey",

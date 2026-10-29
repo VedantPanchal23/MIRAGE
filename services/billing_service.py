@@ -431,12 +431,13 @@ class BillingService:
             order_id=order_id,
         )
 
+        settings = get_settings()
         return RazorpayOrderResponse(
             order_id=order_id,
             amount_paise=amount_paise,
             amount_inr=amount_inr,
             currency="INR",
-            key_id="rzp_test_miragePlatformKey",
+            key_id=settings.razorpay_key_id,
             tier=req.tier,
             plan_name=target_spec["name"],
             notes={
@@ -460,6 +461,9 @@ class BillingService:
             req=SubscriptionUpgradeRequest(target_tier=req.tier),
         )
 
+        payment_id = req.razorpay_payment_id
+        invoice_id = f"INV-{datetime.now(UTC).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
+
         # Log Razorpay settlement entry to audit ledger
         async with db_session.get_tenant_session(auth.tenant_id) as session:
             await AuditLedgerService.append_entry(
@@ -467,10 +471,11 @@ class BillingService:
                 tenant_id=auth.tenant_id,
                 event_type="RAZORPAY_PAYMENT_VERIFIED",
                 actor_identity_id=auth.identity_id or f"id_{auth.user_id}",
-                reason=f"Settled Razorpay payment {req.razorpay_payment_id} for {req.tier.value} tier",
+                reason=f"Settled Razorpay payment {payment_id} for {req.tier.value} tier",
                 event_payload={
                     "order_id": req.razorpay_order_id,
-                    "payment_id": req.razorpay_payment_id,
+                    "payment_id": payment_id,
+                    "invoice_id": invoice_id,
                     "tier": req.tier.value,
                     "amount_inr": target_spec.get("price_inr", 0.0),
                     "currency": "INR",
@@ -479,16 +484,33 @@ class BillingService:
             )
             await session.commit()
 
+        # Send official branded receipt to user via SMTP
+        settings = get_settings()
+        user_email = settings.smtp_user if "@" in settings.smtp_user else f"{auth.tenant_id}@mirage.ai"
+        inr_price = float(target_spec.get("price_inr", 0.0))
+        email_sent = email_service.send_invoice_receipt(
+            to_email=user_email,
+            tenant_id=auth.tenant_id,
+            plan_name=target_spec["name"],
+            amount=inr_price,
+            invoice_id=invoice_id,
+            payment_id=payment_id,
+            currency="INR",
+            payment_method="Razorpay (UPI, Netbanking, Cards)",
+        )
+
         logger.info(
             "Razorpay payment verified and activated",
             tenant_id=auth.tenant_id,
-            payment_id=req.razorpay_payment_id,
+            payment_id=payment_id,
+            invoice_id=invoice_id,
+            email_sent=email_sent,
             tier=req.tier.value,
         )
 
-        inr_price = target_spec.get("price_inr", 0)
         verify_msg = (
-            f"Razorpay payment verified successfully. Active tier: {target_spec['name']} ({inr_price:,.2f} INR/mo)."
+            f"Razorpay payment verified successfully. Active tier: {target_spec['name']} "
+            f"(₹{inr_price:,.2f} INR/mo). Receipt sent to {user_email}."
         )
         return RazorpayPaymentVerifyResponse(
             success=True,

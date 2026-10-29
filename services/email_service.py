@@ -2,6 +2,7 @@
 
 Dispatches official payment receipts, subscription invoices, and security alerts
 via standard SMTP (Gmail SMTP, Resend, SendGrid, or AWS SES).
+Features a responsive, high-contrast, professional light-theme receipt optimized for desktop and mobile.
 Fail-safe: Network errors or missing credentials log warnings without breaking payment flows.
 """
 
@@ -73,120 +74,252 @@ class EmailService:
         to_email: str,
         tenant_id: str,
         plan_name: str,
-        amount_usd: float,
+        amount: float,
         invoice_id: str,
         payment_id: str,
+        currency: str = "INR",
+        payment_method: str = "Razorpay (UPI, Netbanking, Cards)",
     ) -> bool:
-        """Construct and send an official branded subscription receipt."""
-        now_str = datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S UTC")
+        """Construct and send an official branded subscription receipt with a clean light theme."""
+        now_str = datetime.now(UTC).strftime("%d %B %Y, %H:%M:%S UTC")
+        formatted_amount = f"₹{amount:,.2f} INR" if currency.upper() == "INR" else f"${amount:,.2f} USD"
         subject = f"[MIRAGE AI] Payment Receipt - {invoice_id} ({plan_name})"
 
         html_body = f"""<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Receipt - {invoice_id}</title>
   <style>
     body {{
+      margin: 0;
+      padding: 0;
+      background-color: #f1f5f9;
       font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-      background-color: #0b0f19; color: #f1f5f9; margin: 0; padding: 24px;
+      color: #0f172a;
+      -webkit-font-smoothing: antialiased;
+    }}
+    table {{ border-collapse: collapse; }}
+    .wrapper {{
+      width: 100%;
+      background-color: #f1f5f9;
+      padding: 32px 12px;
     }}
     .card {{
-      max-width: 600px; margin: 0 auto; background-color: #111827; border: 1px solid #1e293b;
-      border-radius: 12px; padding: 32px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.5);
+      max-width: 580px;
+      margin: 0 auto;
+      background-color: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 14px;
+      padding: 36px 32px;
+      box-shadow: 0 4px 12px rgba(15, 23, 42, 0.05);
     }}
-    .header {{ border-bottom: 1px solid #334155; padding-bottom: 20px; margin-bottom: 24px; }}
-    .logo {{ font-size: 20px; font-weight: 800; color: #38bdf8; letter-spacing: -0.5px; }}
-    .tagline {{ font-size: 13px; color: #94a3b8; margin-top: 4px; }}
-    .title {{ font-size: 24px; font-weight: 700; color: #f8fafc; margin: 16px 0 8px 0; }}
-    .badge {{
-      display: inline-block; padding: 4px 10px; background-color: #065f46; color: #34d399;
-      font-size: 12px; font-weight: 600; border-radius: 9999px; text-transform: uppercase;
+    .brand-header {{
+      display: flex;
+      align-items: center;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 20px;
+      margin-bottom: 24px;
     }}
-    .table {{ width: 100%; border-collapse: collapse; margin: 24px 0; }}
-    .table td {{ padding: 10px 0; border-bottom: 1px solid #1e293b; font-size: 14px; }}
-    .table td.label {{ color: #94a3b8; }}
-    .table td.value {{ text-align: right; color: #f8fafc; font-weight: 600; }}
-    .total-row td {{
-      font-size: 18px; color: #38bdf8; border-top: 2px solid #334155; border-bottom: none; padding-top: 16px;
+    .brand-title {{
+      font-size: 20px;
+      font-weight: 800;
+      color: #0284c7;
+      letter-spacing: -0.5px;
+      margin: 0;
+    }}
+    .brand-sub {{
+      font-size: 13px;
+      color: #64748b;
+      margin: 3px 0 0 0;
+    }}
+    .status-badge {{
+      display: inline-block;
+      background-color: #ecfdf5;
+      color: #059669;
+      border: 1px solid #a7f3d0;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      text-transform: uppercase;
+      margin-bottom: 12px;
+    }}
+    .receipt-title {{
+      font-size: 24px;
+      font-weight: 800;
+      color: #0f172a;
+      margin: 0 0 6px 0;
+      letter-spacing: -0.5px;
+    }}
+    .receipt-desc {{
+      font-size: 14px;
+      color: #475569;
+      margin: 0 0 24px 0;
+      line-height: 1.5;
+    }}
+    .info-table {{
+      width: 100%;
+      margin: 20px 0;
+    }}
+    .info-table td {{
+      padding: 11px 0;
+      border-bottom: 1px solid #f1f5f9;
+      font-size: 14px;
+      line-height: 1.4;
+    }}
+    .info-label {{
+      color: #64748b;
+      font-weight: 500;
+      width: 40%;
+    }}
+    .info-value {{
+      color: #0f172a;
+      font-weight: 600;
+      text-align: right;
+    }}
+    .total-box {{
+      background-color: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+      padding: 16px 20px;
+      margin: 24px 0;
+    }}
+    .total-label {{
+      font-size: 14px;
+      font-weight: 600;
+      color: #475569;
+    }}
+    .total-amount {{
+      font-size: 26px;
+      font-weight: 800;
+      color: #0284c7;
+      text-align: right;
+    }}
+    .cta-btn {{
+      display: block;
+      background-color: #0284c7;
+      color: #ffffff !important;
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 700;
+      text-align: center;
+      padding: 13px 24px;
+      border-radius: 10px;
+      margin: 28px 0 16px 0;
     }}
     .footer {{
-      margin-top: 32px; padding-top: 20px; border-top: 1px solid #1e293b;
-      font-size: 12px; color: #64748b; text-align: center;
+      margin-top: 28px;
+      padding-top: 20px;
+      border-top: 1px solid #f1f5f9;
+      font-size: 12px;
+      color: #94a3b8;
+      text-align: center;
+      line-height: 1.5;
     }}
-    .btn {{
-      display: inline-block; background-color: #0284c7; color: #ffffff; text-decoration: none;
-      padding: 12px 24px; border-radius: 8px; font-weight: 600; margin-top: 16px; text-align: center;
+    @media only screen and (max-width: 600px) {{
+      .card {{
+        padding: 24px 18px !important;
+      }}
+      .receipt-title {{
+        font-size: 20px !important;
+      }}
+      .total-amount {{
+        font-size: 22px !important;
+      }}
+      .info-label, .info-value {{
+        font-size: 13px !important;
+      }}
     }}
   </style>
 </head>
 <body>
-  <div class="card">
-    <div class="header">
-      <div class="logo">🛡️ MIRAGE 3.0</div>
-      <div class="tagline">Autonomous AI Execution Assurance Platform</div>
-    </div>
-    <div>
-      <span class="badge">Payment Verified (PAID)</span>
-      <h1 class="title">Subscription Receipt</h1>
-      <p style="color: #94a3b8; font-size: 14px; margin: 0 0 20px 0;">
-        Thank you for your purchase. Your AI Execution Assurance subscription is now active.
-      </p>
-    </div>
+  <div class="wrapper">
+    <div class="card">
+      <div class="brand-header">
+        <div>
+          <h1 class="brand-title">🛡️ MIRAGE 3.0</h1>
+          <p class="brand-sub">AI Execution Assurance Platform</p>
+        </div>
+      </div>
 
-    <table class="table">
-      <tr>
-        <td class="label">Invoice Number</td>
-        <td class="value"><code>{invoice_id}</code></td>
-      </tr>
-      <tr>
-        <td class="label">Tenant ID</td>
-        <td class="value"><code>{tenant_id}</code></td>
-      </tr>
-      <tr>
-        <td class="label">Plan Tier</td>
-        <td class="value">{plan_name}</td>
-      </tr>
-      <tr>
-        <td class="label">Payment Processor</td>
-        <td class="value">Stripe (USD)</td>
-      </tr>
-      <tr>
-        <td class="label">Payment ID</td>
-        <td class="value"><code>{payment_id}</code></td>
-      </tr>
-      <tr>
-        <td class="label">Date & Time</td>
-        <td class="value">{now_str}</td>
-      </tr>
-      <tr class="total-row">
-        <td class="label" style="color: #f8fafc;">Total Paid</td>
-        <td class="value">${amount_usd:,.2f} USD</td>
-      </tr>
-    </table>
+      <div>
+        <span class="status-badge">&#10003; PAID &amp; VERIFIED</span>
+        <h2 class="receipt-title">Payment Confirmation Receipt</h2>
+        <p class="receipt-desc">
+          Your payment has been successfully settled and verified. Your active AI Execution Assurance subscription
+          and lease quotas are now online.
+        </p>
+      </div>
 
-    <div style="text-align: center;">
-      <a href="http://localhost:3000/dashboard" class="btn">Open Operator Console</a>
-    </div>
+      <table class="info-table">
+        <tr>
+          <td class="info-label">Invoice Number</td>
+          <td class="info-value"><code>{invoice_id}</code></td>
+        </tr>
+        <tr>
+          <td class="info-label">Tenant ID</td>
+          <td class="info-value"><code>{tenant_id}</code></td>
+        </tr>
+        <tr>
+          <td class="info-label">Plan Tier</td>
+          <td class="info-value">{plan_name}</td>
+        </tr>
+        <tr>
+          <td class="info-label">Payment Gateway</td>
+          <td class="info-value">{payment_method}</td>
+        </tr>
+        <tr>
+          <td class="info-label">Transaction / Order ID</td>
+          <td class="info-value"><code>{payment_id}</code></td>
+        </tr>
+        <tr>
+          <td class="info-label">Issued At</td>
+          <td class="info-value">{now_str}</td>
+        </tr>
+      </table>
 
-    <div class="footer">
-      <p>This is an automated official transaction receipt issued by MIRAGE AI Execution Assurance.</p>
-      <p>Questions or enterprise support? Contact <a href="mailto:{to_email}" style="color: #38bdf8;">{to_email}</a></p>
+      <div class="total-box">
+        <table style="width: 100%;">
+          <tr>
+            <td class="total-label">Total Amount Paid</td>
+            <td class="total-amount">{formatted_amount}</td>
+          </tr>
+        </table>
+      </div>
+
+      <a href="http://localhost:3000/dashboard" class="cta-btn">Access Operator Console &rarr;</a>
+
+      <div class="footer">
+        <p>This is an automated transaction receipt for your subscription with MIRAGE AI.</p>
+        <p>
+          Need assistance or enterprise invoice customizations?
+          Contact support at
+          <a href="mailto:vedantwork1402@gmail.com" style="color: #0284c7; text-decoration: none;">
+            vedantwork1402@gmail.com
+          </a>
+        </p>
+      </div>
     </div>
   </div>
 </body>
 </html>
 """
-        plain_text = f"""MIRAGE 3.0 Subscription Receipt
-====================================
-Invoice: {invoice_id}
-Tenant: {tenant_id}
-Plan: {plan_name}
-Total Paid: ${amount_usd:,.2f} USD
-Payment ID: {payment_id}
-Date: {now_str}
-Status: PAID (Verified via Stripe)
+        plain_text = f"""MIRAGE 3.0 - Payment Confirmation Receipt
+================================================
+Invoice Number: {invoice_id}
+Tenant ID:      {tenant_id}
+Plan Tier:      {plan_name}
+Amount Paid:    {formatted_amount}
+Gateway:        {payment_method}
+Transaction ID: {payment_id}
+Date & Time:    {now_str}
+Status:         PAID & VERIFIED
 
-Open your dashboard to view active assurance gates and manage API keys:
+Your subscription and Gate 3 lease quotas are active.
+Access your Operator Console:
 http://localhost:3000/dashboard
 
 Questions? Contact vedantwork1402@gmail.com

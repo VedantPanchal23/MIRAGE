@@ -274,9 +274,14 @@ class TokenBucketRateLimiter:
 
     TIER_LIMITS: dict[str, tuple[int, float]] = {
         # tier: (capacity, refill_tokens_per_second)
-        "free": (60, 1.0),  # 60 req / 60s
-        "pro": (300, 5.0),  # 300 req / 60s
-        "enterprise": (1000, 16.6667),  # 1000 req / 60s
+        "developer": (60, 1.0),  # 60 req / 60s
+        "free": (60, 1.0),
+        "starter": (300, 5.0),  # 300 req / 60s
+        "pro": (300, 5.0),
+        "team": (600, 10.0),  # 600 req / 60s
+        "business": (600, 10.0),
+        "sentinel": (2000, 33.3333),  # 2000 req / 60s
+        "enterprise": (2000, 33.3333),
     }
 
     def __init__(self, client_manager: RedisClientManager | None = None) -> None:

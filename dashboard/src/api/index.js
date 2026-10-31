@@ -241,11 +241,23 @@ export const api = {
 
   // 13. Regulatory Compliance Dossier (EU AI Act & SOC2)
   async downloadComplianceDossier() {
-    const token = localStorage.getItem("mirage_auth_token") || "mock_super_admin_jwt";
-    const apiKey = localStorage.getItem("mirage_api_key") || "mirage_live_default";
+    const token = (
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("mirage_auth_token") || localStorage.getItem("mirage_token") || ""
+        : ""
+    ).trim();
+    const apiKey = (
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("mirage_api_key") || ""
+        : ""
+    ).trim();
     const headers = {
-      Authorization: `Bearer ${token}`,
-      "X-API-Key": apiKey,
+      ...(apiKey ? { "X-API-Key": apiKey } : {}),
+      ...(token
+        ? { Authorization: `Bearer ${token}` }
+        : apiKey
+        ? { Authorization: `Bearer ${apiKey}` }
+        : {}),
     };
     const response = await fetch("/v1/reports/dossier", { headers });
     if (!response.ok) {

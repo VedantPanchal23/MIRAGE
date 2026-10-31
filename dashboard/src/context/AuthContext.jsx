@@ -13,30 +13,75 @@ export function AuthProvider({ children }) {
     return localStorage.getItem("mirage_role") || "admin";
   });
   const [token, setToken] = useState(() => {
-    return localStorage.getItem("mirage_auth_token") || "dev_sandbox_bearer_token";
+    return localStorage.getItem("mirage_auth_token") || localStorage.getItem("mirage_token") || "";
   });
-  const [isAuthenticated, setIsAuthenticated] = useState(true);
+  const [apiKey, setApiKey] = useState(() => {
+    return localStorage.getItem("mirage_api_key") || "";
+  });
+  const [userEmail, setUserEmail] = useState(() => {
+    return localStorage.getItem("mirage_user_email") || "";
+  });
+  const [isAuthenticated, setIsAuthenticated] = useState(() => {
+    const storedToken = localStorage.getItem("mirage_auth_token") || localStorage.getItem("mirage_token");
+    const storedKey = localStorage.getItem("mirage_api_key");
+    const storedTenant = localStorage.getItem("mirage_tenant_id");
+    return Boolean(storedToken || storedKey || (storedTenant && storedTenant !== "tenant_default"));
+  });
 
   useEffect(() => {
-    localStorage.setItem("mirage_tenant_id", tenantId);
-    localStorage.setItem("mirage_user_id", userId);
-    localStorage.setItem("mirage_role", role);
+    if (tenantId) {
+      localStorage.setItem("mirage_tenant_id", tenantId);
+    } else {
+      localStorage.removeItem("mirage_tenant_id");
+    }
+
+    if (userId) {
+      localStorage.setItem("mirage_user_id", userId);
+    } else {
+      localStorage.removeItem("mirage_user_id");
+    }
+
+    if (role) {
+      localStorage.setItem("mirage_role", role);
+    } else {
+      localStorage.removeItem("mirage_role");
+    }
+
     if (token) {
       localStorage.setItem("mirage_auth_token", token);
+      localStorage.setItem("mirage_token", token);
     } else {
       localStorage.removeItem("mirage_auth_token");
+      localStorage.removeItem("mirage_token");
     }
-  }, [tenantId, userId, role, token]);
 
-  const login = (newTenantId, newRole = "admin", newToken = "dev_sandbox_bearer_token") => {
+    if (apiKey) {
+      localStorage.setItem("mirage_api_key", apiKey);
+    } else {
+      localStorage.removeItem("mirage_api_key");
+    }
+
+    if (userEmail) {
+      localStorage.setItem("mirage_user_email", userEmail);
+    } else {
+      localStorage.removeItem("mirage_user_email");
+    }
+
+    setIsAuthenticated(Boolean(token || apiKey || (tenantId && tenantId !== "tenant_default")));
+  }, [tenantId, userId, role, token, apiKey, userEmail]);
+
+  const login = (newTenantId, newRole = "admin", newToken = "", newApiKey = "") => {
     setTenantId(newTenantId || "tenant_default");
     setRole(newRole);
-    setToken(newToken);
+    if (newToken) setToken(newToken);
+    if (newApiKey) setApiKey(newApiKey);
     setIsAuthenticated(true);
   };
 
   const logout = () => {
     setToken("");
+    setApiKey("");
+    setTenantId("tenant_default");
     setIsAuthenticated(false);
   };
 
@@ -50,10 +95,19 @@ export function AuthProvider({ children }) {
     <AuthContext.Provider
       value={{
         tenantId,
+        setTenantId,
         userId,
+        setUserId,
         role,
+        setRole,
         token,
+        setToken,
+        apiKey,
+        setApiKey,
+        userEmail,
+        setUserEmail,
         isAuthenticated,
+        setIsAuthenticated,
         login,
         logout,
         switchTenant,

@@ -8,15 +8,27 @@ export async function apiRequest(endpoint, options = {}) {
     typeof localStorage !== "undefined"
       ? localStorage.getItem("mirage_tenant_id") || "tenant_default"
       : "tenant_default";
-  const token =
+
+  const rawToken =
     typeof localStorage !== "undefined"
-      ? localStorage.getItem("mirage_auth_token") || "dev_sandbox_bearer_token"
-      : "dev_sandbox_bearer_token";
+      ? localStorage.getItem("mirage_auth_token") || localStorage.getItem("mirage_token") || ""
+      : "";
+  const token = rawToken === "dev_sandbox_bearer_token" ? "" : rawToken.trim();
+
+  const apiKey =
+    typeof localStorage !== "undefined"
+      ? (localStorage.getItem("mirage_api_key") || "").trim()
+      : "";
 
   const headers = {
     "Content-Type": "application/json",
-    "X-Tenant-ID": tenantId,
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    ...(tenantId ? { "X-Tenant-ID": tenantId } : {}),
+    ...(apiKey ? { "X-API-Key": apiKey } : {}),
+    ...(token
+      ? { Authorization: `Bearer ${token}` }
+      : apiKey
+      ? { Authorization: `Bearer ${apiKey}` }
+      : {}),
     ...(options.headers || {}),
   };
 

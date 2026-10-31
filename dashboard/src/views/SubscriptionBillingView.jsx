@@ -17,7 +17,7 @@ import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
 
 export function SubscriptionBillingView() {
-  const { tenantId } = useAuth();
+  const { tenantId, userEmail } = useAuth();
   const [currency, setCurrency] = useState("INR"); // 'INR' or 'USD'
   const [activePlanId, setActivePlanId] = useState("business");
   const [loading, setLoading] = useState(false);
@@ -174,7 +174,7 @@ export function SubscriptionBillingView() {
           },
         },
         prefill: {
-          email: "vedantwork1402@gmail.com",
+          email: userEmail || "",
         },
         theme: {
           color: "#0284c7",

@@ -7,7 +7,7 @@ import { api } from '../api';
  * Directly communicates with POST /v1/auth/register-tenant for zero-mock live account generation.
  */
 export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
-  const { setTenantId, setApiKey } = useAuth();
+  const { setTenantId, setApiKey, setUserEmail } = useAuth();
   const [mode, setMode] = useState('register'); // 'register' | 'existing'
   const [orgName, setOrgName] = useState('');
   const [email, setEmail] = useState('');
@@ -38,9 +38,14 @@ export default function AuthModal({ isOpen, onClose, onAuthSuccess }) {
         setRegisteredKey(res);
         setTenantId(res.tenant_id);
         setApiKey(res.api_key);
+        if (email.trim() && setUserEmail) {
+          setUserEmail(email.trim());
+        }
         localStorage.setItem('mirage_tenant_id', res.tenant_id);
         localStorage.setItem('mirage_api_key', res.api_key);
+        localStorage.setItem('mirage_user_email', email.trim());
         if (res.access_token) {
+          localStorage.setItem('mirage_auth_token', res.access_token);
           localStorage.setItem('mirage_token', res.access_token);
         }
       } else {

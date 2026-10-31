@@ -28,10 +28,19 @@ All new ADRs must include the following sections:
 MIRAGE 3.0 continues the numbering scheme established in MIRAGE 2.x.
 New ADRs start at `0007`.
 
-## 4. Retained MIRAGE 2.x ADRs (0001-0006)
-ADRs `0001` through `0006` are retained from the MIRAGE 2.x era. They remain valid for the scope of their specific technical domains (e.g., database schema decisions, trace storage mechanisms, etc.).
+## 4. Authoritative Architecture Decision Records (0001-0008)
 
-## 5. MIRAGE 3.0 Ratified ADRs
-- **ADR-0007:** [MIRAGE 3.0 Architectural Reset](0007-mirage-3.0-architectural-reset.md) — Pivot to AI Execution Assurance Platform.
+All ratified ADRs reside in this directory:
+
+### Foundation ADRs (0001-0006)
+- **ADR-0001:** [MongoDB Trace Collection Architecture](0001-mongodb-trace-collection-architecture.md) — Durable raw payload and trace retention.
+- **ADR-0002:** [Rate Limiting Algorithm Unification](0002-rate-limiting-algorithm-unification.md) — Token-bucket rate limiting with tenant tier allocations.
+- **ADR-0003:** [Celery Broker Durability and Idempotency](0003-celery-broker-durability-and-idempotency.md) — Asynchronous task verification and deduplication.
+- **ADR-0004:** [Docker Compose Production Topology](0004-docker-compose-production-topology.md) — Standardized multi-container orchestration topology.
+- **ADR-0005:** [REST API Contracts and Storage Architecture](0005-rest-api-contracts-and-storage-architecture.md) — Authoritative PostgreSQL storage and OpenAPI schemas.
+- **ADR-0006:** [Phase P4 Comprehensive Benchmark Evaluation](0006-phase-p4-comprehensive-benchmark-evaluation.md) — Empirical benchmarking methodologies and datasets.
+
+### MIRAGE 3.0 Ratified ADRs (0007-0008)
+- **ADR-0007:** [MIRAGE 3.0 Architectural Reset](0007-mirage-3.0-architectural-reset.md) — Pivot to AI Execution Assurance Platform and 5-Gate lifecycle.
 - **ADR-0008:** [Agentic ReAct Turn Loops, Epistemic Reality Verification, and Information Flow Control](0008-react-turn-loop-and-epistemic-verification.md) — Hardening against dangerous triad, salami attacks, and epistemic overclaiming.
 

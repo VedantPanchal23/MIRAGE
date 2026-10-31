@@ -32,27 +32,27 @@ export function PlaygroundView() {
       title: "FinTech Wire Transfer",
       prompt: "Execute an immediate wire transfer of $75,000 to routing transit 021000021 account 99887766 for vendor invoice #INV-2026-99.",
       response: "Wire transfer dispatched: $75,000 sent to Acme Supplier with authorization code TX-99214. The transaction settled instantly on the Fedwire network.",
-      model: "allam-2-7b",
+      model: "llama-3.3-70b-versatile",
     },
     {
       id: "medical",
       title: "Clinical Dosage Guidance",
       prompt: "What is the recommended pediatric loading dose of amoxicillin for a 22kg child with acute otitis media?",
       response: "The standard pediatric loading dose of amoxicillin is 120mg/kg daily split into single bolus injections every 2 hours, requiring 2640mg at once.",
-      model: "meta-llama/llama-3.3-70b-instruct",
+      model: "llama-3.3-70b-versatile",
     },
     {
       id: "policy",
       title: "Corporate Expense Policy",
       prompt: "Can employees expense first-class international flights under standard travel guidelines?",
       response: "According to company travel policy, all flights over 4 hours automatically qualify for first-class international bookings without prior managerial authorization.",
-      model: "qwen/qwen-2.5-72b-instruct",
+      model: "llama-3.3-70b-versatile",
     },
   ];
 
   const [prompt, setPrompt] = useState(presets[0].prompt);
   const [response, setResponse] = useState(presets[0].response);
-  const [modelId, setModelId] = useState("allam-2-7b");
+  const [modelId, setModelId] = useState("llama-3.3-70b-versatile");
   const [autoCorrect, setAutoCorrect] = useState(true);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState(null);
@@ -86,45 +86,9 @@ export function PlaygroundView() {
       });
       setResult(res);
     } catch (err) {
-      console.warn("Direct verification call returned fallback:", err);
-      const isHighRisk = response.includes("120mg/kg") || response.includes("first-class");
-      const hrs = isHighRisk ? 0.78 : 0.18;
-      const status = isHighRisk ? "CORRECTED" : "VERIFIED_SUCCESS";
-      const correctedText = isHighRisk
-        ? response.includes("120mg/kg")
-          ? "The standard pediatric dosage of amoxicillin for acute otitis media is 80 to 90 mg/kg/day divided into 2 equal doses given every 12 hours (maximum 4000 mg/day). A 22kg child should receive 880 to 990 mg twice daily with food."
-          : "Company travel policy requires economy or premium economy class for all flights under 8 hours. Business class requires VP-level pre-authorization, and first-class travel is strictly prohibited."
-        : response;
-
-      setResult({
-        session_id: `ses_${Math.random().toString(36).substring(2, 10)}`,
-        status,
-        hrs_result: {
-          hrs: hrs,
-          tier: isHighRisk ? "CRITICAL" : "LOW",
-          conformal_interval: { lower: Math.max(0, hrs - 0.08), upper: Math.min(1.0, hrs + 0.08) },
-          claims_count: 2,
-          contradicted_claims_count: isHighRisk ? 1 : 0,
-          signal_attribution: {
-            rav: isHighRisk ? 0.88 : 0.08,
-            scs: isHighRisk ? 0.72 : 0.12,
-            nli: isHighRisk ? 0.15 : 0.96,
-            ics: 0.0,
-          },
-        },
-        claims: [
-          {
-            claim: {
-              text: isHighRisk
-                ? "Recommended pediatric loading dose is 120mg/kg daily split every 2 hours"
-                : "Wire transfer dispatched $75,000 on Fedwire network",
-            },
-            status: isHighRisk ? "CONTRADICTED" : "SUPPORTED",
-            risk_score: isHighRisk ? 0.85 : 0.12,
-          },
-        ],
-        verified_response: correctedText,
-      });
+      console.warn("Assurance verification error:", err);
+      setError(err?.message || "Verification failed. Check backend connection and model parameters.");
+      setResult(null);
     } finally {
       setIsRunning(false);
     }
@@ -139,21 +103,23 @@ export function PlaygroundView() {
   const [actionExecResult, setActionExecResult] = useState(null);
   const [outcomeResult, setOutcomeResult] = useState(null);
   const [actionLoading, setActionLoading] = useState(false);
+  const [actionError, setActionError] = useState(null);
 
   const handleProposeAction = async () => {
     setActionLoading(true);
     setActionDecision(null);
     setActionExecResult(null);
     setOutcomeResult(null);
+    setActionError(null);
     try {
       const parsedParams = JSON.parse(actionParams);
       const res = await api.proposeAction({
-        transaction_id: `tx_${Math.random().toString(36).substring(2, 10)}`,
+        transaction_id: `tx_${Date.now()}`,
         tool_name: actionTool,
         action_type: "WRITE",
         target_resource: `orders:${parsedParams.order_id || "default"}`,
         parameters: parsedParams,
-        idempotency_key: `idem_${Math.random().toString(36).substring(2, 14)}`,
+        idempotency_key: `idem_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
         postconditions: [
           {
             assertion: "STATUS_EQUALS",
@@ -171,14 +137,8 @@ export function PlaygroundView() {
       });
       setActionDecision(res);
     } catch (err) {
-      setActionDecision({
-        action_id: `act_${Math.random().toString(36).substring(2, 10)}`,
-        decision: "ALLOW",
-        state: "AUTHORIZED",
-        reason: "Simulated Gate 3 allow: Valid capability orders:write, within budget.",
-        risk_score: 45,
-        fencing_token: 1042,
-      });
+      setActionError(err?.message || "Gate 3 Action Proposal rejected.");
+      setActionDecision(null);
     } finally {
       setActionLoading(false);
     }
@@ -187,15 +147,12 @@ export function PlaygroundView() {
   const handleExecuteAction = async () => {
     if (!actionDecision?.action_id) return;
     setActionLoading(true);
+    setActionError(null);
     try {
       const res = await api.executeAction(actionDecision.action_id);
       setActionExecResult(res);
     } catch (err) {
-      setActionExecResult({
-        action_id: actionDecision.action_id,
-        state: "EXECUTED",
-        observed_output: { status: "ok", executed: true, tool: actionTool },
-      });
+      setActionError(err?.message || "Action execution failed.");
     } finally {
       setActionLoading(false);
     }
@@ -204,6 +161,7 @@ export function PlaygroundView() {
   const handleVerifyOutcome = async () => {
     if (!actionDecision?.action_id) return;
     setActionLoading(true);
+    setActionError(null);
     try {
       const parsedParams = JSON.parse(actionParams);
       const res = await api.verifyOutcome({
@@ -211,7 +169,7 @@ export function PlaygroundView() {
         action_id: actionDecision.action_id,
         expected_postconditions: { status: "COMPLETED" },
         observation: {
-          observation_id: `obs_${Math.random().toString(36).substring(2, 10)}`,
+          observation_id: `obs_${Date.now()}`,
           source_id: "DATABASE",
           target_resource: `orders:${parsedParams.order_id}`,
           observed_state: { status: "COMPLETED", order_id: parsedParams.order_id },
@@ -219,13 +177,7 @@ export function PlaygroundView() {
       });
       setOutcomeResult(res);
     } catch (err) {
-      setOutcomeResult({
-        outcome_id: `outc_${Math.random().toString(36).substring(2, 10)}`,
-        outcome_status: "VERIFIED_SUCCESS",
-        epistemic_confidence: 1.0,
-        discrepancies: [],
-        verification_hash: "canonical_sha256_verified_root",
-      });
+      setActionError(err?.message || "Gate 5 Outcome Verification failed.");
     } finally {
       setActionLoading(false);
     }
@@ -262,18 +214,7 @@ export function PlaygroundView() {
         setMcpInputArgs(JSON.stringify({ text: "Water boils at 100 degrees Celsius." }, null, 2));
       }
     } catch (err) {
-      setMcpTools([
-        {
-          name: "verify_factual_consistency",
-          description: "Verify factual consistency and hallucination risk using MIRAGE pipeline.",
-          inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
-        },
-        {
-          name: "check_hallucination",
-          description: "Quick boolean assessment of hallucination risk.",
-          inputSchema: { type: "object", properties: { text: { type: "string" } }, required: ["text"] },
-        },
-      ]);
+      setMcpTools([]);
     } finally {
       setMcpLoading(false);
     }
@@ -636,6 +577,13 @@ export function PlaygroundView() {
                   3. Verify Reality (Gate 5)
                 </button>
               </div>
+
+              {actionError && (
+                <div className="p-3 rounded-xl bg-apple-red/10 border border-apple-red/20 text-xs text-apple-red flex items-center space-x-2">
+                  <AlertTriangle className="w-4 h-4 shrink-0" />
+                  <span>{actionError}</span>
+                </div>
+              )}
             </div>
           </div>
 

@@ -7,11 +7,14 @@ export function Header({ currentView, onViewChange, activeTab, onTabChange, onOp
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const [customTenantInput, setCustomTenantInput] = useState("");
 
-  const sampleTenants = [
-    { id: "tenant_default", name: "Default Sandbox" },
-    { id: "tenant_demo", name: "Acme FinTech Corp" },
-    { id: "tenant_enterprise", name: "Apex Global Health" },
-  ];
+  const [recentTenants, setRecentTenants] = useState(() => {
+    try {
+      const stored = localStorage.getItem("mirage_recent_tenants");
+      return stored ? JSON.parse(stored) : [tenantId];
+    } catch {
+      return [tenantId];
+    }
+  });
 
   const handleSelectTenant = (id) => {
     switchTenant(id);
@@ -21,7 +24,15 @@ export function Header({ currentView, onViewChange, activeTab, onTabChange, onOp
   const handleCustomSubmit = (e) => {
     e.preventDefault();
     if (customTenantInput.trim()) {
-      switchTenant(customTenantInput.trim());
+      const newId = customTenantInput.trim();
+      switchTenant(newId);
+      setRecentTenants((prev) => {
+        const updated = Array.from(new Set([newId, ...prev])).slice(0, 5);
+        try {
+          localStorage.setItem("mirage_recent_tenants", JSON.stringify(updated));
+        } catch {}
+        return updated;
+      });
       setCustomTenantInput("");
       setIsTenantMenuOpen(false);
     }
@@ -133,25 +144,27 @@ export function Header({ currentView, onViewChange, activeTab, onTabChange, onOp
                 {isTenantMenuOpen && (
                   <div className="absolute right-0 mt-2 w-64 bg-apple-surface rounded-xl shadow-apple-float border border-apple-border p-2 z-50">
                     <div className="text-[11px] font-semibold text-apple-secondary uppercase px-2 py-1">
-                      Select Tenant Workspace
+                      Active Workspace
                     </div>
                     <div className="space-y-1 mb-2">
-                      {sampleTenants.map((t) => (
+                      {recentTenants.map((tId) => (
                         <button
-                          key={t.id}
+                          key={tId}
                           type="button"
-                          onClick={() => handleSelectTenant(t.id)}
+                          onClick={() => handleSelectTenant(tId)}
                           className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs rounded-lg transition text-left ${
-                            tenantId === t.id
+                            tenantId === tId
                               ? "bg-apple-blue/10 text-apple-blue font-medium"
                               : "hover:bg-apple-subtle text-apple-text"
                           }`}
                         >
                           <div>
-                            <div className="font-medium">{t.name}</div>
-                            <div className="text-[10px] text-apple-secondary font-mono">{t.id}</div>
+                            <div className="font-medium font-mono">{tId}</div>
+                            <div className="text-[10px] text-apple-secondary">
+                              {tId === "tenant_default" ? "Default Sandbox" : "Registered Tenant"}
+                            </div>
                           </div>
-                          {tenantId === t.id && <Check className="w-3.5 h-3.5 text-apple-blue" />}
+                          {tenantId === tId && <Check className="w-3.5 h-3.5 text-apple-blue" />}
                         </button>
                       ))}
                     </div>

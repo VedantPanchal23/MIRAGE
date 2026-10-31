@@ -18,11 +18,11 @@ import { AssuranceGateVisualizer3D } from "../components/AssuranceGateVisualizer
 export function OverviewView({ onTabChange }) {
   const { tenantId } = useAuth();
   const [stats, setStats] = useState({
-    total_requests: 1248,
-    verified_clean_rate: 98.4,
-    avg_hrs_score: 0.14,
-    active_hitl_pending: 1,
-    budget_remaining: 82.5,
+    total_requests: 0,
+    verified_clean_rate: 100.0,
+    avg_hrs_score: 0.0,
+    active_hitl_pending: 0,
+    budget_remaining: 100.0,
   });
   const [loading, setLoading] = useState(true);
 
@@ -32,16 +32,16 @@ export function OverviewView({ onTabChange }) {
       try {
         const res = await api.getDashboardStats(tenantId);
         if (mounted && res) {
-          setStats((prev) => ({
-            ...prev,
-            total_requests: res.total_requests ?? prev.total_requests,
-            verified_clean_rate: res.verified_clean_rate ?? prev.verified_clean_rate,
-            avg_hrs_score: res.avg_hrs ?? prev.avg_hrs_score,
-            active_hitl_pending: res.pending_approvals ?? prev.active_hitl_pending,
-          }));
+          setStats({
+            total_requests: res.total_requests ?? 0,
+            verified_clean_rate: res.verified_clean_rate ?? (res.total_requests ? 0.0 : 100.0),
+            avg_hrs_score: res.avg_hrs ?? res.average_hrs ?? 0.0,
+            active_hitl_pending: res.pending_approvals ?? 0,
+            budget_remaining: res.budget_remaining ?? 100.0,
+          });
         }
       } catch (err) {
-        console.debug("Dashboard stats loading local defaults:", err);
+        console.debug("Dashboard stats loading note:", err);
       } finally {
         if (mounted) setLoading(false);
       }
@@ -56,15 +56,15 @@ export function OverviewView({ onTabChange }) {
     {
       label: "Total Assured Transactions",
       value: stats.total_requests.toLocaleString(),
-      change: "+14.2% this week",
+      change: stats.total_requests === 0 ? "Awaiting first execution" : "Live authoritative count",
       trend: "up",
       icon: Activity,
       color: "text-apple-blue",
     },
     {
       label: "Factual Clean Rate",
-      value: `${stats.verified_clean_rate}%`,
-      change: "Gate 4 RAV Entailment",
+      value: stats.total_requests === 0 ? "100%" : `${stats.verified_clean_rate}%`,
+      change: stats.total_requests === 0 ? "Zero defects recorded" : "Gate 4 RAV Entailment",
       trend: "neutral",
       icon: ShieldCheck,
       color: "text-apple-green",
@@ -80,7 +80,7 @@ export function OverviewView({ onTabChange }) {
     {
       label: "HITL Approvals In Flight",
       value: stats.active_hitl_pending.toString(),
-      change: "Action Assurance Gate 3",
+      change: stats.active_hitl_pending === 0 ? "Queue clear" : "Action Assurance Gate 3",
       trend: "alert",
       icon: AlertTriangle,
       color: "text-apple-orange",
@@ -142,11 +142,35 @@ export function OverviewView({ onTabChange }) {
             onClick={() => onTabChange("billing")}
             className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-apple-subtle border border-apple-border text-apple-text text-sm font-medium hover:bg-apple-border/40 transition"
           >
-            <span>Plan & Quota</span>
+            <span>Plan &amp; Quota</span>
             <ArrowUpRight className="w-4 h-4 text-apple-secondary" />
           </button>
         </div>
       </div>
+
+      {/* Fresh Workspace Clean State Notice */}
+      {stats.total_requests === 0 && (
+        <div className="p-5 rounded-2xl bg-apple-blue/5 border border-apple-blue/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center space-x-3">
+            <div className="p-2.5 rounded-xl bg-apple-blue/10 text-apple-blue shrink-0">
+              <Sparkles className="w-5 h-5" />
+            </div>
+            <div>
+              <h4 className="text-sm font-bold text-apple-text">Clean Slate: Zero Prior Transactions</h4>
+              <p className="text-xs text-apple-secondary mt-0.5">
+                Your execution workspace is live with pure operational data. Run your first prompt in the Playground to see live 5-Gate evaluation.
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => onTabChange("playground")}
+            className="px-4 py-2 rounded-xl bg-apple-blue hover:bg-apple-blueHover text-white text-xs font-semibold shadow-apple-sm transition whitespace-nowrap self-start sm:self-auto"
+          >
+            Run Test Prompt &rarr;
+          </button>
+        </div>
+      )}
 
       {/* Primary KPI Metrics Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">

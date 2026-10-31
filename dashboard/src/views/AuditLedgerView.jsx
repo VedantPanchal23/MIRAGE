@@ -24,67 +24,19 @@ export function AuditLedgerView() {
   const [isDownloadingDossier, setIsDownloadingDossier] = useState(false);
   const [filterType, setFilterType] = useState("ALL");
 
-  const fallbackEvents = [
-    {
-      sequence_number: 104,
-      event_type: "OUTCOME_VERIFICATION_RECORDED",
-      timestamp: "2026-10-27T10:15:30Z",
-      action_id: "act_fin_882910",
-      transaction_id: "tx_992147",
-      previous_hash: "a4f89d38c29184ba081e9b21104e76a1c5d01289df71e3b62094cbb40129aef0",
-      current_hash: "7bc32f109de18844ba902319ef34c568910023da458ef123490abb192468cafe",
-      payload: {
-        gate: 5,
-        reality_outcome: "VERIFIED_SUCCESS",
-        observed_state: "Settled via Fedwire endpoint",
-        epistemic_check: "Independent readback matches predicted postconditions",
-      },
-    },
-    {
-      sequence_number: 103,
-      event_type: "HITL_APPROVAL_GRANTED",
-      timestamp: "2026-10-27T10:15:02Z",
-      action_id: "act_fin_882910",
-      transaction_id: "tx_992147",
-      previous_hash: "3189efb1029c54098aa90e4429bc0918432a104085ef1933ba019a8435d1094f",
-      current_hash: "a4f89d38c29184ba081e9b21104e76a1c5d01289df71e3b62094cbb40129aef0",
-      payload: {
-        approval_id: "appr_982a17",
-        operator: "user_admin",
-        decision: "GRANTED",
-        notes: "Verified authorized vendor invoice #INV-2026-99",
-      },
-    },
-    {
-      sequence_number: 102,
-      event_type: "GATE_3_ACTION_PROPOSED",
-      timestamp: "2026-10-27T10:14:22Z",
-      action_id: "act_fin_882910",
-      transaction_id: "tx_992147",
-      previous_hash: "0000000000000000000000000000000000000000000000000000000000000000",
-      current_hash: "3189efb1029c54098aa90e4429bc0918432a104085ef1933ba019a8435d1094f",
-      payload: {
-        tool_name: "wire_transfer_dispatcher",
-        target_resource: "bank:fedwire:account:99887766",
-        blast_radius: "GLOBAL_SYSTEMIC",
-        escalation: "L4_HITL_REQUIRED",
-      },
-    },
-  ];
-
   const loadEvents = async () => {
     try {
       const res = await api.getAuditEvents();
-      if (res && res.events && res.events.length > 0) {
+      if (res && Array.isArray(res.events) && res.events.length > 0) {
         setEvents(res.events);
         setSelectedEvent(res.events[0]);
       } else {
-        setEvents(fallbackEvents);
-        setSelectedEvent(fallbackEvents[0]);
+        setEvents([]);
+        setSelectedEvent(null);
       }
     } catch {
-      setEvents(fallbackEvents);
-      setSelectedEvent(fallbackEvents[0]);
+      setEvents([]);
+      setSelectedEvent(null);
     } finally {
       setLoading(false);
     }
@@ -217,7 +169,7 @@ export function AuditLedgerView() {
         </div>
 
         <div className="text-left sm:text-right text-xs text-apple-secondary font-mono">
-          <div>Monotonic Sequence: #{events[0]?.sequence_number || 104}</div>
+          <div>Monotonic Sequence: {events[0]?.sequence_number ? `#${events[0].sequence_number}` : "Genesis Initialized"}</div>
           <div className="text-[11px] text-apple-muted">PostgreSQL Authoritative RLS</div>
         </div>
       </div>
@@ -248,8 +200,17 @@ export function AuditLedgerView() {
             </div>
           </div>
 
-          <div className="space-y-2.5">
-            {filteredEvents.map((evt) => {
+          {filteredEvents.length === 0 ? (
+            <div className="bg-apple-surface rounded-2xl p-8 border border-apple-border text-center">
+              <FileCheck2 className="w-8 h-8 text-apple-secondary mx-auto mb-2 opacity-60" />
+              <h4 className="text-sm font-semibold text-apple-text">Audit Ledger Initialized</h4>
+              <p className="text-xs text-apple-secondary mt-1 max-w-sm mx-auto">
+                No ledger transactions recorded yet for tenant {tenantId}. Actions, approvals, and outcomes will be cryptographically anchored here.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {filteredEvents.map((evt) => {
               const isSelected = selectedEvent?.sequence_number === evt.sequence_number;
               return (
                 <div
@@ -287,6 +248,7 @@ export function AuditLedgerView() {
               );
             })}
           </div>
+          )}
         </div>
 
         {/* Right Column: Detailed Merkle Node Inspector */}
@@ -343,8 +305,12 @@ export function AuditLedgerView() {
               </div>
             </div>
           ) : (
-            <div className="h-full min-h-[300px] flex items-center justify-center rounded-3xl border border-dashed border-apple-border p-6 text-center text-apple-secondary text-xs">
-              Select an event from the ledger on the left to inspect its cryptographic parent linkage and signed canonical payload.
+            <div className="h-full min-h-[320px] flex flex-col items-center justify-center rounded-3xl border border-dashed border-apple-border p-8 text-center text-apple-secondary text-xs space-y-2">
+              <Lock className="w-8 h-8 text-apple-muted mx-auto" />
+              <div className="font-semibold text-apple-text">No Entry Selected</div>
+              <p className="max-w-xs text-apple-muted">
+                Select an entry from the chronological ledger to inspect SHA-256 hashes, parent linkage, and payload parameters.
+              </p>
             </div>
           )}
         </div>

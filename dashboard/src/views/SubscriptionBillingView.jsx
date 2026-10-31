@@ -6,6 +6,7 @@ import {
   ShieldCheck,
   TrendingUp,
   AlertTriangle,
+  AlertCircle,
   QrCode,
   Building,
   Smartphone,
@@ -24,6 +25,7 @@ export function SubscriptionBillingView() {
   const [paymentMethod, setPaymentMethod] = useState("upi"); // 'upi', 'netbanking', 'card'
   const [isProcessingPayment, setIsProcessingPayment] = useState(false);
   const [paymentSuccess, setPaymentSuccess] = useState(null);
+  const [paymentError, setPaymentError] = useState(null);
 
   const defaultPlans = [
     {
@@ -115,92 +117,78 @@ export function SubscriptionBillingView() {
   const handleSimulatePayment = async () => {
     if (!paymentModal) return;
     setIsProcessingPayment(true);
+    setPaymentError(null);
+    setPaymentSuccess(null);
 
     try {
-      // 1. Create Razorpay order
+      // 1. Create Razorpay order via gateway
       const order = await api.createRazorpayOrder(paymentModal.id);
-      const orderId = order.order_id || `order_${Math.random().toString(36).substring(2, 12)}`;
-
-      // 2. If valid Razorpay key is present, attempt opening official Razorpay checkout
-      let razorpayHandled = false;
-      if (order.key_id && order.key_id.startsWith("rzp_") && !order.key_id.includes("placeholder")) {
-        const scriptLoaded = await new Promise((resolve) => {
-          if (window.Razorpay) return resolve(true);
-          const script = document.createElement("script");
-          script.src = "https://checkout.razorpay.com/v1/checkout.js";
-          script.onload = () => resolve(true);
-          script.onerror = () => resolve(false);
-          document.body.appendChild(script);
-        });
-
-        if (scriptLoaded && window.Razorpay && order.order_id) {
-          razorpayHandled = true;
-          const options = {
-            key: order.key_id,
-            amount: order.amount_paise,
-            currency: order.currency || "INR",
-            name: "MIRAGE AI Execution Assurance",
-            description: `${paymentModal.name} Subscription`,
-            order_id: order.order_id,
-            handler: async (response) => {
-              try {
-                await api.verifyRazorpayPayment(
-                  response.razorpay_order_id || orderId,
-                  response.razorpay_payment_id,
-                  response.razorpay_signature,
-                  paymentModal.id
-                );
-                setActivePlanId(paymentModal.id);
-                setPaymentSuccess(
-                  `Payment successful via Razorpay! ${paymentModal.name} active for tenant ${tenantId}. Official receipt dispatched to your email.`
-                );
-                setPaymentModal(null);
-              } catch (err) {
-                setPaymentSuccess(
-                  `Payment verified! Active tier: ${paymentModal.name}. Receipt dispatched.`
-                );
-                setPaymentModal(null);
-              } finally {
-                setIsProcessingPayment(false);
-              }
-            },
-            modal: {
-              ondismiss: () => {
-                setIsProcessingPayment(false);
-              },
-            },
-            prefill: {
-              email: "vedantwork1402@gmail.com",
-            },
-            theme: {
-              color: "#0284c7",
-            },
-          };
-          const rzp = new window.Razorpay(options);
-          rzp.open();
-          return;
-        }
+      if (!order || !order.order_id) {
+        throw new Error(order?.detail || "Could not initialize payment order with gateway.");
       }
 
-      // 3. Fallback to sandbox simulation if external script cannot load
-      if (!razorpayHandled) {
-        await new Promise((r) => setTimeout(r, 800));
-        const paymentId = `pay_${Math.random().toString(36).substring(2, 16)}`;
-        const signature = `rzp_sig_${Math.random().toString(36).substring(2, 16)}`;
-        await api.verifyRazorpayPayment(orderId, paymentId, signature, paymentModal.id);
-        setActivePlanId(paymentModal.id);
-        setPaymentSuccess(
-          `Payment successful via Razorpay test sandbox! ${paymentModal.name} active for tenant ${tenantId}. Official receipt dispatched to your email.`
-        );
-        setPaymentModal(null);
+      // 2. Load official Razorpay checkout script
+      const scriptLoaded = await new Promise((resolve) => {
+        if (window.Razorpay) return resolve(true);
+        const script = document.createElement("script");
+        script.src = "https://checkout.razorpay.com/v1/checkout.js";
+        script.onload = () => resolve(true);
+        script.onerror = () => resolve(false);
+        document.body.appendChild(script);
+      });
+
+      if (!scriptLoaded || !window.Razorpay) {
+        throw new Error("Unable to load Razorpay checkout SDK. Please verify internet connectivity.");
       }
-    } catch {
-      setActivePlanId(paymentModal.id);
-      setPaymentSuccess(
-        `Payment verified via Razorpay sandbox! ${paymentModal.name} active. Confirmation receipt dispatched.`
-      );
-      setPaymentModal(null);
-    } finally {
+
+      // 3. Launch Razorpay payment sheet
+      const options = {
+        key: order.key_id,
+        amount: order.amount_paise,
+        currency: order.currency || "INR",
+        name: "MIRAGE AI Execution Assurance",
+        description: `${paymentModal.name} Subscription`,
+        order_id: order.order_id,
+        handler: async (response) => {
+          try {
+            await api.verifyRazorpayPayment(
+              response.razorpay_order_id || order.order_id,
+              response.razorpay_payment_id,
+              response.razorpay_signature,
+              paymentModal.id
+            );
+            setActivePlanId(paymentModal.id);
+            setPaymentSuccess(
+              `Payment successful! ${paymentModal.name} active for workspace ${tenantId}. Official tax invoice dispatched to your email.`
+            );
+            setPaymentModal(null);
+          } catch (err) {
+            setPaymentError(err.message || "Cryptographic payment verification failed on server.");
+          } finally {
+            setIsProcessingPayment(false);
+          }
+        },
+        modal: {
+          ondismiss: () => {
+            setIsProcessingPayment(false);
+          },
+        },
+        prefill: {
+          email: "vedantwork1402@gmail.com",
+        },
+        theme: {
+          color: "#0284c7",
+        },
+      };
+
+      const rzp = new window.Razorpay(options);
+      rzp.on("payment.failed", (response) => {
+        setPaymentError(`Payment failed: ${response.error?.description || "Transaction declined by issuing authority."}`);
+        setIsProcessingPayment(false);
+      });
+      rzp.open();
+    } catch (err) {
+      setPaymentError(err.message || "Payment initiation failed. Please check your credentials or network.");
       setIsProcessingPayment(false);
     }
   };
@@ -254,6 +242,22 @@ export function SubscriptionBillingView() {
           <button
             type="button"
             onClick={() => setPaymentSuccess(null)}
+            className="text-xs text-apple-secondary hover:text-apple-text"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {paymentError && (
+        <div className="p-4 rounded-2xl bg-apple-red/10 border border-apple-red/20 text-xs sm:text-sm text-apple-red flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-5 h-5 shrink-0" />
+            <span>{paymentError}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setPaymentError(null)}
             className="text-xs text-apple-secondary hover:text-apple-text"
           >
             Dismiss

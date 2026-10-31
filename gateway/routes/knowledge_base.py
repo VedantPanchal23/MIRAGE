@@ -371,3 +371,45 @@ async def delete_document(
     await default_persistence_service.delete_kb_document(tenant_id=tenant_id, document_id=document_id)
 
     return {"status": "deleted", "document_id": document_id, "tenant_id": tenant_id}
+
+
+class SearchKnowledgeBaseRequest(BaseModel):
+    query: str = Field(..., min_length=1, description="Query string to search in indexed knowledge base")
+    collection_name: str = Field(default="default_kb", description="Target Qdrant collection")
+    limit: int = Field(default=5, ge=1, le=20, description="Maximum number of evidence chunks to retrieve")
+
+
+@router.post("/v1/kb/search")
+@router.post("/v1/knowledge-base/search")
+async def search_knowledge_base(
+    request: SearchKnowledgeBaseRequest,
+    tenant_id: str = Depends(require_permission(Permission.KB_READ)),
+) -> dict[str, Any]:
+    """Search tenant-scoped knowledge base chunks via Qdrant vector retrieval."""
+    from workers.rav.worker import RAVWorker
+
+    worker = RAVWorker()
+    evidence = await worker.search_evidence(
+        query=request.query,
+        tenant_id=tenant_id,
+        collection_name=request.collection_name,
+        limit=request.limit,
+    )
+
+    results = [
+        {
+            "chunk_id": e.chunk_id,
+            "document_id": e.document_id,
+            "similarity": round(e.similarity_score, 4),
+            "source_doc": (e.source_metadata or {}).get("source_filename") or e.document_id,
+            "snippet": e.content,
+        }
+        for e in evidence
+    ]
+    return {
+        "query": request.query,
+        "tenant_id": tenant_id,
+        "collection_name": request.collection_name,
+        "total_results": len(results),
+        "results": results,
+    }

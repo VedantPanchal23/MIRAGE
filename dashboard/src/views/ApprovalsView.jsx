@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import {
   CheckSquare,
   AlertTriangle,
+  AlertCircle,
   CheckCircle,
   XCircle,
   Shield,
@@ -20,68 +21,24 @@ export function ApprovalsView() {
   const [decisionReason, setDecisionReason] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [successMessage, setSuccessMessage] = useState(null);
-
-  const fallbackApprovals = [
-    {
-      id: "appr_982a17",
-      action_id: "act_fin_882910",
-      transaction_id: "tx_992147",
-      tool_name: "wire_transfer_dispatcher",
-      action_type: "MUTATION",
-      target_resource: "bank:fedwire:account:99887766",
-      risk_score: 0.92,
-      blast_radius: "GLOBAL_SYSTEMIC",
-      required_capability: "fintech:wire:dispatch",
-      parameters: {
-        amount: 75000,
-        currency: "USD",
-        beneficiary_name: "Acme Industrial Supplies LLC",
-        routing_transit: "021000021",
-        account_number: "99887766",
-        idempotency_key: "TXID-882910-FED",
-      },
-      requested_at: "2026-10-27T10:14:22Z",
-      status: "PENDING",
-      reason_for_escalation: "Exceeds automated execution ceiling ($50,000 threshold). Gate 3 requires L4 Human-in-the-Loop signature.",
-    },
-    {
-      id: "appr_771b02",
-      action_id: "act_sql_331902",
-      transaction_id: "tx_110943",
-      tool_name: "sql_conditional_adapter",
-      action_type: "MUTATION",
-      target_resource: "db:production:customers",
-      risk_score: 0.85,
-      blast_radius: "ZONE_REGIONAL",
-      required_capability: "db:mutation:conditional",
-      parameters: {
-        table: "customers",
-        operation: "UPDATE_STATUS",
-        where_condition: "tier = 'ENTERPRISE' AND balance < 0",
-        new_status: "SUSPENDED",
-      },
-      requested_at: "2026-10-27T10:05:10Z",
-      status: "PENDING",
-      reason_for_escalation: "Batch mutation affecting > 25 records requires explicit authorization.",
-    },
-  ];
+  const [errorMessage, setErrorMessage] = useState(null);
 
   useEffect(() => {
     let mounted = true;
     async function loadData() {
       try {
         const res = await api.getPendingApprovals();
-        if (mounted && res && res.length > 0) {
+        if (mounted && Array.isArray(res) && res.length > 0) {
           setApprovals(res);
           setActiveApproval(res[0]);
-        } else {
-          setApprovals(fallbackApprovals);
-          setActiveApproval(fallbackApprovals[0]);
+        } else if (mounted) {
+          setApprovals([]);
+          setActiveApproval(null);
         }
       } catch (err) {
         if (mounted) {
-          setApprovals(fallbackApprovals);
-          setActiveApproval(fallbackApprovals[0]);
+          setApprovals([]);
+          setActiveApproval(null);
         }
       } finally {
         if (mounted) setLoading(false);
@@ -96,16 +53,14 @@ export function ApprovalsView() {
   const handleGrant = async () => {
     if (!activeApproval) return;
     setIsSubmitting(true);
+    setErrorMessage(null);
     try {
       await api.grantApproval(activeApproval.id, decisionReason || "Approved via Operator Dashboard");
       setSuccessMessage(`Approval granted for ${activeApproval.action_id}. Action authorized.`);
       setApprovals((prev) => prev.filter((a) => a.id !== activeApproval.id));
       setActiveApproval(null);
-    } catch {
-      // Local demo update
-      setSuccessMessage(`Approval granted for ${activeApproval.action_id}. Action authorized under Gate 3 lease.`);
-      setApprovals((prev) => prev.filter((a) => a.id !== activeApproval.id));
-      setActiveApproval(null);
+    } catch (err) {
+      setErrorMessage(err.message || `Failed to grant approval for ${activeApproval.action_id}`);
     } finally {
       setIsSubmitting(false);
       setDecisionReason("");
@@ -115,15 +70,14 @@ export function ApprovalsView() {
   const handleDeny = async () => {
     if (!activeApproval) return;
     setIsSubmitting(true);
+    setErrorMessage(null);
     try {
       await api.denyApproval(activeApproval.id, decisionReason || "Denied via Operator Dashboard");
       setSuccessMessage(`Action ${activeApproval.action_id} denied and terminated.`);
       setApprovals((prev) => prev.filter((a) => a.id !== activeApproval.id));
       setActiveApproval(null);
-    } catch {
-      setSuccessMessage(`Action ${activeApproval.action_id} denied and terminated.`);
-      setApprovals((prev) => prev.filter((a) => a.id !== activeApproval.id));
-      setActiveApproval(null);
+    } catch (err) {
+      setErrorMessage(err.message || `Failed to deny approval for ${activeApproval.action_id}`);
     } finally {
       setIsSubmitting(false);
       setDecisionReason("");
@@ -150,6 +104,22 @@ export function ApprovalsView() {
           <button
             type="button"
             onClick={() => setSuccessMessage(null)}
+            className="text-apple-secondary hover:text-apple-text text-xs"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {errorMessage && (
+        <div className="p-4 rounded-2xl bg-apple-red/10 border border-apple-red/20 text-xs sm:text-sm text-apple-red flex items-center justify-between">
+          <div className="flex items-center space-x-2">
+            <AlertCircle className="w-4 h-4" />
+            <span>{errorMessage}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setErrorMessage(null)}
             className="text-apple-secondary hover:text-apple-text text-xs"
           >
             Dismiss
@@ -298,8 +268,12 @@ export function ApprovalsView() {
               </div>
             </div>
           ) : (
-            <div className="h-full min-h-[300px] flex items-center justify-center rounded-3xl border border-dashed border-apple-border p-6 text-center text-apple-secondary text-xs">
-              Select an approval ticket from the left column to inspect parameters and render a decision.
+            <div className="h-full min-h-[320px] flex flex-col items-center justify-center rounded-3xl border border-dashed border-apple-border p-8 text-center text-apple-secondary text-xs space-y-2">
+              <Shield className="w-8 h-8 text-apple-muted mx-auto" />
+              <div className="font-semibold text-apple-text">No Action Selected</div>
+              <p className="max-w-xs text-apple-muted">
+                Proposed actions requiring elevated capabilities or human-in-the-loop review will appear here for parameter inspection.
+              </p>
             </div>
           )}
         </div>

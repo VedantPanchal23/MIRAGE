@@ -29,36 +29,18 @@ export function DeveloperConsoleView() {
 
   // Active Code Snippet Tab
   const [activeSnippetTab, setActiveSnippetTab] = useState("openai");
-
-  const fallbackKeys = [
-    {
-      id: "key_live_9201a",
-      name: "Production Gateway Agent Key",
-      key_prefix: "mrg_live_9201...",
-      role: "admin",
-      created_at: "2026-10-25T12:00:00Z",
-      last_used: "2 minutes ago",
-    },
-    {
-      id: "key_dev_4481b",
-      name: "Staging Testing Key",
-      key_prefix: "mrg_live_4481...",
-      role: "operator",
-      created_at: "2026-10-26T16:30:00Z",
-      last_used: "1 hour ago",
-    },
-  ];
+  const [createKeyError, setCreateKeyError] = useState(null);
 
   const loadKeys = async () => {
     try {
       const res = await api.getApiKeys();
-      if (res && res.keys && res.keys.length > 0) {
+      if (res && Array.isArray(res.keys) && res.keys.length > 0) {
         setKeys(res.keys);
       } else {
-        setKeys(fallbackKeys);
+        setKeys([]);
       }
     } catch {
-      setKeys(fallbackKeys);
+      setKeys([]);
     } finally {
       setLoading(false);
     }
@@ -72,27 +54,19 @@ export function DeveloperConsoleView() {
     e.preventDefault();
     if (!keyName.trim()) return;
     setIsCreatingKey(true);
+    setCreateKeyError(null);
 
     try {
       const res = await api.createApiKey(keyName.trim(), "", keyRole);
-      setNewlyCreatedKey(res.plaintext_key || `mrg_live_${Math.random().toString(36).substring(2, 24)}`);
-      await loadKeys();
-      setKeyName("");
-    } catch {
-      const mockKey = `mrg_live_${Math.random().toString(36).substring(2, 24)}`;
-      setNewlyCreatedKey(mockKey);
-      setKeys((prev) => [
-        {
-          id: `key_${Math.random().toString(36).substring(2, 8)}`,
-          name: keyName.trim(),
-          key_prefix: `${mockKey.substring(0, 12)}...`,
-          role: keyRole,
-          created_at: new Date().toISOString(),
-          last_used: "Never",
-        },
-        ...prev,
-      ]);
-      setKeyName("");
+      if (res && res.plaintext_key) {
+        setNewlyCreatedKey(res.plaintext_key);
+        await loadKeys();
+        setKeyName("");
+      } else {
+        throw new Error("Key created, but token was not returned.");
+      }
+    } catch (err) {
+      setCreateKeyError(err.message || "Failed to create API key in database.");
     } finally {
       setIsCreatingKey(false);
     }
@@ -102,8 +76,8 @@ export function DeveloperConsoleView() {
     try {
       await api.revokeApiKey(keyId);
       setKeys((prev) => prev.filter((k) => k.id !== keyId));
-    } catch {
-      setKeys((prev) => prev.filter((k) => k.id !== keyId));
+    } catch (err) {
+      setCreateKeyError(err.message || "Failed to revoke API key in database.");
     }
   };
 
@@ -220,6 +194,13 @@ curl -X POST http://localhost:8000/v1/verify \\
               </button>
             </form>
 
+            {createKeyError && (
+              <div className="p-3 rounded-xl bg-apple-red/10 border border-apple-red/20 text-xs text-apple-red flex items-center space-x-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{createKeyError}</span>
+              </div>
+            )}
+
             {newlyCreatedKey && (
               <div className="p-4 rounded-2xl bg-apple-green/10 border border-apple-green/20 space-y-2">
                 <div className="flex items-center justify-between text-xs font-semibold text-apple-green">
@@ -254,31 +235,41 @@ curl -X POST http://localhost:8000/v1/verify \\
             <span className="text-xs font-semibold text-apple-secondary uppercase tracking-wider px-1">
               Active Credentials ({keys.length})
             </span>
-            {keys.map((k) => (
-              <div
-                key={k.id}
-                className="p-3.5 rounded-2xl bg-apple-surface border border-apple-border shadow-apple-sm flex items-center justify-between hover:shadow-apple-card transition"
-              >
-                <div>
-                  <div className="text-xs font-semibold text-apple-text">{k.name}</div>
-                  <div className="text-[11px] font-mono text-apple-secondary mt-0.5">
-                    {k.key_prefix || k.id}
-                  </div>
-                  <div className="text-[10px] text-apple-muted mt-1">
-                    Role: <span className="font-semibold uppercase">{k.role}</span>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => handleRevokeKey(k.id)}
-                  title="Instantly revoke API key"
-                  className="p-2 rounded-xl text-apple-muted hover:text-apple-red hover:bg-apple-red/10 transition"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
+            {keys.length === 0 ? (
+              <div className="bg-apple-surface rounded-2xl p-6 border border-apple-border text-center">
+                <Key className="w-8 h-8 text-apple-secondary mx-auto mb-2 opacity-60" />
+                <h4 className="text-xs font-semibold text-apple-text">No API Keys Provisioned</h4>
+                <p className="text-[11px] text-apple-secondary mt-1 max-w-xs mx-auto">
+                  Generate an API key above to authenticate AI agents and SDK requests.
+                </p>
               </div>
-            ))}
+            ) : (
+              keys.map((k) => (
+                <div
+                  key={k.id}
+                  className="p-3.5 rounded-2xl bg-apple-surface border border-apple-border shadow-apple-sm flex items-center justify-between hover:shadow-apple-card transition"
+                >
+                  <div>
+                    <div className="text-xs font-semibold text-apple-text">{k.name}</div>
+                    <div className="text-[11px] font-mono text-apple-secondary mt-0.5">
+                      {k.key_prefix || k.id}
+                    </div>
+                    <div className="text-[10px] text-apple-muted mt-1">
+                      Role: <span className="font-semibold uppercase">{k.role}</span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => handleRevokeKey(k.id)}
+                    title="Instantly revoke API key"
+                    className="p-2 rounded-xl text-apple-muted hover:text-apple-red hover:bg-apple-red/10 transition"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))
+            )}
           </div>
         </div>
 

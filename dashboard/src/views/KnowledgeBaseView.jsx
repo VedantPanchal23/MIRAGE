@@ -31,44 +31,19 @@ export function KnowledgeBaseView() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState([]);
   const [isSearching, setIsSearching] = useState(false);
-
-  const fallbackDocs = [
-    {
-      document_id: "doc_policy_travel_2026",
-      filename: "Corporate_Travel_and_Expense_Guidelines_2026.md",
-      chunks_count: 14,
-      upload_timestamp: "2026-10-25T14:30:00Z",
-      indexed_to_qdrant: true,
-      status: "INDEXED",
-    },
-    {
-      document_id: "doc_clinical_pediatric_amox",
-      filename: "Pediatric_Amoxicillin_Otitis_Media_Clinical_Protocol.txt",
-      chunks_count: 8,
-      upload_timestamp: "2026-10-26T09:15:00Z",
-      indexed_to_qdrant: true,
-      status: "INDEXED",
-    },
-    {
-      document_id: "doc_fintech_wire_limits",
-      filename: "Treasury_Wire_Transfer_Controls_and_Thresholds.json",
-      chunks_count: 12,
-      upload_timestamp: "2026-10-27T08:00:00Z",
-      indexed_to_qdrant: true,
-      status: "INDEXED",
-    },
-  ];
+  const [searchError, setSearchError] = useState(null);
+  const [hasSearched, setHasSearched] = useState(false);
 
   const loadDocuments = async () => {
     try {
       const res = await api.getKBDocuments();
-      if (res && res.documents && res.documents.length > 0) {
+      if (res && Array.isArray(res.documents) && res.documents.length > 0) {
         setDocuments(res.documents);
       } else {
-        setDocuments(fallbackDocs);
+        setDocuments([]);
       }
     } catch {
-      setDocuments(fallbackDocs);
+      setDocuments([]);
     } finally {
       setLoading(false);
     }
@@ -99,20 +74,8 @@ export function KnowledgeBaseView() {
       setFilename("");
       setContent("");
       await loadDocuments();
-    } catch {
-      // Local fallback representation
-      const newDoc = {
-        document_id: `doc_${Math.random().toString(36).substring(2, 9)}`,
-        filename: filename.trim(),
-        chunks_count: chunkCount,
-        upload_timestamp: new Date().toISOString(),
-        indexed_to_qdrant: true,
-        status: "INDEXED",
-      };
-      setDocuments((prev) => [newDoc, ...prev]);
-      setUploadSuccess(`Document "${filename}" ingested (${formattedSize}, ${chunkCount} chunks) and indexed under Gate 2 Context Assurance.`);
-      setFilename("");
-      setContent("");
+    } catch (err) {
+      setUploadError(err.message || "Failed to ingest document into vector store.");
     } finally {
       setIsUploading(false);
     }
@@ -122,33 +85,27 @@ export function KnowledgeBaseView() {
     try {
       await api.deleteKBDocument(docId);
       setDocuments((prev) => prev.filter((d) => d.document_id !== docId));
-    } catch {
-      setDocuments((prev) => prev.filter((d) => d.document_id !== docId));
+    } catch (err) {
+      setUploadError(err.message || `Failed to delete document ${docId}`);
     }
   };
 
-  const handleSearch = (e) => {
+  const handleSearch = async (e) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
     setIsSearching(true);
+    setSearchError(null);
+    setHasSearched(true);
 
-    setTimeout(() => {
-      setSearchResults([
-        {
-          chunk_id: "chk_092a",
-          similarity: 0.94,
-          source_doc: "Pediatric_Amoxicillin_Otitis_Media_Clinical_Protocol.txt",
-          snippet: "High-dose amoxicillin (80 to 90 mg/kg/day in 2 divided doses every 12 hours) is the treatment of choice for acute otitis media in pediatric patients.",
-        },
-        {
-          chunk_id: "chk_114b",
-          similarity: 0.82,
-          source_doc: "Treasury_Wire_Transfer_Controls_and_Thresholds.json",
-          snippet: "Section 3.1: Automated wire disbursements over $50,000 require secondary Human-in-the-Loop cryptographic key signing before Gate 3 lease dispatch.",
-        },
-      ]);
+    try {
+      const res = await api.searchKB(searchQuery.trim(), collectionName);
+      setSearchResults(res.results || []);
+    } catch (err) {
+      setSearchError(err.message || "Vector search query failed.");
+      setSearchResults([]);
+    } finally {
       setIsSearching(false);
-    }, 300);
+    }
   };
 
   return (
@@ -304,6 +261,16 @@ export function KnowledgeBaseView() {
               </button>
             </form>
 
+            {searchError && (
+              <p className="text-xs text-apple-red px-1 mt-1">{searchError}</p>
+            )}
+
+            {hasSearched && !isSearching && searchResults.length === 0 && !searchError && (
+              <p className="text-xs text-apple-secondary px-1 mt-2 text-center py-2">
+                No matching evidence chunks found in tenant vector space.
+              </p>
+            )}
+
             {searchResults.length > 0 && (
               <div className="space-y-2 pt-2">
                 {searchResults.map((res, i) => (
@@ -336,41 +303,51 @@ export function KnowledgeBaseView() {
             <span className="text-xs font-mono text-apple-secondary">RLS Enforced</span>
           </div>
 
-          <div className="space-y-2.5">
-            {documents.map((doc) => (
-              <div
-                key={doc.document_id}
-                className="p-4 rounded-2xl bg-apple-surface border border-apple-border shadow-apple-sm flex items-center justify-between hover:shadow-apple-card transition group"
-              >
-                <div className="flex items-start space-x-3">
-                  <div className="p-2.5 rounded-xl bg-apple-subtle text-apple-secondary group-hover:text-apple-blue group-hover:bg-apple-blue/10 transition">
-                    <FileText className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h4 className="text-xs sm:text-sm font-semibold text-apple-text">
-                      {doc.filename}
-                    </h4>
-                    <div className="flex items-center space-x-2 text-[11px] text-apple-secondary mt-1 font-mono">
-                      <span>{doc.chunks_count} chunks</span>
-                      <span>•</span>
-                      <span>{new Date(doc.upload_timestamp).toLocaleDateString()}</span>
-                      <span>•</span>
-                      <span className="text-apple-green font-medium">INDEXED</span>
+          {documents.length === 0 ? (
+            <div className="bg-apple-surface rounded-2xl p-8 border border-apple-border text-center">
+              <Database className="w-8 h-8 text-apple-secondary mx-auto mb-2 opacity-60" />
+              <h4 className="text-sm font-semibold text-apple-text">No Documents Indexed</h4>
+              <p className="text-xs text-apple-secondary mt-1 max-w-sm mx-auto">
+                Ingest policies, guides, or specifications on the left to ground your AI agents and prevent Gate 2 context poisoning.
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-2.5">
+              {documents.map((doc) => (
+                <div
+                  key={doc.document_id}
+                  className="p-4 rounded-2xl bg-apple-surface border border-apple-border shadow-apple-sm flex items-center justify-between hover:shadow-apple-card transition group"
+                >
+                  <div className="flex items-start space-x-3">
+                    <div className="p-2.5 rounded-xl bg-apple-subtle text-apple-secondary group-hover:text-apple-blue group-hover:bg-apple-blue/10 transition">
+                      <FileText className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h4 className="text-xs sm:text-sm font-semibold text-apple-text">
+                        {doc.filename}
+                      </h4>
+                      <div className="flex items-center space-x-2 text-[11px] text-apple-secondary mt-1 font-mono">
+                        <span>{doc.chunks_count} chunks</span>
+                        <span>•</span>
+                        <span>{new Date(doc.upload_timestamp).toLocaleDateString()}</span>
+                        <span>•</span>
+                        <span className="text-apple-green font-medium">INDEXED</span>
+                      </div>
                     </div>
                   </div>
-                </div>
 
-                <button
-                  type="button"
-                  onClick={() => handleDelete(doc.document_id)}
-                  title="Purge document chunks from Qdrant and PostgreSQL"
-                  className="p-2 rounded-xl text-apple-muted hover:text-apple-red hover:bg-apple-red/10 transition"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            ))}
-          </div>
+                  <button
+                    type="button"
+                    onClick={() => handleDelete(doc.document_id)}
+                    title="Purge document chunks from Qdrant and PostgreSQL"
+                    className="p-2 rounded-xl text-apple-muted hover:text-apple-red hover:bg-apple-red/10 transition"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

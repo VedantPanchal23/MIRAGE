@@ -72,6 +72,17 @@ export const api = {
     });
   },
 
+  async searchKB(query, collectionName = "default_kb", limit = 5) {
+    return apiRequest("/v1/kb/search", {
+      method: "POST",
+      body: {
+        query,
+        collection_name: collectionName,
+        limit,
+      },
+    });
+  },
+
   // 5. Developer Console (API Keys & Integrations)
   async getApiKeys() {
     return apiRequest("/v1/auth/api-keys");

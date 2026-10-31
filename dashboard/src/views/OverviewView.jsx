@@ -10,6 +10,8 @@ import {
   Lock,
   Layers,
   Sparkles,
+  Clock,
+  ExternalLink,
 } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -24,14 +26,20 @@ export function OverviewView({ onTabChange }) {
     active_hitl_pending: 0,
     budget_remaining: 100.0,
   });
+  const [recentSessions, setRecentSessions] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let mounted = true;
     async function loadData() {
       try {
-        const res = await api.getDashboardStats(tenantId);
-        if (mounted && res) {
+        const [statsRes, sessionsRes] = await Promise.allSettled([
+          api.getDashboardStats(tenantId),
+          api.getSessions({ page_size: 5 }),
+        ]);
+
+        if (mounted && statsRes.status === "fulfilled" && statsRes.value) {
+          const res = statsRes.value;
           setStats({
             total_requests: res.total_requests ?? 0,
             verified_clean_rate: res.verified_clean_rate ?? (res.total_requests ? 0.0 : 100.0),
@@ -39,6 +47,11 @@ export function OverviewView({ onTabChange }) {
             active_hitl_pending: res.pending_approvals ?? 0,
             budget_remaining: res.budget_remaining ?? 100.0,
           });
+        }
+
+        if (mounted && sessionsRes.status === "fulfilled" && sessionsRes.value) {
+          const s = sessionsRes.value;
+          setRecentSessions(Array.isArray(s.items) ? s.items : []);
         }
       } catch (err) {
         console.debug("Dashboard stats loading note:", err);
@@ -113,6 +126,20 @@ export function OverviewView({ onTabChange }) {
       done: true,
     },
   ];
+
+  const getRiskBadgeColor = (tier) => {
+    const t = String(tier || "").toUpperCase();
+    if (t.includes("CRITICAL") || t === "L4" || t === "HIGH") {
+      return "bg-apple-red/10 text-apple-red border-apple-red/20";
+    }
+    if (t.includes("ELEVATED") || t === "L3" || t === "MEDIUM") {
+      return "bg-apple-orange/10 text-apple-orange border-apple-orange/20";
+    }
+    if (t.includes("STANDARD") || t === "L2") {
+      return "bg-apple-blue/10 text-apple-blue border-apple-blue/20";
+    }
+    return "bg-apple-green/10 text-apple-green border-apple-green/20";
+  };
 
   return (
     <div className="space-y-8 pb-12">
@@ -199,11 +226,75 @@ export function OverviewView({ onTabChange }) {
       {/* 3D Visualizer Section */}
       <AssuranceGateVisualizer3D />
 
+      {/* Recent Assured Transactions Feed */}
+      <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-apple-border">
+          <div className="flex items-center space-x-2">
+            <Activity className="w-4 h-4 text-apple-blue" />
+            <h3 className="font-semibold text-sm text-apple-text">Recent Assured Transactions</h3>
+          </div>
+          <button
+            type="button"
+            onClick={() => onTabChange("audit")}
+            className="text-xs font-semibold text-apple-blue hover:underline flex items-center space-x-1"
+          >
+            <span>View Full Audit Ledger</span>
+            <ArrowUpRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        {recentSessions.length === 0 ? (
+          <div className="p-8 border border-dashed border-apple-border rounded-2xl text-center">
+            <Clock className="w-7 h-7 text-apple-secondary mx-auto mb-2 opacity-50" />
+            <h4 className="text-xs font-semibold text-apple-text">No Recent Transactions in Local Window</h4>
+            <p className="text-[11px] text-apple-secondary mt-1">
+              Dispatched prompts from the Playground, OpenAI SDK drop-in proxy, or MCP tools will appear here.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2.5">
+            {recentSessions.map((s, idx) => (
+              <div
+                key={s.session_id || idx}
+                className="p-3.5 rounded-2xl bg-apple-subtle/50 hover:bg-apple-subtle border border-apple-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
+              >
+                <div className="space-y-1">
+                  <div className="flex items-center space-x-2">
+                    <span className="font-mono text-xs font-bold text-apple-text">
+                      {s.session_id?.substring(0, 16) || "session_tx"}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono border ${getRiskBadgeColor(s.risk_tier)}`}>
+                      {s.risk_tier || "LOW"}
+                    </span>
+                    {s.correction_applied && (
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-apple-purple/10 text-apple-purple border border-apple-purple/20">
+                        AUTOCORRECTED
+                      </span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-apple-secondary font-mono flex items-center space-x-3">
+                    <span>Model: {s.model_id || "llama-3.3-70b-versatile"}</span>
+                    <span>&bull;</span>
+                    <span>HRS Score: {typeof s.hrs_score === "number" ? s.hrs_score.toFixed(2) : "0.00"}</span>
+                    <span>&bull;</span>
+                    <span>Claims: {s.claims_count ?? 0}</span>
+                  </div>
+                </div>
+
+                <div className="text-[11px] text-apple-muted font-mono shrink-0 self-start sm:self-auto">
+                  {s.created_at ? new Date(s.created_at).toLocaleTimeString() : "Just now"}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Quick Start & Getting Started Checklist */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         <div className="lg:col-span-7 bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card">
           <div className="flex items-center justify-between mb-4 pb-3 border-b border-apple-border">
-            <h3 className="font-semibold text-apple-text text-base">Onboarding & Setup</h3>
+            <h3 className="font-semibold text-apple-text text-base">Onboarding &amp; Setup</h3>
             <span className="text-xs font-mono text-apple-secondary">3 of 4 Completed</span>
           </div>
 
@@ -253,7 +344,7 @@ export function OverviewView({ onTabChange }) {
 
           <div className="pt-6 border-t border-apple-border mt-4">
             <div className="flex items-center justify-between text-xs text-apple-secondary mb-2">
-              <span>SLA Uptime & Fencing</span>
+              <span>SLA Uptime &amp; Fencing</span>
               <span className="font-mono font-semibold text-apple-text">99.99%</span>
             </div>
             <div className="w-full h-1.5 rounded-full bg-apple-border overflow-hidden">

@@ -186,6 +186,28 @@ class WebhookService:
 
         return True
 
+    async def test_webhook(self, auth: AuthContext, webhook_id: str) -> dict[str, Any]:
+        """Dispatch a test ping event to verify webhook reachability."""
+        if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Testing webhooks requires Administrator privileges.",
+            )
+
+        async with db_session.get_tenant_session(auth.tenant_id) as session:
+            rec = await session.get(WebhookSubscriptionRecord, webhook_id)
+            if not rec or rec.tenant_id != auth.tenant_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Webhook subscription not found")
+            target_url = rec.url
+
+        test_payload = {
+            "test": True,
+            "message": "MIRAGE 3.0 test verification alert. Outbound webhook endpoint is healthy.",
+            "dispatched_at": datetime.now(UTC).isoformat(),
+        }
+        await self.dispatch_event(auth.tenant_id, "AUDIT_ALERT", test_payload)
+        return {"status": "dispatched", "webhook_id": webhook_id, "url": target_url}
+
     async def dispatch_event(
         self,
         tenant_id: str,

@@ -239,6 +239,12 @@ export const api = {
     });
   },
 
+  async testWebhook(webhookId) {
+    return apiRequest(`/v1/webhooks/${webhookId}/test`, {
+      method: "POST",
+    });
+  },
+
   // 13. Regulatory Compliance Dossier (EU AI Act & SOC2)
   async downloadComplianceDossier() {
     const token = (

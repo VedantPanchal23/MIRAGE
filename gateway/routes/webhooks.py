@@ -40,3 +40,13 @@ async def delete_webhook_endpoint(
 ) -> None:
     """Delete an outbound webhook subscription."""
     await webhook_service.delete_webhook(auth, webhook_id)
+
+
+@router.post("/{webhook_id}/test")
+async def test_webhook_endpoint(
+    webhook_id: str,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> dict[str, str]:
+    """Dispatch a test ping alert to verify webhook reachability."""
+    return await webhook_service.test_webhook(auth, webhook_id)
+

@@ -8,6 +8,8 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
+    ports:
+      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mirage_dev_secret}
@@ -53,6 +55,8 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
+    ports:
+      - "27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-root}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-mirage_mongo_secret}
@@ -99,6 +103,8 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
+    ports:
+      - "6333:6333"
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-mirage_qdrant_secret}
     volumes:
@@ -135,6 +141,8 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
+    ports:
+      - "6379:6379"
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     volumes:
       - ./docker/redis.conf:/usr/local/etc/redis/redis.conf:ro

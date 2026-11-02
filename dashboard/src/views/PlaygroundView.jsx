@@ -54,6 +54,9 @@ export function PlaygroundView() {
   const [response, setResponse] = useState(presets[0].response);
   const [modelId, setModelId] = useState("llama-3.3-70b-versatile");
   const [autoCorrect, setAutoCorrect] = useState(true);
+  const [streamMode, setStreamMode] = useState(true);
+  const [streamingStatus, setStreamingStatus] = useState(null);
+  const [streamingClaims, setStreamingClaims] = useState([]);
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
@@ -64,6 +67,8 @@ export function PlaygroundView() {
     setModelId(p.model);
     setResult(null);
     setError(null);
+    setStreamingClaims([]);
+    setStreamingStatus(null);
   };
 
   const handleExecuteAssurance = async () => {
@@ -74,23 +79,92 @@ export function PlaygroundView() {
 
     setIsRunning(true);
     setError(null);
+    setResult(null);
 
-    try {
-      const res = await api.verifyCompletion({
-        prompt,
-        response,
-        tenant_id: tenantId,
-        model_id: modelId,
-        auto_correct: autoCorrect,
-        knowledge_base_id: "default_kb",
-      });
-      setResult(res);
-    } catch (err) {
-      console.warn("Assurance verification error:", err);
-      setError(err?.message || "Verification failed. Check backend connection and model parameters.");
-      setResult(null);
-    } finally {
-      setIsRunning(false);
+    if (streamMode) {
+      setStreamingStatus("Connecting to assurance pipeline...");
+      setStreamingClaims([]);
+      const claimsAcc = [];
+
+      try {
+        await api.verifyCompletionStream(
+          {
+            prompt,
+            response,
+            tenant_id: tenantId,
+            model_id: modelId,
+            auto_correct: autoCorrect,
+            knowledge_base_id: "default_kb",
+          },
+          {
+            onEvent: (event, data) => {
+              if (event === "connected") {
+                setStreamingStatus("Connected. Decomposing atomic claims...");
+              } else if (event === "claims_extracted") {
+                setStreamingStatus(`Evaluating ${data.claims_count} extracted propositions in parallel...`);
+              } else if (event === "claim_verified") {
+                claimsAcc.push(data);
+                setStreamingClaims([...claimsAcc]);
+              } else if (event === "verification_complete") {
+                setStreamingStatus("Verification complete.");
+                setResult({
+                  request_id: data.request_id,
+                  verified_response: data.verified_response,
+                  hrs_result: {
+                    hrs: data.hrs_score,
+                    tier: data.risk_tier,
+                    conformal_interval: data.conformal_interval,
+                    claims_count: data.claims_count,
+                    contradicted_claims_count: data.contradicted_claims_count,
+                  },
+                  claims: claimsAcc.map((c) => ({
+                    claim: { claim_id: c.claim_id, text: c.text },
+                    status: c.status,
+                    risk_score: c.risk_score,
+                    rav_score: c.attribution?.rav,
+                    scs_score: c.attribution?.scs,
+                    nli_score: c.attribution?.nli,
+                    ics_score: c.attribution?.ics,
+                  })),
+                });
+              }
+            },
+            onError: (err) => {
+              console.warn("Streaming verification error:", err);
+              setError(err?.message || "Streaming verification failed.");
+              setIsRunning(false);
+              setStreamingStatus(null);
+            },
+            onComplete: () => {
+              setIsRunning(false);
+              setStreamingStatus(null);
+            },
+          }
+        );
+      } catch (err) {
+        console.warn("Assurance stream exception:", err);
+        setError(err?.message || "Streaming failed.");
+        setIsRunning(false);
+        setStreamingStatus(null);
+      }
+    } else {
+      try {
+        const res = await api.verifyCompletion({
+          prompt,
+          response,
+          tenant_id: tenantId,
+          model_id: modelId,
+          auto_correct: autoCorrect,
+          knowledge_base_id: "default_kb",
+        });
+        setResult(res);
+      } catch (err) {
+        console.warn("Assurance verification error:", err);
+        setError(err?.message || "Verification failed. Check backend connection and model parameters.");
+        setResult(null);
+      } finally {
+        setIsRunning(false);
+      }
     }
   };
 
@@ -363,32 +437,48 @@ export function PlaygroundView() {
                   />
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                   <div>
                     <label className="block text-xs font-semibold text-apple-secondary mb-1">
-                      Assurance Pipeline Model
+                      Pipeline Model
                     </label>
                     <select
                       value={modelId}
                       onChange={(e) => setModelId(e.target.value)}
                       className="w-full text-xs p-2.5 bg-apple-subtle rounded-xl border border-apple-border font-medium text-apple-text focus:outline-none focus:border-apple-blue"
                     >
-                      <option value="allam-2-7b">Allam-2 7B (Default Verification)</option>
-                      <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B Instruct</option>
-                      <option value="qwen/qwen-2.5-72b-instruct">Qwen 2.5 72B Instruct</option>
+                      <option value="allam-2-7b">Allam-2 7B</option>
+                      <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B</option>
+                      <option value="qwen/qwen-2.5-72b-instruct">Qwen 2.5 72B</option>
                     </select>
                   </div>
 
                   <div className="flex items-center justify-between p-2.5 bg-apple-subtle rounded-xl border border-apple-border">
                     <div>
-                      <span className="block text-xs font-semibold text-apple-text">Auto-Correction</span>
-                      <span className="text-[10px] text-apple-muted">LangGraph agent repair</span>
+                      <span className="block text-xs font-semibold text-apple-text">Auto-Correct</span>
+                      <span className="text-[10px] text-apple-muted">LangGraph repair</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setAutoCorrect(!autoCorrect)}
                       className={`w-9 h-5 flex items-center rounded-full p-0.5 transition ${
                         autoCorrect ? "bg-apple-blue justify-end" : "bg-apple-border justify-start"
+                      }`}
+                    >
+                      <span className="w-4 h-4 bg-white rounded-full shadow-apple-sm" />
+                    </button>
+                  </div>
+
+                  <div className="flex items-center justify-between p-2.5 bg-apple-subtle rounded-xl border border-apple-border">
+                    <div>
+                      <span className="block text-xs font-semibold text-apple-text">SSE Stream</span>
+                      <span className="text-[10px] text-apple-muted">Live event feed</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setStreamMode(!streamMode)}
+                      className={`w-9 h-5 flex items-center rounded-full p-0.5 transition ${
+                        streamMode ? "bg-apple-blue justify-end" : "bg-apple-border justify-start"
                       }`}
                     >
                       <span className="w-4 h-4 bg-white rounded-full shadow-apple-sm" />
@@ -498,6 +588,67 @@ export function PlaygroundView() {
                           </div>
                         ))}
                       </div>
+                    </div>
+                  )}
+                </div>
+              ) : isRunning && streamMode ? (
+                <div className="bg-apple-surface rounded-2xl p-5 border border-apple-border shadow-apple-card space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-apple-border">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-apple-blue animate-pulse" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-apple-text">
+                        Real-Time SSE Stream
+                      </span>
+                    </div>
+                    <span className="text-[11px] font-mono text-apple-secondary animate-pulse">
+                      {streamingStatus || "Processing stream..."}
+                    </span>
+                  </div>
+
+                  {streamingClaims.length > 0 ? (
+                    <div className="space-y-3">
+                      <label className="block text-xs font-semibold text-apple-secondary">
+                        Progressive Claims Evaluated ({streamingClaims.length})
+                      </label>
+                      <div className="space-y-2">
+                        {streamingClaims.map((c, i) => (
+                          <div
+                            key={i}
+                            className="p-3 rounded-xl bg-apple-subtle border border-apple-border text-xs space-y-1.5 transition-all"
+                          >
+                            <div className="flex items-center justify-between gap-2">
+                              <span className="font-semibold text-apple-text">{c.text}</span>
+                              <span
+                                className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                                  c.status === "SUPPORTED" || c.status === "VERIFIED_TRUE"
+                                    ? "bg-emerald-100 text-emerald-800"
+                                    : "bg-rose-100 text-rose-800"
+                                }`}
+                              >
+                                {c.status}
+                              </span>
+                            </div>
+                            {c.attribution && (
+                              <div className="flex items-center gap-2 text-[10px] font-mono text-apple-muted pt-1 border-t border-apple-border/50">
+                                <span>RAV: {(c.attribution.rav ?? 0).toFixed(2)}</span>
+                                <span>•</span>
+                                <span>SCS: {(c.attribution.scs ?? 0).toFixed(2)}</span>
+                                <span>•</span>
+                                <span>NLI: {(c.attribution.nli ?? 0).toFixed(2)}</span>
+                                <span>•</span>
+                                <span>ICS: {(c.attribution.ics ?? 0).toFixed(2)}</span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
+                      <div className="w-8 h-8 rounded-full border-2 border-apple-blue/20 border-t-apple-blue animate-spin" />
+                      <p className="text-xs text-apple-secondary font-medium">
+                        {streamingStatus || "Awaiting initial stream events..."}
+                      </p>
                     </div>
                   )}
                 </div>

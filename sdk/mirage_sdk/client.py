@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import time
+from collections.abc import AsyncIterator, Iterator
 from types import TracebackType
 from typing import Any, Self, cast
 
@@ -315,6 +316,51 @@ class MirageClient:
         )
         data = self._request("POST", "/v1/verify", json_data=req.model_dump(mode="json"), is_mutating=True)
         return VerificationResponse.model_validate(data)
+
+    def stream_verify(
+        self,
+        prompt: str,
+        response: str,
+        *,
+        tenant_id: str = "",
+        session_id: str | None = None,
+        knowledge_base_id: str | None = None,
+        model_id: str = "allam-2-7b",
+        auto_correct: bool = True,
+        image_urls: list[str] | None = None,
+        images: list[str] | None = None,
+    ) -> Iterator[dict[str, Any]]:
+        """Submit text for Gate 4 factual consistency verification and stream progressive SSE events."""
+        req = VerificationRequest(
+            prompt=prompt,
+            response=response,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            knowledge_base_id=knowledge_base_id,
+            model_id=model_id,
+            auto_correct=auto_correct,
+            image_urls=image_urls or [],
+            images=images or [],
+        )
+        headers = {"Accept": "text/event-stream"}
+        with self._http.stream("POST", "/v1/verify/stream", json=req.model_dump(mode="json"), headers=headers) as resp:
+            if resp.status_code >= 400:
+                resp.read()
+                _handle_error_response(resp)
+            current_event = "message"
+            for line in resp.iter_lines():
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("event:"):
+                    current_event = line[len("event:"):].strip()
+                elif line.startswith("data:"):
+                    raw_data = line[len("data:"):].strip()
+                    try:
+                        parsed_data = json.loads(raw_data)
+                    except json.JSONDecodeError:
+                        parsed_data = raw_data
+                    yield {"event": current_event, "data": parsed_data}
 
     def get_output(self, output_id: str) -> dict[str, Any]:
         """Fetch previously recorded output and verification record by ID."""
@@ -714,6 +760,51 @@ class AsyncMirageClient:
         )
         data = await self._request("POST", "/v1/verify", json_data=req.model_dump(mode="json"), is_mutating=True)
         return VerificationResponse.model_validate(data)
+
+    async def stream_verify(
+        self,
+        prompt: str,
+        response: str,
+        *,
+        tenant_id: str = "",
+        session_id: str | None = None,
+        knowledge_base_id: str | None = None,
+        model_id: str = "allam-2-7b",
+        auto_correct: bool = True,
+        image_urls: list[str] | None = None,
+        images: list[str] | None = None,
+    ) -> AsyncIterator[dict[str, Any]]:
+        """Submit text for Gate 4 factual consistency verification and stream progressive SSE events."""
+        req = VerificationRequest(
+            prompt=prompt,
+            response=response,
+            tenant_id=tenant_id,
+            session_id=session_id,
+            knowledge_base_id=knowledge_base_id,
+            model_id=model_id,
+            auto_correct=auto_correct,
+            image_urls=image_urls or [],
+            images=images or [],
+        )
+        headers = {"Accept": "text/event-stream"}
+        async with self._http.stream("POST", "/v1/verify/stream", json=req.model_dump(mode="json"), headers=headers) as resp:
+            if resp.status_code >= 400:
+                await resp.aread()
+                _handle_error_response(resp)
+            current_event = "message"
+            async for line in resp.aiter_lines():
+                line = line.strip()
+                if not line:
+                    continue
+                if line.startswith("event:"):
+                    current_event = line[len("event:"):].strip()
+                elif line.startswith("data:"):
+                    raw_data = line[len("data:"):].strip()
+                    try:
+                        parsed_data = json.loads(raw_data)
+                    except json.JSONDecodeError:
+                        parsed_data = raw_data
+                    yield {"event": current_event, "data": parsed_data}
 
     async def get_output(self, output_id: str) -> dict[str, Any]:
         """Fetch previously recorded output and verification record by ID."""

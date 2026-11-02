@@ -279,4 +279,125 @@ export const api = {
     a.remove();
     window.URL.revokeObjectURL(url);
   },
+
+  // 14. Real-Time Streaming Verification (Gate 4 SSE)
+  async verifyCompletionStream(payload, { onEvent, onError, onComplete, signal } = {}) {
+    const token = (
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("mirage_auth_token") || localStorage.getItem("mirage_token") || ""
+        : ""
+    ).trim();
+    const apiKey = (
+      typeof localStorage !== "undefined"
+        ? localStorage.getItem("mirage_api_key") || ""
+        : ""
+    ).trim();
+
+    const headers = {
+      "Content-Type": "application/json",
+      "Accept": "text/event-stream",
+      ...(apiKey ? { "X-API-Key": apiKey } : {}),
+      ...(token
+        ? { Authorization: `Bearer ${token}` }
+        : apiKey
+        ? { Authorization: `Bearer ${apiKey}` }
+        : {}),
+    };
+
+    try {
+      const response = await fetch("/v1/verify/stream", {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+        signal,
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Streaming failed: HTTP ${response.status} - ${errorText}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder("utf-8");
+      let buffer = "";
+      let currentEvent = "message";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed) continue;
+
+          if (trimmed.startsWith("event:")) {
+            currentEvent = trimmed.slice(6).trim();
+          } else if (trimmed.startsWith("data:")) {
+            const rawData = trimmed.slice(5).trim();
+            let parsedData;
+            try {
+              parsedData = JSON.parse(rawData);
+            } catch {
+              parsedData = rawData;
+            }
+            if (onEvent) onEvent(currentEvent, parsedData);
+          }
+        }
+      }
+
+      if (onComplete) onComplete();
+    } catch (err) {
+      if (err.name === "AbortError") {
+        return;
+      }
+      if (onError) onError(err);
+      else throw err;
+    }
+  },
+
+  // 15. Tenant Spend Ceilings & Micro-Budgets
+  async getTenantBudget(tenantId = null) {
+    const q = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : "";
+    return apiRequest(`/v1/budgets/tenant${q}`);
+  },
+
+  async updateTenantBudget({ totalBudgetMicros, hardLimit = true, resetPeriod = "MONTHLY", tenantId = null }) {
+    const q = tenantId ? `?tenant_id=${encodeURIComponent(tenantId)}` : "";
+    return apiRequest(`/v1/budgets/tenant${q}`, {
+      method: "PUT",
+      body: {
+        total_budget_micros: totalBudgetMicros,
+        hard_limit: hardLimit,
+        reset_period: resetPeriod,
+      },
+    });
+  },
+
+  async reconcileBudgetReservations() {
+    return apiRequest("/v1/budgets/reconcile", {
+      method: "POST",
+    });
+  },
+
+  // 16. Distributed Concurrency Leases & Fencing Tokens
+  async listResourceLeases(params = {}) {
+    const searchParams = new URLSearchParams();
+    if (params.resource_uri) searchParams.append("resource_uri", params.resource_uri);
+    if (params.status) searchParams.append("status", params.status);
+    if (params.limit) searchParams.append("limit", params.limit);
+    if (params.offset) searchParams.append("offset", params.offset);
+    const q = searchParams.toString() ? `?${searchParams.toString()}` : "";
+    return apiRequest(`/v1/resources/leases${q}`);
+  },
+
+  async releaseResourceLease(leaseId, fencingToken) {
+    return apiRequest(`/v1/resources/leases/${leaseId}/release`, {
+      method: "POST",
+      body: { fencing_token: fencingToken },
+    });
+  },
 };

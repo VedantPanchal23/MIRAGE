@@ -4,11 +4,11 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { Navigation, NAV_ITEMS } from "./Navigation";
 
 describe("Navigation Component", () => {
-  it("renders all 7 canonical SaaS tabs", () => {
+  it("renders all 8 canonical SaaS tabs", () => {
     const handleTabChange = vi.fn();
     render(<Navigation activeTab="overview" onTabChange={handleTabChange} />);
 
-    expect(NAV_ITEMS).toHaveLength(7);
+    expect(NAV_ITEMS).toHaveLength(8);
 
     expect(screen.getByText("Overview")).toBeDefined();
     expect(screen.getByText("Playground")).toBeDefined();
@@ -17,6 +17,7 @@ describe("Navigation Component", () => {
     expect(screen.getByText("Developer")).toBeDefined();
     expect(screen.getByText("Plans & Billing")).toBeDefined();
     expect(screen.getByText("Audit Ledger")).toBeDefined();
+    expect(screen.getByText("Settings")).toBeDefined();
   });
 
   it("calls onTabChange when a tab button is clicked", () => {

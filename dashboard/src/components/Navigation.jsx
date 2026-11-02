@@ -7,6 +7,7 @@ import {
   Code2,
   CreditCard,
   FileCheck2,
+  Settings,
 } from "lucide-react";
 
 export const NAV_ITEMS = [
@@ -17,6 +18,7 @@ export const NAV_ITEMS = [
   { id: "developer", label: "Developer", icon: Code2 },
   { id: "billing", label: "Plans & Billing", icon: CreditCard },
   { id: "audit", label: "Audit Ledger", icon: FileCheck2 },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 export function Navigation({ activeTab, onTabChange }) {

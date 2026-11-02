@@ -1,0 +1,30 @@
+{
+  "name": "@mirage-ai/sdk",
+  "version": "3.0.0",
+  "description": "Official zero-dependency JavaScript/Node.js SDK for MIRAGE 3.0 Execution Assurance Platform",
+  "type": "module",
+  "main": "./index.js",
+  "types": "./index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./index.js",
+      "types": "./index.d.ts"
+    }
+  },
+  "scripts": {
+    "test": "node --test test/client.test.js"
+  },
+  "keywords": [
+    "mirage",
+    "ai-governance",
+    "execution-assurance",
+    "hallucination-detection",
+    "llm-safety",
+    "conformal-prediction"
+  ],
+  "author": "MIRAGE Engineering Team",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

@@ -18,6 +18,7 @@ const KnowledgeBaseView = lazy(() => import("./views/KnowledgeBaseView").then(m 
 const DeveloperConsoleView = lazy(() => import("./views/DeveloperConsoleView").then(m => ({ default: m.DeveloperConsoleView })));
 const SubscriptionBillingView = lazy(() => import("./views/SubscriptionBillingView").then(m => ({ default: m.SubscriptionBillingView })));
 const AuditLedgerView = lazy(() => import("./views/AuditLedgerView").then(m => ({ default: m.AuditLedgerView })));
+const SettingsView = lazy(() => import("./views/SettingsView").then(m => ({ default: m.SettingsView })));
 
 /**
  * Apple-Styled Loading Fallback for Suspense Code Splitting
@@ -143,6 +144,7 @@ export default function App() {
               {activeTab === "developer" && <DeveloperConsoleView />}
               {activeTab === "billing" && <SubscriptionBillingView />}
               {activeTab === "audit" && <AuditLedgerView />}
+              {activeTab === "settings" && <SettingsView />}
             </div>
           )}
         </Suspense>

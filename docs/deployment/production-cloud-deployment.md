@@ -25,7 +25,7 @@ Internet Clients (Web / API / Agents)
 ┌──────────────────────────────────────────────┐
 │  Nginx Reverse Proxy (SSL Termination)       │
 │  - api.domain.com   ──► localhost:8000 (API) │
-│  - app.domain.com   ──► localhost:5173 (Web) │
+│  - app.domain.com   ──► localhost:3000 (Web) │
 └──────────────────────┬───────────────────────┘
                        │
 ┌──────────────────────▼───────────────────────┐
@@ -214,7 +214,7 @@ server {
     client_max_body_size 10M;
 
     location / {
-        proxy_pass http://127.0.0.1:5173;
+        proxy_pass http://127.0.0.1:3000;
         proxy_http_version 1.1;
 
         proxy_set_header Host $host;

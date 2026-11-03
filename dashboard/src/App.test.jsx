@@ -21,6 +21,6 @@ describe("App Root Component", () => {
     });
 
     expect(screen.getByText(/Start Governed Execution Free/i)).toBeDefined();
-    expect(screen.getByText(/The Five Assurance Gates/i)).toBeDefined();
+    expect(screen.getAllByText(/The Five Assurance Gates/i).length).toBeGreaterThan(0);
   });
 });

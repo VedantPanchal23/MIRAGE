@@ -2,7 +2,8 @@ import React, { useState, useEffect, Suspense, lazy } from "react";
 import { Header } from "./components/Header";
 import { Navigation } from "./components/Navigation";
 import AuthModal from "./components/AuthModal";
-import { ShieldCheck } from "lucide-react";
+import { ShieldCheck, Lock } from "lucide-react";
+import { useAuth } from "./context/AuthContext";
 
 // Lazy-loaded Views for Code Splitting & Performance (Requirement 13)
 const LandingView = lazy(() => import("./views/LandingView"));
@@ -33,6 +34,8 @@ function ViewSkeleton() {
 }
 
 export default function App() {
+  const { isAuthenticated } = useAuth();
+
   // Routing View: 'landing' | 'app' | 'contact' | 'terms' | 'privacy' | '404'
   const [currentView, setCurrentView] = useState(() => {
     const path = window.location.pathname.toLowerCase();
@@ -59,6 +62,12 @@ export default function App() {
     }
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
+
+  useEffect(() => {
+    if (currentView === "app" && !isAuthenticated) {
+      setIsAuthOpen(true);
+    }
+  }, [currentView, isAuthenticated]);
 
   useEffect(() => {
     const onPopState = (e) => {
@@ -89,8 +98,8 @@ export default function App() {
         onOpenAuth={() => setIsAuthOpen(true)}
       />
 
-      {/* Segmented Pill Navigation (Visible only within the Operator Dashboard) */}
-      {currentView === "app" && (
+      {/* Segmented Pill Navigation (Visible only within the Operator Dashboard when authenticated) */}
+      {currentView === "app" && isAuthenticated && (
         <Navigation activeTab={activeTab} onTabChange={setActiveTab} />
       )}
 
@@ -99,7 +108,13 @@ export default function App() {
         <Suspense fallback={<ViewSkeleton />}>
           {currentView === "landing" && (
             <LandingView
-              onLaunchApp={() => handleViewChange("app")}
+              onLaunchApp={() => {
+                if (isAuthenticated) {
+                  handleViewChange("app");
+                } else {
+                  setIsAuthOpen(true);
+                }
+              }}
               onOpenAuth={() => setIsAuthOpen(true)}
               onNavigateContact={() => handleViewChange("contact")}
               onNavigateTerms={() => handleViewChange("terms")}
@@ -110,7 +125,13 @@ export default function App() {
           {currentView === "contact" && (
             <ContactView
               onNavigateHome={() => handleViewChange("landing")}
-              onNavigateApp={() => handleViewChange("app")}
+              onNavigateApp={() => {
+                if (isAuthenticated) {
+                  handleViewChange("app");
+                } else {
+                  setIsAuthOpen(true);
+                }
+              }}
             />
           )}
 
@@ -131,21 +152,57 @@ export default function App() {
           {currentView === "404" && (
             <NotFoundView
               onNavigateHome={() => handleViewChange("landing")}
-              onNavigateApp={() => handleViewChange("app")}
+              onNavigateApp={() => {
+                if (isAuthenticated) {
+                  handleViewChange("app");
+                } else {
+                  setIsAuthOpen(true);
+                }
+              }}
             />
           )}
 
           {currentView === "app" && (
-            <div className="space-y-6">
-              {activeTab === "overview" && <OverviewView onTabChange={setActiveTab} />}
-              {activeTab === "playground" && <PlaygroundView />}
-              {activeTab === "approvals" && <ApprovalsView />}
-              {activeTab === "knowledge" && <KnowledgeBaseView />}
-              {activeTab === "developer" && <DeveloperConsoleView />}
-              {activeTab === "billing" && <SubscriptionBillingView />}
-              {activeTab === "audit" && <AuditLedgerView />}
-              {activeTab === "settings" && <SettingsView />}
-            </div>
+            !isAuthenticated ? (
+              <div className="max-w-md mx-auto my-16 p-8 bg-apple-card border border-apple-border rounded-2xl shadow-apple-md text-center space-y-5 animate-fade-in">
+                <div className="w-12 h-12 rounded-2xl bg-apple-blue/10 text-apple-blue flex items-center justify-center mx-auto">
+                  <Lock className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-xl font-bold text-apple-text">Workspace Authentication Required</h2>
+                  <p className="text-xs text-apple-subtext mt-1.5 leading-relaxed">
+                    The Operator Console enforces strict PostgreSQL Row-Level Security. Please sign in or provision a sandbox workspace to inspect live telemetry.
+                  </p>
+                </div>
+                <div className="pt-2 flex flex-col gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => setIsAuthOpen(true)}
+                    className="w-full py-2.5 bg-apple-blue text-white rounded-xl text-xs font-medium hover:bg-apple-blueHover shadow-apple-sm transition"
+                  >
+                    Sign In / Create Free Workspace &rarr;
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleViewChange("landing")}
+                    className="text-xs text-apple-subtext hover:text-apple-text py-1 transition-colors"
+                  >
+                    &larr; Return to Public Overview
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {activeTab === "overview" && <OverviewView onTabChange={setActiveTab} />}
+                {activeTab === "playground" && <PlaygroundView />}
+                {activeTab === "approvals" && <ApprovalsView />}
+                {activeTab === "knowledge" && <KnowledgeBaseView />}
+                {activeTab === "developer" && <DeveloperConsoleView />}
+                {activeTab === "billing" && <SubscriptionBillingView />}
+                {activeTab === "audit" && <AuditLedgerView />}
+                {activeTab === "settings" && <SettingsView />}
+              </div>
+            )
           )}
         </Suspense>
       </main>

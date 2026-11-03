@@ -3,7 +3,7 @@ import { ShieldCheck, Activity, Terminal, CreditCard, ChevronDown, Check, UserPl
 import { useAuth } from "../context/AuthContext";
 
 export function Header({ currentView, onViewChange, activeTab, onTabChange, onOpenAuth }) {
-  const { tenantId, switchTenant, role } = useAuth();
+  const { tenantId, switchTenant, role, isAuthenticated, logout } = useAuth();
   const [isTenantMenuOpen, setIsTenantMenuOpen] = useState(false);
   const [customTenantInput, setCustomTenantInput] = useState("");
 
@@ -56,8 +56,8 @@ export function Header({ currentView, onViewChange, activeTab, onTabChange, onOp
             <div>
               <div className="flex items-center space-x-2">
                 <span className="font-semibold text-lg tracking-tight text-apple-text">MIRAGE</span>
-                <span className="text-[10px] uppercase font-bold tracking-wider px-1.5 py-0.5 rounded-full bg-apple-blue/10 text-apple-blue border border-apple-blue/20">
-                  3.0 SaaS
+                <span className="text-[10px] font-mono font-medium px-1.5 py-0.5 rounded-md bg-apple-subtle text-apple-secondary border border-apple-border">
+                  v3.0
                 </span>
               </div>
               <p className="text-[11px] text-apple-secondary hidden sm:block font-normal -mt-0.5">
@@ -71,31 +71,72 @@ export function Header({ currentView, onViewChange, activeTab, onTabChange, onOp
             <nav className="hidden md:flex items-center space-x-6 text-xs font-medium text-apple-secondary">
               <button
                 type="button"
-                onClick={() => onViewChange("landing")}
+                onClick={() => {
+                  if (currentView !== "landing") {
+                    onViewChange("landing");
+                    setTimeout(() => window.scrollTo({ top: 0, behavior: "smooth" }), 50);
+                  } else {
+                    window.scrollTo({ top: 0, behavior: "smooth" });
+                  }
+                }}
                 className={`hover:text-apple-text transition-colors ${currentView === "landing" ? "text-apple-blue font-semibold" : ""}`}
               >
                 Overview
               </button>
               <button
                 type="button"
+                onClick={() => {
+                  if (currentView !== "landing") {
+                    onViewChange("landing");
+                    setTimeout(() => {
+                      document.getElementById("architecture")?.scrollIntoView({ behavior: "smooth" });
+                    }, 100);
+                  } else {
+                    document.getElementById("architecture")?.scrollIntoView({ behavior: "smooth" });
+                  }
+                }}
+                className="hover:text-apple-text transition-colors"
+              >
+                Architecture
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentView !== "landing") {
+                    onViewChange("landing");
+                    setTimeout(() => {
+                      document.getElementById("playground")?.scrollIntoView({ behavior: "smooth" });
+                    }, 100);
+                  } else {
+                    document.getElementById("playground")?.scrollIntoView({ behavior: "smooth" });
+                  }
+                }}
+                className="hover:text-apple-text transition-colors"
+              >
+                Playground
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (currentView !== "landing") {
+                    onViewChange("landing");
+                    setTimeout(() => {
+                      document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
+                    }, 100);
+                  } else {
+                    document.getElementById("pricing")?.scrollIntoView({ behavior: "smooth" });
+                  }
+                }}
+                className="hover:text-apple-text transition-colors"
+              >
+                Pricing
+              </button>
+              <button
+                type="button"
                 onClick={() => onViewChange("contact")}
                 className={`hover:text-apple-text transition-colors ${currentView === "contact" ? "text-apple-blue font-semibold" : ""}`}
               >
-                Enterprise Inquiries
-              </button>
-              <button
-                type="button"
-                onClick={() => onViewChange("terms")}
-                className={`hover:text-apple-text transition-colors ${currentView === "terms" ? "text-apple-blue font-semibold" : ""}`}
-              >
-                Terms
-              </button>
-              <button
-                type="button"
-                onClick={() => onViewChange("privacy")}
-                className={`hover:text-apple-text transition-colors ${currentView === "privacy" ? "text-apple-blue font-semibold" : ""}`}
-              >
-                Privacy
+                Contact
               </button>
             </nav>
           ) : (
@@ -112,15 +153,51 @@ export function Header({ currentView, onViewChange, activeTab, onTabChange, onOp
 
           {/* Right Controls */}
           <div className="flex items-center space-x-3">
-            {/* Auth / Account Registration Button */}
-            <button
-              type="button"
-              onClick={onOpenAuth}
-              className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-apple-subtle hover:bg-apple-border/50 border border-apple-border transition-colors text-apple-text"
-            >
-              <UserPlus className="w-3.5 h-3.5 text-apple-secondary" />
-              <span className="hidden sm:inline">Workspace Sign In</span>
-            </button>
+            {isAuthenticated ? (
+              <div className="flex items-center space-x-2">
+                <div className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 text-xs rounded-lg bg-apple-subtle border border-apple-border text-apple-secondary">
+                  <span className="w-1.5 h-1.5 rounded-full bg-apple-green animate-pulse" />
+                  <span className="font-mono text-[11px] font-medium text-apple-text truncate max-w-[120px]">
+                    {tenantId}
+                  </span>
+                </div>
+                {isStorefrontView ? (
+                  <button
+                    type="button"
+                    onClick={() => onViewChange("app")}
+                    className="flex items-center space-x-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-apple-blue text-white hover:bg-apple-blueHover shadow-apple-sm transition"
+                  >
+                    <span>Console</span>
+                    <span>&rarr;</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={logout}
+                    className="text-xs text-apple-secondary hover:text-apple-text px-2 py-1 transition-colors"
+                  >
+                    Sign Out
+                  </button>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={onOpenAuth}
+                  className="px-3 py-1.5 text-xs font-medium text-apple-secondary hover:text-apple-text transition-colors"
+                >
+                  Sign In
+                </button>
+                <button
+                  type="button"
+                  onClick={onOpenAuth}
+                  className="px-3.5 py-1.5 text-xs font-medium rounded-lg bg-apple-text text-white hover:bg-black shadow-apple-sm transition"
+                >
+                  Get Started
+                </button>
+              </div>
+            )}
 
             {/* If in app view: Tenant Switcher Dropdown */}
             {!isStorefrontView && (

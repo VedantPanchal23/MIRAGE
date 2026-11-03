@@ -112,12 +112,6 @@ export function Header({ currentView, onViewChange, activeTab, onTabChange, onOp
 
           {/* Right Controls */}
           <div className="flex items-center space-x-3">
-            {/* Live Gateway Indicator */}
-            <div className="hidden sm:flex items-center space-x-1.5 px-2.5 py-1 rounded-full bg-apple-green/10 border border-apple-green/20 text-xs text-apple-text font-medium">
-              <span className="w-2 h-2 rounded-full bg-apple-green animate-pulse" />
-              <span>5 Gates Active</span>
-            </div>
-
             {/* Auth / Account Registration Button */}
             <button
               type="button"

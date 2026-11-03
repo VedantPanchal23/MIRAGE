@@ -227,15 +227,6 @@ return ExecutionStatus.VERIFIED_SUCCESS;`,
             Start Governed Execution Free &rarr;
           </button>
           <button
-            onClick={() => {
-              trackEvent('hero_cta_clicked', { action: 'open_dashboard' });
-              onLaunchApp();
-            }}
-            className="w-full sm:w-auto px-7 py-3.5 bg-apple-card border border-apple-border text-apple-text rounded-xl font-medium text-sm hover:bg-apple-bg transition-colors"
-          >
-            Open Live Dashboard
-          </button>
-          <button
             onClick={onNavigateContact}
             className="w-full sm:w-auto px-5 py-3.5 text-apple-subtext hover:text-apple-blue text-sm font-medium transition-colors"
           >

@@ -68,23 +68,23 @@ export function OverviewView({ onTabChange }) {
     {
       label: "Total Assured Transactions",
       value: stats.total_requests.toLocaleString(),
-      change: stats.total_requests === 0 ? "Awaiting first execution" : "Live authoritative count",
+      change: stats.total_requests === 0 ? "Awaiting live transactions" : "Live authoritative count",
       trend: "up",
       icon: Activity,
       color: "text-apple-blue",
     },
     {
       label: "Factual Clean Rate",
-      value: stats.total_requests === 0 ? "100%" : `${stats.verified_clean_rate}%`,
-      change: stats.total_requests === 0 ? "Zero defects recorded" : "Gate 4 RAV Entailment",
+      value: stats.total_requests === 0 ? "—" : `${stats.verified_clean_rate}%`,
+      change: stats.total_requests === 0 ? "No evaluations recorded" : "Gate 4 RAV Entailment",
       trend: "neutral",
       icon: ShieldCheck,
       color: "text-apple-green",
     },
     {
       label: "Mean Hallucination Risk (HRS)",
-      value: stats.avg_hrs_score.toFixed(2),
-      change: "LOW RISK threshold < 0.35",
+      value: stats.total_requests === 0 ? "—" : stats.avg_hrs_score.toFixed(2),
+      change: stats.total_requests === 0 ? "No claims scored" : "LOW RISK threshold < 0.35",
       trend: "safe",
       icon: Zap,
       color: "text-apple-purple",
@@ -101,28 +101,28 @@ export function OverviewView({ onTabChange }) {
 
   const quickStartSteps = [
     {
-      title: "1. Generate API Credentials",
-      desc: "Provision a high-entropy key for OpenAI drop-in proxy or MCP governance.",
+      title: "1. Connect SDK or REST Proxy",
+      desc: "Integrate @mirage-ai/sdk or point OpenAI clients to http://localhost:8000/v1.",
       tab: "developer",
-      done: true,
+      done: stats.total_requests > 0,
     },
     {
       title: "2. Ingest Evidence Base (RAG)",
-      desc: "Upload compliance policies, documentation, or contracts to Qdrant.",
+      desc: "Upload institutional policies or schemas for Gate 2 provenance checks.",
       tab: "knowledge",
-      done: true,
+      done: false,
     },
     {
-      title: "3. Run Playground Assurance",
-      desc: "Interactively test prompts, claim extraction, and side-by-side auto-correction.",
+      title: "3. Run Workbench Simulation",
+      desc: "Test agent intent, risk scoring, and auto-correction in the interactive lab.",
       tab: "playground",
       done: false,
     },
     {
-      title: "4. Verify Cryptographic Ledger",
+      title: "4. Cryptographic Ledger Audit",
       desc: "Inspect SHA-256 Merkle chain hash audit trail for tamper-evident compliance.",
       tab: "audit",
-      done: true,
+      done: false,
     },
   ];
 

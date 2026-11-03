@@ -3,20 +3,25 @@ import React, { createContext, useContext, useState, useEffect } from "react";
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [tenantId, setTenantId] = useState(() => {
-    return localStorage.getItem("mirage_tenant_id") || "tenant_default";
-  });
-  const [userId, setUserId] = useState(() => {
-    return localStorage.getItem("mirage_user_id") || "user_admin";
-  });
-  const [role, setRole] = useState(() => {
-    return localStorage.getItem("mirage_role") || "admin";
-  });
   const [token, setToken] = useState(() => {
     return localStorage.getItem("mirage_auth_token") || localStorage.getItem("mirage_token") || "";
   });
   const [apiKey, setApiKey] = useState(() => {
     return localStorage.getItem("mirage_api_key") || "";
+  });
+  const [tenantId, setTenantId] = useState(() => {
+    const storedKey = localStorage.getItem("mirage_api_key");
+    const storedToken = localStorage.getItem("mirage_auth_token") || localStorage.getItem("mirage_token");
+    if (storedKey || storedToken) {
+      return localStorage.getItem("mirage_tenant_id") || "";
+    }
+    return "";
+  });
+  const [userId, setUserId] = useState(() => {
+    return localStorage.getItem("mirage_user_id") || "";
+  });
+  const [role, setRole] = useState(() => {
+    return localStorage.getItem("mirage_role") || "admin";
   });
   const [userEmail, setUserEmail] = useState(() => {
     return localStorage.getItem("mirage_user_email") || "";
@@ -24,8 +29,7 @@ export function AuthProvider({ children }) {
   const [isAuthenticated, setIsAuthenticated] = useState(() => {
     const storedToken = localStorage.getItem("mirage_auth_token") || localStorage.getItem("mirage_token");
     const storedKey = localStorage.getItem("mirage_api_key");
-    const storedTenant = localStorage.getItem("mirage_tenant_id");
-    return Boolean(storedToken || storedKey || (storedTenant && storedTenant !== "tenant_default"));
+    return Boolean(storedToken || storedKey);
   });
 
   useEffect(() => {
@@ -67,11 +71,11 @@ export function AuthProvider({ children }) {
       localStorage.removeItem("mirage_user_email");
     }
 
-    setIsAuthenticated(Boolean(token || apiKey || (tenantId && tenantId !== "tenant_default")));
+    setIsAuthenticated(Boolean(token || apiKey));
   }, [tenantId, userId, role, token, apiKey, userEmail]);
 
   const login = (newTenantId, newRole = "admin", newToken = "", newApiKey = "") => {
-    setTenantId(newTenantId || "tenant_default");
+    setTenantId(newTenantId || "");
     setRole(newRole);
     if (newToken) setToken(newToken);
     if (newApiKey) setApiKey(newApiKey);
@@ -81,8 +85,20 @@ export function AuthProvider({ children }) {
   const logout = () => {
     setToken("");
     setApiKey("");
-    setTenantId("tenant_default");
+    setTenantId("");
+    setUserEmail("");
+    setUserId("");
     setIsAuthenticated(false);
+    try {
+      localStorage.removeItem("mirage_auth_token");
+      localStorage.removeItem("mirage_token");
+      localStorage.removeItem("mirage_api_key");
+      localStorage.removeItem("mirage_tenant_id");
+      localStorage.removeItem("mirage_user_email");
+      localStorage.removeItem("mirage_role");
+      localStorage.removeItem("mirage_user_id");
+      localStorage.removeItem("mirage_recent_tenants");
+    } catch {}
   };
 
   const switchTenant = (newTenantId) => {

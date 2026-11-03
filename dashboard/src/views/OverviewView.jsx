@@ -15,7 +15,6 @@ import {
 } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
-import { AssuranceGateVisualizer3D } from "../components/AssuranceGateVisualizer3D";
 
 export function OverviewView({ onTabChange }) {
   const { tenantId } = useAuth();
@@ -222,9 +221,6 @@ export function OverviewView({ onTabChange }) {
           );
         })}
       </div>
-
-      {/* 3D Visualizer Section */}
-      <AssuranceGateVisualizer3D />
 
       {/* Recent Assured Transactions Feed */}
       <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-4">

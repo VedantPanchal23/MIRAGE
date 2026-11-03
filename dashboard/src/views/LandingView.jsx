@@ -1,5 +1,4 @@
 import React, { useState } from 'react';
-import AssuranceGateVisualizer3D from '../components/AssuranceGateVisualizer3D';
 import { useSEO } from '../hooks/useSEO';
 import { useAnalytics } from '../hooks/useAnalytics';
 import { api } from '../api';
@@ -266,11 +265,6 @@ return ExecutionStatus.VERIFIED_SUCCESS;`,
             <p className="text-xs font-semibold text-apple-text mt-0.5">Merkle Audit Chains</p>
             <p className="text-[10px] text-apple-subtext">Cryptographically verifiable trails</p>
           </div>
-        </div>
-
-        {/* 3D Visualizer Component */}
-        <div className="mt-12">
-          <AssuranceGateVisualizer3D activeGate={activeGateTab} />
         </div>
       </section>
 

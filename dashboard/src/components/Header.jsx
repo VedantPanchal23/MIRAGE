@@ -194,17 +194,8 @@ export function Header({ currentView, onViewChange, activeTab, onTabChange, onOp
               </div>
             )}
 
-            {/* View Switching CTA: Launch App vs View Storefront */}
-            {isStorefrontView ? (
-              <button
-                type="button"
-                onClick={() => onViewChange("app")}
-                className="flex items-center space-x-1.5 text-xs font-medium px-3.5 py-1.5 rounded-lg bg-apple-blue text-white hover:bg-apple-blueHover shadow-apple-sm transition"
-              >
-                <span>Operator Dashboard</span>
-                <span>&rarr;</span>
-              </button>
-            ) : (
+            {/* View Action: Upgrade when in app view */}
+            {!isStorefrontView && (
               <button
                 type="button"
                 onClick={() => onTabChange("billing")}

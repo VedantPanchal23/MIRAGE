@@ -22,13 +22,20 @@ const AuditLedgerView = lazy(() => import("./views/AuditLedgerView").then(m => (
 const SettingsView = lazy(() => import("./views/SettingsView").then(m => ({ default: m.SettingsView })));
 
 /**
- * Apple-Styled Loading Fallback for Suspense Code Splitting
+ * Industrial Tactical Loading Fallback for Suspense Code Splitting
  */
 function ViewSkeleton() {
   return (
-    <div className="py-20 flex flex-col items-center justify-center space-y-4 animate-pulse">
-      <div className="w-10 h-10 rounded-full border-2 border-apple-blue/20 border-t-apple-blue animate-spin" />
-      <span className="text-xs text-apple-subtext font-medium">Assembling Assurance View...</span>
+    <div className="py-24 flex flex-col items-center justify-center space-y-4 font-mono select-none">
+      <div className="relative w-12 h-12 flex items-center justify-center">
+        <div className="absolute inset-0 rounded-full border-2 border-mirage-cyan/20 border-t-mirage-cyan animate-spin" />
+        <div className="w-2 h-2 rounded-full bg-mirage-cyan animate-ping" />
+      </div>
+      <div className="flex items-center space-x-2 text-xs text-mirage-cyan tracking-wider">
+        <span className="w-1.5 h-1.5 rounded-full bg-mirage-cyan animate-pulse" />
+        <span>INITIALIZING_ASSURANCE_GATE_VIEW...</span>
+      </div>
+      <span className="text-[10px] text-mirage-muted">VERIFYING POSTGRESQL RLS & MERKLE ANCHOR</span>
     </div>
   );
 }
@@ -85,7 +92,7 @@ export default function App() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-apple-bg text-apple-text flex flex-col font-sans">
+    <div className="min-h-screen bg-mirage-chassis text-mirage-text flex flex-col font-sans bg-grid-pattern selection:bg-mirage-cyan/20 selection:text-mirage-cyan">
       {/* Sticky Header with Dynamic Storefront & App States */}
       <Header
         currentView={currentView}
@@ -164,30 +171,34 @@ export default function App() {
 
           {currentView === "app" && (
             !isAuthenticated ? (
-              <div className="max-w-md mx-auto my-16 p-8 bg-apple-card border border-apple-border rounded-2xl shadow-apple-md text-center space-y-5 animate-fade-in">
-                <div className="w-12 h-12 rounded-2xl bg-apple-blue/10 text-apple-blue flex items-center justify-center mx-auto">
+              <div className="max-w-md mx-auto my-16 p-8 bg-mirage-surface border border-mirage-borderStrong rounded shadow-hud-panel text-center space-y-5 animate-fade-in font-mono relative">
+                <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-mirage-cyan pointer-events-none" />
+                <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-mirage-cyan pointer-events-none" />
+                <div className="w-12 h-12 rounded bg-mirage-cyan/15 text-mirage-cyan border border-mirage-cyan/40 flex items-center justify-center mx-auto shadow-hud-glow">
                   <Lock className="w-6 h-6" />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-apple-text">Workspace Authentication Required</h2>
-                  <p className="text-xs text-apple-subtext mt-1.5 leading-relaxed">
-                    The Operator Console enforces strict PostgreSQL Row-Level Security. Please sign in or provision a sandbox workspace to inspect live telemetry.
+                  <h2 className="text-xl font-bold text-mirage-text uppercase tracking-wide font-display">
+                    WORKSPACE AUTHENTICATION REQUIRED
+                  </h2>
+                  <p className="text-xs text-mirage-muted mt-1.5 leading-relaxed font-sans">
+                    The Operator Console enforces strict PostgreSQL Row-Level Security. Authenticate or provision a sandbox workspace to inspect live telemetry.
                   </p>
                 </div>
                 <div className="pt-2 flex flex-col gap-2.5">
                   <button
                     type="button"
                     onClick={() => setIsAuthOpen(true)}
-                    className="w-full py-2.5 bg-apple-blue text-white rounded-xl text-xs font-medium hover:bg-apple-blueHover shadow-apple-sm transition"
+                    className="w-full py-2.5 bg-mirage-cyan text-mirage-void rounded text-xs font-bold uppercase tracking-wider hover:bg-white shadow-hud-glow transition"
                   >
-                    Sign In / Create Free Workspace &rarr;
+                    AUTHENTICATE WORKSPACE &rarr;
                   </button>
                   <button
                     type="button"
                     onClick={() => handleViewChange("landing")}
-                    className="text-xs text-apple-subtext hover:text-apple-text py-1 transition-colors"
+                    className="text-xs text-mirage-muted hover:text-mirage-cyan py-1 transition-colors uppercase font-mono"
                   >
-                    &larr; Return to Public Overview
+                    &larr; RETURN TO PUBLIC OVERVIEW
                   </button>
                 </div>
               </div>

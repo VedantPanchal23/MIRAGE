@@ -284,23 +284,23 @@ async def receive_mirage_webhook(
       {/* Header and Section Switcher */}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-apple-text">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-mirage-text">
             Developer Console &amp; Integrations
           </h1>
-          <p className="text-apple-secondary text-sm mt-1">
+          <p className="text-mirage-subtext text-sm mt-1">
             Provision API keys, configure outbound security webhooks, and connect AI agents via drop-in proxies.
           </p>
         </div>
 
         {/* Section Tabs */}
-        <div className="flex space-x-1 p-1 bg-apple-subtle rounded-2xl border border-apple-border self-start md:self-auto">
+        <div className="flex space-x-1 p-1 bg-mirage-surfaceElevated rounded border border-mirage-border self-start md:self-auto">
           <button
             type="button"
             onClick={() => setActiveSection("keys")}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold rounded transition ${
               activeSection === "keys"
-                ? "bg-white text-apple-text shadow-apple-sm"
-                : "text-apple-secondary hover:text-apple-text"
+                ? "bg-white text-mirage-text shadow-sm"
+                : "text-mirage-subtext hover:text-mirage-text"
             }`}
           >
             <Key className="w-3.5 h-3.5" />
@@ -309,16 +309,16 @@ async def receive_mirage_webhook(
           <button
             type="button"
             onClick={() => setActiveSection("webhooks")}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold rounded transition ${
               activeSection === "webhooks"
-                ? "bg-white text-apple-text shadow-apple-sm"
-                : "text-apple-secondary hover:text-apple-text"
+                ? "bg-white text-mirage-text shadow-sm"
+                : "text-mirage-subtext hover:text-mirage-text"
             }`}
           >
             <Bell className="w-3.5 h-3.5" />
             <span>Outbound Webhooks</span>
             {webhooks.length > 0 && (
-              <span className="px-1.5 py-0.2 rounded-full bg-apple-blue/10 text-apple-blue text-[10px] font-mono">
+              <span className="px-1.5 py-0.2 rounded-full bg-mirage-cyan/10 text-mirage-cyan text-[10px] font-mono">
                 {webhooks.length}
               </span>
             )}
@@ -326,10 +326,10 @@ async def receive_mirage_webhook(
           <button
             type="button"
             onClick={() => setActiveSection("code")}
-            className={`flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold rounded-xl transition ${
+            className={`flex items-center space-x-2 px-3.5 py-1.5 text-xs font-semibold rounded transition ${
               activeSection === "code"
-                ? "bg-white text-apple-text shadow-apple-sm"
-                : "text-apple-secondary hover:text-apple-text"
+                ? "bg-white text-mirage-text shadow-sm"
+                : "text-mirage-subtext hover:text-mirage-text"
             }`}
           >
             <Code2 className="w-3.5 h-3.5" />
@@ -343,15 +343,15 @@ async def receive_mirage_webhook(
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Left Column: API Keys Provisioning */}
           <div className="lg:col-span-5 space-y-4">
-            <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-4">
-              <div className="flex items-center space-x-2 pb-3 border-b border-apple-border">
-                <Key className="w-4 h-4 text-apple-blue" />
-                <h3 className="font-semibold text-sm text-apple-text">Provision New API Key</h3>
+            <div className="bg-mirage-surface rounded p-6 border border-mirage-border shadow-mirage-surface space-y-4">
+              <div className="flex items-center space-x-2 pb-3 border-b border-mirage-border">
+                <Key className="w-4 h-4 text-mirage-cyan" />
+                <h3 className="font-semibold text-sm text-mirage-text">Provision New API Key</h3>
               </div>
 
               <form onSubmit={handleCreateKey} className="space-y-3">
                 <div>
-                  <label className="block text-xs font-semibold text-apple-text mb-1">
+                  <label className="block text-xs font-semibold text-mirage-text mb-1">
                     Key Description / Agent Name
                   </label>
                   <input
@@ -359,18 +359,18 @@ async def receive_mirage_webhook(
                     value={keyName}
                     onChange={(e) => setKeyName(e.target.value)}
                     placeholder="e.g. Production Billing Agent"
-                    className="w-full text-xs p-2.5 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-sans"
+                    className="w-full text-xs p-2.5 rounded bg-mirage-surfaceElevated border border-mirage-border focus:outline-none focus:border-mirage-cyan font-sans"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-apple-text mb-1">
+                  <label className="block text-xs font-semibold text-mirage-text mb-1">
                     Role Assignment
                   </label>
                   <select
                     value={keyRole}
                     onChange={(e) => setKeyRole(e.target.value)}
-                    className="w-full text-xs p-2.5 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-sans"
+                    className="w-full text-xs p-2.5 rounded bg-mirage-surfaceElevated border border-mirage-border focus:outline-none focus:border-mirage-cyan font-sans"
                   >
                     <option value="admin">Admin (Full 5 Gates + Governance)</option>
                     <option value="operator">Operator (Inspection &amp; Approvals)</option>
@@ -381,39 +381,39 @@ async def receive_mirage_webhook(
                 <button
                   type="submit"
                   disabled={isCreatingKey || !keyName.trim()}
-                  className="w-full py-2.5 rounded-xl bg-apple-blue hover:bg-apple-blueHover text-white text-xs font-semibold shadow-apple-sm transition disabled:opacity-50"
+                  className="w-full py-2.5 rounded bg-mirage-cyan hover:bg-mirage-cyanHover text-white text-xs font-semibold shadow-sm transition disabled:opacity-50"
                 >
                   {isCreatingKey ? "Generating SHA-256 Key..." : "Generate API Key"}
                 </button>
               </form>
 
               {createKeyError && (
-                <div className="p-3 rounded-xl bg-apple-red/10 border border-apple-red/20 text-xs text-apple-red flex items-center space-x-2">
+                <div className="p-3 rounded bg-mirage-crimson/10 border border-mirage-crimson/20 text-xs text-mirage-crimson flex items-center space-x-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>{createKeyError}</span>
                 </div>
               )}
 
               {newlyCreatedKey && (
-                <div className="p-4 rounded-2xl bg-apple-green/10 border border-apple-green/20 space-y-2">
-                  <div className="flex items-center justify-between text-xs font-semibold text-apple-green">
+                <div className="p-4 rounded bg-mirage-emerald/10 border border-mirage-emerald/20 space-y-2">
+                  <div className="flex items-center justify-between text-xs font-semibold text-mirage-emerald">
                     <span>Secret Key Generated</span>
-                    <span className="text-[10px] text-apple-secondary">Shown once only</span>
+                    <span className="text-[10px] text-mirage-subtext">Shown once only</span>
                   </div>
                   <div className="flex items-center space-x-2">
                     <input
                       type="text"
                       readOnly
                       value={newlyCreatedKey}
-                      className="w-full text-xs font-mono p-2 bg-white rounded-lg border border-apple-green/30 text-apple-text select-all"
+                      className="w-full text-xs font-mono p-2 bg-white rounded-lg border border-mirage-emerald/30 text-mirage-text select-all"
                     />
                     <button
                       type="button"
                       onClick={() => copyToClipboard(newlyCreatedKey, "secret")}
-                      className="p-2 rounded-lg bg-white border border-apple-green/30 text-apple-text hover:bg-apple-subtle transition"
+                      className="p-2 rounded-lg bg-white border border-mirage-emerald/30 text-mirage-text hover:bg-mirage-surfaceElevated transition"
                     >
                       {copiedSnippet === "secret" ? (
-                        <Check className="w-4 h-4 text-apple-green" />
+                        <Check className="w-4 h-4 text-mirage-emerald" />
                       ) : (
                         <Copy className="w-4 h-4" />
                       )}
@@ -426,19 +426,19 @@ async def receive_mirage_webhook(
 
           {/* Right Column: Active Keys List */}
           <div className="lg:col-span-7 space-y-4">
-            <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-apple-border">
-                <h3 className="font-semibold text-sm text-apple-text">
+            <div className="bg-mirage-surface rounded p-6 border border-mirage-border shadow-mirage-surface space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-mirage-border">
+                <h3 className="font-semibold text-sm text-mirage-text">
                   Authoritative Credentials ({keys.length})
                 </h3>
-                <span className="text-[11px] text-apple-secondary font-mono">Tenant: {tenantId}</span>
+                <span className="text-[11px] text-mirage-subtext font-mono">Tenant: {tenantId}</span>
               </div>
 
               {keys.length === 0 ? (
-                <div className="p-8 border border-dashed border-apple-border rounded-2xl text-center">
-                  <Key className="w-8 h-8 text-apple-secondary mx-auto mb-2 opacity-50" />
-                  <h4 className="text-xs font-semibold text-apple-text">No API Keys Provisioned</h4>
-                  <p className="text-[11px] text-apple-secondary mt-1">
+                <div className="p-8 border border-dashed border-mirage-border rounded text-center">
+                  <Key className="w-8 h-8 text-mirage-subtext mx-auto mb-2 opacity-50" />
+                  <h4 className="text-xs font-semibold text-mirage-text">No API Keys Provisioned</h4>
+                  <p className="text-[11px] text-mirage-subtext mt-1">
                     Generate an API key on the left to start sending authenticated requests.
                   </p>
                 </div>
@@ -447,15 +447,15 @@ async def receive_mirage_webhook(
                   {keys.map((k) => (
                     <div
                       key={k.id}
-                      className="p-4 rounded-2xl bg-apple-subtle/50 border border-apple-border/80 flex items-center justify-between hover:bg-apple-subtle transition"
+                      className="p-4 rounded bg-mirage-surfaceElevated/50 border border-mirage-border/80 flex items-center justify-between hover:bg-mirage-surfaceElevated transition"
                     >
                       <div>
-                        <div className="text-xs font-semibold text-apple-text">{k.name}</div>
-                        <div className="text-[11px] font-mono text-apple-secondary mt-0.5">
-                          Prefix: <span className="text-apple-text font-bold">{k.key_prefix || k.id.substring(0, 12)}...</span>
+                        <div className="text-xs font-semibold text-mirage-text">{k.name}</div>
+                        <div className="text-[11px] font-mono text-mirage-subtext mt-0.5">
+                          Prefix: <span className="text-mirage-text font-bold">{k.key_prefix || k.id.substring(0, 12)}...</span>
                         </div>
-                        <div className="text-[10px] text-apple-muted mt-1">
-                          Role: <span className="font-semibold uppercase text-apple-blue">{k.role}</span> &bull; Status: <span className="text-apple-green font-semibold">ACTIVE</span>
+                        <div className="text-[10px] text-mirage-muted mt-1">
+                          Role: <span className="font-semibold uppercase text-mirage-cyan">{k.role}</span> &bull; Status: <span className="text-mirage-emerald font-semibold">ACTIVE</span>
                         </div>
                       </div>
 
@@ -463,7 +463,7 @@ async def receive_mirage_webhook(
                         type="button"
                         onClick={() => handleRevokeKey(k.id)}
                         title="Instantly revoke API key"
-                        className="p-2 rounded-xl text-apple-muted hover:text-apple-red hover:bg-apple-red/10 transition"
+                        className="p-2 rounded text-mirage-muted hover:text-mirage-crimson hover:bg-mirage-crimson/10 transition"
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
@@ -481,15 +481,15 @@ async def receive_mirage_webhook(
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           {/* Register Webhook Form */}
           <div className="lg:col-span-5 space-y-4">
-            <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-4">
-              <div className="flex items-center space-x-2 pb-3 border-b border-apple-border">
-                <Bell className="w-4 h-4 text-apple-purple" />
-                <h3 className="font-semibold text-sm text-apple-text">Register Outbound Webhook</h3>
+            <div className="bg-mirage-surface rounded p-6 border border-mirage-border shadow-mirage-surface space-y-4">
+              <div className="flex items-center space-x-2 pb-3 border-b border-mirage-border">
+                <Bell className="w-4 h-4 text-mirage-purple" />
+                <h3 className="font-semibold text-sm text-mirage-text">Register Outbound Webhook</h3>
               </div>
 
               <form onSubmit={handleCreateWebhook} className="space-y-3">
                 <div>
-                  <label className="block text-xs font-semibold text-apple-text mb-1">
+                  <label className="block text-xs font-semibold text-mirage-text mb-1">
                     Destination Endpoint (HTTP/HTTPS)
                   </label>
                   <input
@@ -497,16 +497,16 @@ async def receive_mirage_webhook(
                     value={webhookUrl}
                     onChange={(e) => setWebhookUrl(e.target.value)}
                     placeholder="https://hooks.slack.com/services/... or https://api.yoursite.com/alerts"
-                    className="w-full text-xs p-2.5 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-sans"
+                    className="w-full text-xs p-2.5 rounded bg-mirage-surfaceElevated border border-mirage-border focus:outline-none focus:border-mirage-cyan font-sans"
                     required
                   />
-                  <span className="text-[10px] text-apple-secondary mt-0.5 block">
+                  <span className="text-[10px] text-mirage-subtext mt-0.5 block">
                     Slack and Discord webhooks are automatically formatted as rich Block Kit / Embeds.
                   </span>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-apple-text mb-1">
+                  <label className="block text-xs font-semibold text-mirage-text mb-1">
                     Description / Label
                   </label>
                   <input
@@ -514,12 +514,12 @@ async def receive_mirage_webhook(
                     value={webhookDesc}
                     onChange={(e) => setWebhookDesc(e.target.value)}
                     placeholder="e.g. SRE Escalation Channel"
-                    className="w-full text-xs p-2.5 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-sans"
+                    className="w-full text-xs p-2.5 rounded bg-mirage-surfaceElevated border border-mirage-border focus:outline-none focus:border-mirage-cyan font-sans"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-apple-text mb-1">
+                  <label className="block text-xs font-semibold text-mirage-text mb-1">
                     Custom Signing Secret (Optional)
                   </label>
                   <input
@@ -527,29 +527,29 @@ async def receive_mirage_webhook(
                     value={webhookSecret}
                     onChange={(e) => setWebhookSecret(e.target.value)}
                     placeholder="Leave empty for auto-generated 64-char hex secret"
-                    className="w-full text-xs p-2.5 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-mono"
+                    className="w-full text-xs p-2.5 rounded bg-mirage-surfaceElevated border border-mirage-border focus:outline-none focus:border-mirage-cyan font-mono"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-apple-text mb-1.5">
+                  <label className="block text-xs font-semibold text-mirage-text mb-1.5">
                     Subscribed Assurance Events
                   </label>
                   <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
                     {availableEvents.map((evt) => (
                       <label
                         key={evt.id}
-                        className="flex items-start space-x-2.5 p-2 rounded-xl bg-apple-subtle hover:bg-apple-border/30 cursor-pointer transition text-xs"
+                        className="flex items-start space-x-2.5 p-2 rounded bg-mirage-surfaceElevated hover:bg-mirage-border/30 cursor-pointer transition text-xs"
                       >
                         <input
                           type="checkbox"
                           checked={selectedEvents.includes(evt.id)}
                           onChange={() => handleToggleEvent(evt.id)}
-                          className="mt-0.5 rounded text-apple-blue focus:ring-apple-blue"
+                          className="mt-0.5 rounded text-mirage-cyan focus:ring-mirage-cyan"
                         />
                         <div>
-                          <span className="font-semibold text-apple-text block">{evt.label}</span>
-                          <span className="text-[10px] text-apple-secondary">{evt.desc}</span>
+                          <span className="font-semibold text-mirage-text block">{evt.label}</span>
+                          <span className="text-[10px] text-mirage-subtext">{evt.desc}</span>
                         </div>
                       </label>
                     ))}
@@ -559,21 +559,21 @@ async def receive_mirage_webhook(
                 <button
                   type="submit"
                   disabled={isCreatingWebhook || !webhookUrl.trim()}
-                  className="w-full py-2.5 rounded-xl bg-apple-blue hover:bg-apple-blueHover text-white text-xs font-semibold shadow-apple-sm transition disabled:opacity-50"
+                  className="w-full py-2.5 rounded bg-mirage-cyan hover:bg-mirage-cyanHover text-white text-xs font-semibold shadow-sm transition disabled:opacity-50"
                 >
                   {isCreatingWebhook ? "Registering Subscription..." : "Register Webhook"}
                 </button>
               </form>
 
               {webhookError && (
-                <div className="p-3 rounded-xl bg-apple-red/10 border border-apple-red/20 text-xs text-apple-red flex items-center space-x-2">
+                <div className="p-3 rounded bg-mirage-crimson/10 border border-mirage-crimson/20 text-xs text-mirage-crimson flex items-center space-x-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>{webhookError}</span>
                 </div>
               )}
 
               {webhookSuccess && (
-                <div className="p-3 rounded-xl bg-apple-green/10 border border-apple-green/20 text-xs text-apple-green flex items-center space-x-2">
+                <div className="p-3 rounded bg-mirage-emerald/10 border border-mirage-emerald/20 text-xs text-mirage-emerald flex items-center space-x-2">
                   <CheckCircle2 className="w-4 h-4 shrink-0" />
                   <span>{webhookSuccess}</span>
                 </div>
@@ -583,21 +583,21 @@ async def receive_mirage_webhook(
 
           {/* Active Webhooks List */}
           <div className="lg:col-span-7 space-y-4">
-            <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-4">
-              <div className="flex items-center justify-between pb-3 border-b border-apple-border">
-                <h3 className="font-semibold text-sm text-apple-text">
+            <div className="bg-mirage-surface rounded p-6 border border-mirage-border shadow-mirage-surface space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-mirage-border">
+                <h3 className="font-semibold text-sm text-mirage-text">
                   Registered Outbound Subscriptions ({webhooks.length})
                 </h3>
-                <span className="text-[11px] text-apple-secondary">HMAC-SHA256 Signed</span>
+                <span className="text-[11px] text-mirage-subtext">HMAC-SHA256 Signed</span>
               </div>
 
               {loadingWebhooks ? (
-                <div className="p-8 text-center text-xs text-apple-secondary">Loading webhooks...</div>
+                <div className="p-8 text-center text-xs text-mirage-subtext">Loading webhooks...</div>
               ) : webhooks.length === 0 ? (
-                <div className="p-8 border border-dashed border-apple-border rounded-2xl text-center">
-                  <Radio className="w-8 h-8 text-apple-secondary mx-auto mb-2 opacity-50" />
-                  <h4 className="text-xs font-semibold text-apple-text">No Outbound Webhooks Registered</h4>
-                  <p className="text-[11px] text-apple-secondary mt-1 max-w-sm mx-auto">
+                <div className="p-8 border border-dashed border-mirage-border rounded text-center">
+                  <Radio className="w-8 h-8 text-mirage-subtext mx-auto mb-2 opacity-50" />
+                  <h4 className="text-xs font-semibold text-mirage-text">No Outbound Webhooks Registered</h4>
+                  <p className="text-[11px] text-mirage-subtext mt-1 max-w-sm mx-auto">
                     Subscribe a Slack, Discord, or HTTPS endpoint to receive immediate alerts when human approvals are required or reality discrepancies occur.
                   </p>
                 </div>
@@ -606,17 +606,17 @@ async def receive_mirage_webhook(
                   {webhooks.map((w) => (
                     <div
                       key={w.id}
-                      className="p-4 rounded-2xl bg-apple-subtle/50 border border-apple-border/80 space-y-2 hover:bg-apple-subtle transition"
+                      className="p-4 rounded bg-mirage-surfaceElevated/50 border border-mirage-border/80 space-y-2 hover:bg-mirage-surfaceElevated transition"
                     >
                       <div className="flex items-start justify-between">
                         <div>
-                          <div className="text-xs font-semibold text-apple-text flex items-center space-x-2">
+                          <div className="text-xs font-semibold text-mirage-text flex items-center space-x-2">
                             <span>{w.description || "Webhook Endpoint"}</span>
-                            <span className="px-1.5 py-0.5 rounded-full bg-apple-green/10 text-apple-green text-[10px] font-mono">
+                            <span className="px-1.5 py-0.5 rounded-full bg-mirage-emerald/10 text-mirage-emerald text-[10px] font-mono">
                               ACTIVE
                             </span>
                           </div>
-                          <div className="text-[11px] font-mono text-apple-secondary truncate max-w-md mt-0.5">
+                          <div className="text-[11px] font-mono text-mirage-subtext truncate max-w-md mt-0.5">
                             {w.url}
                           </div>
                         </div>
@@ -626,16 +626,16 @@ async def receive_mirage_webhook(
                             type="button"
                             onClick={() => handleTestWebhook(w.id)}
                             disabled={testingWebhookId === w.id}
-                            className="px-2.5 py-1 rounded-lg bg-apple-subtle hover:bg-apple-border border border-apple-border text-[11px] font-semibold text-apple-text transition disabled:opacity-50 flex items-center space-x-1"
+                            className="px-2.5 py-1 rounded-lg bg-mirage-surfaceElevated hover:bg-mirage-border border border-mirage-border text-[11px] font-semibold text-mirage-text transition disabled:opacity-50 flex items-center space-x-1"
                           >
-                            <Send className="w-3 h-3 text-apple-blue" />
+                            <Send className="w-3 h-3 text-mirage-cyan" />
                             <span>{testingWebhookId === w.id ? "Pinging..." : "Test Ping"}</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => handleDeleteWebhook(w.id)}
                             title="Delete webhook subscription"
-                            className="p-1.5 rounded-lg text-apple-muted hover:text-apple-red hover:bg-apple-red/10 transition"
+                            className="p-1.5 rounded-lg text-mirage-muted hover:text-mirage-crimson hover:bg-mirage-crimson/10 transition"
                           >
                             <Trash2 className="w-4 h-4" />
                           </button>
@@ -647,7 +647,7 @@ async def receive_mirage_webhook(
                         {(w.event_types || []).map((evt) => (
                           <span
                             key={evt}
-                            className="px-2 py-0.5 rounded-md bg-apple-surface border border-apple-border text-[10px] font-mono text-apple-secondary"
+                            className="px-2 py-0.5 rounded-md bg-mirage-surface border border-mirage-border text-[10px] font-mono text-mirage-subtext"
                           >
                             {evt}
                           </span>
@@ -664,21 +664,21 @@ async def receive_mirage_webhook(
 
       {/* SECTION 3: CODE SAMPLES */}
       {activeSection === "code" && (
-        <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-apple-border">
+        <div className="bg-mirage-surface rounded p-6 border border-mirage-border shadow-mirage-surface space-y-4">
+          <div className="flex items-center justify-between pb-3 border-b border-mirage-border">
             <div className="flex items-center space-x-2">
-              <Code2 className="w-4 h-4 text-apple-blue" />
-              <h3 className="font-semibold text-sm text-apple-text">Integration Code Samples</h3>
+              <Code2 className="w-4 h-4 text-mirage-cyan" />
+              <h3 className="font-semibold text-sm text-mirage-text">Integration Code Samples</h3>
             </div>
 
-            <div className="flex space-x-1 p-1 bg-apple-subtle rounded-xl border border-apple-border">
+            <div className="flex space-x-1 p-1 bg-mirage-surfaceElevated rounded border border-mirage-border">
               <button
                 type="button"
                 onClick={() => setActiveSnippetTab("openai")}
                 className={`px-3 py-1 text-xs font-medium rounded-lg transition ${
                   activeSnippetTab === "openai"
-                    ? "bg-white text-apple-text shadow-apple-sm"
-                    : "text-apple-secondary hover:text-apple-text"
+                    ? "bg-white text-mirage-text shadow-sm"
+                    : "text-mirage-subtext hover:text-mirage-text"
                 }`}
               >
                 OpenAI Proxy
@@ -688,8 +688,8 @@ async def receive_mirage_webhook(
                 onClick={() => setActiveSnippetTab("curl")}
                 className={`px-3 py-1 text-xs font-medium rounded-lg transition ${
                   activeSnippetTab === "curl"
-                    ? "bg-white text-apple-text shadow-apple-sm"
-                    : "text-apple-secondary hover:text-apple-text"
+                    ? "bg-white text-mirage-text shadow-sm"
+                    : "text-mirage-subtext hover:text-mirage-text"
                 }`}
               >
                 cURL
@@ -699,8 +699,8 @@ async def receive_mirage_webhook(
                 onClick={() => setActiveSnippetTab("mcp")}
                 className={`px-3 py-1 text-xs font-medium rounded-lg transition ${
                   activeSnippetTab === "mcp"
-                    ? "bg-white text-apple-text shadow-apple-sm"
-                    : "text-apple-secondary hover:text-apple-text"
+                    ? "bg-white text-mirage-text shadow-sm"
+                    : "text-mirage-subtext hover:text-mirage-text"
                 }`}
               >
                 Cursor / Claude MCP
@@ -710,8 +710,8 @@ async def receive_mirage_webhook(
                 onClick={() => setActiveSnippetTab("webhook_receiver")}
                 className={`px-3 py-1 text-xs font-medium rounded-lg transition ${
                   activeSnippetTab === "webhook_receiver"
-                    ? "bg-white text-apple-text shadow-apple-sm"
-                    : "text-apple-secondary hover:text-apple-text"
+                    ? "bg-white text-mirage-text shadow-sm"
+                    : "text-mirage-subtext hover:text-mirage-text"
                 }`}
               >
                 Webhook Verification
@@ -720,17 +720,17 @@ async def receive_mirage_webhook(
           </div>
 
           <div className="relative">
-            <pre className="p-4 rounded-2xl bg-apple-subtle/80 border border-apple-border text-xs font-mono text-apple-text overflow-x-auto leading-relaxed">
+            <pre className="p-4 rounded bg-mirage-surfaceElevated/80 border border-mirage-border text-xs font-mono text-mirage-text overflow-x-auto leading-relaxed">
               {snippets[activeSnippetTab]}
             </pre>
 
             <button
               type="button"
               onClick={() => copyToClipboard(snippets[activeSnippetTab], activeSnippetTab)}
-              className="absolute top-3 right-3 p-2 rounded-xl bg-white/90 backdrop-blur-sm border border-apple-border text-apple-secondary hover:text-apple-text shadow-apple-sm transition"
+              className="absolute top-3 right-3 p-2 rounded bg-white/90 backdrop-blur-sm border border-mirage-border text-mirage-subtext hover:text-mirage-text shadow-sm transition"
             >
               {copiedSnippet === activeSnippetTab ? (
-                <div className="flex items-center space-x-1 text-apple-green text-[11px] font-sans font-medium">
+                <div className="flex items-center space-x-1 text-mirage-emerald text-[11px] font-sans font-medium">
                   <Check className="w-3.5 h-3.5" />
                   <span>Copied</span>
                 </div>
@@ -740,10 +740,10 @@ async def receive_mirage_webhook(
             </button>
           </div>
 
-          <div className="p-4 rounded-2xl bg-apple-subtle/40 border border-apple-border/70 text-xs text-apple-secondary space-y-1">
-            <div className="font-semibold text-apple-text">Deterministic Tenant Attribution:</div>
+          <div className="p-4 rounded bg-mirage-surfaceElevated/40 border border-mirage-border/70 text-xs text-mirage-subtext space-y-1">
+            <div className="font-semibold text-mirage-text">Deterministic Tenant Attribution:</div>
             <p>
-              Always pass the <code className="font-mono text-apple-blue font-bold">X-Tenant-ID</code> header with every request. MIRAGE enforces strict PostgreSQL Row-Level Security to prevent cross-tenant privilege escalation.
+              Always pass the <code className="font-mono text-mirage-cyan font-bold">X-Tenant-ID</code> header with every request. MIRAGE enforces strict PostgreSQL Row-Level Security to prevent cross-tenant privilege escalation.
             </p>
           </div>
         </div>

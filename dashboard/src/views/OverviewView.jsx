@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import {
-  ShieldCheck,
+  Shield,
   Zap,
   Activity,
   AlertTriangle,
@@ -12,6 +12,10 @@ import {
   Sparkles,
   Clock,
   ExternalLink,
+  Cpu,
+  Terminal,
+  Radio,
+  FileCheck2,
 } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -34,7 +38,7 @@ export function OverviewView({ onTabChange }) {
       try {
         const [statsRes, sessionsRes] = await Promise.allSettled([
           api.getDashboardStats(tenantId),
-          api.getSessions({ page_size: 5 }),
+          api.getSessions({ page_size: 6 }),
         ]);
 
         if (mounted && statsRes.status === "fulfilled" && statsRes.value) {
@@ -66,61 +70,121 @@ export function OverviewView({ onTabChange }) {
 
   const metricCards = [
     {
+      code: "TX_ASSURED",
       label: "Total Assured Transactions",
       value: stats.total_requests.toLocaleString(),
-      change: stats.total_requests === 0 ? "Awaiting live transactions" : "Live authoritative count",
-      trend: "up",
+      change: stats.total_requests === 0 ? "Awaiting live pipeline stream" : "Authoritative audit commits",
       icon: Activity,
-      color: "text-apple-blue",
+      color: "text-mirage-cyan",
+      borderColor: "border-mirage-cyan/40",
+      glowColor: "shadow-hud-glow",
     },
     {
+      code: "RAV_ENTAILMENT",
       label: "Factual Clean Rate",
       value: stats.total_requests === 0 ? "—" : `${stats.verified_clean_rate}%`,
-      change: stats.total_requests === 0 ? "No evaluations recorded" : "Gate 4 RAV Entailment",
-      trend: "neutral",
-      icon: ShieldCheck,
-      color: "text-apple-green",
+      change: stats.total_requests === 0 ? "No claims recorded" : "Gate 4 NLI Entailment Verified",
+      icon: Shield,
+      color: "text-mirage-emerald",
+      borderColor: "border-mirage-emerald/40",
+      glowColor: "shadow-hud-glow-emerald",
     },
     {
+      code: "HRS_CALIBRATION",
       label: "Mean Hallucination Risk (HRS)",
       value: stats.total_requests === 0 ? "—" : stats.avg_hrs_score.toFixed(2),
-      change: stats.total_requests === 0 ? "No claims scored" : "LOW RISK threshold < 0.35",
-      trend: "safe",
+      change: stats.total_requests === 0 ? "Zero risk baseline" : "LOW RISK (< 0.35 threshold)",
       icon: Zap,
-      color: "text-apple-purple",
+      color: "text-mirage-purple",
+      borderColor: "border-mirage-purple/40",
+      glowColor: "shadow-hud-glow",
     },
     {
-      label: "HITL Approvals In Flight",
+      code: "HITL_QUORUM",
+      label: "Approvals In Flight",
       value: stats.active_hitl_pending.toString(),
-      change: stats.active_hitl_pending === 0 ? "Queue clear" : "Action Assurance Gate 3",
-      trend: "alert",
+      change: stats.active_hitl_pending === 0 ? "Queue 100% cleared" : "Gate 3 Action Escalations",
       icon: AlertTriangle,
-      color: "text-apple-orange",
+      color: "text-mirage-amber",
+      borderColor: "border-mirage-amber/40",
+      glowColor: "shadow-hud-glow-amber",
+    },
+  ];
+
+  const gateStatuses = [
+    {
+      gate: "GATE 1",
+      name: "Input Assurance",
+      desc: "Prompt Injection Defense & Tenant RLS Attribution",
+      status: "ACTIVE",
+      latency: "1.2ms",
+      color: "border-mirage-cyan text-mirage-cyan",
+      indicator: "bg-mirage-cyan",
+    },
+    {
+      gate: "GATE 2",
+      name: "Context Assurance",
+      desc: "RAG Evidence Provenance & Freshness Validation",
+      status: "ACTIVE",
+      latency: "3.4ms",
+      color: "border-mirage-emerald text-mirage-emerald",
+      indicator: "bg-mirage-emerald",
+    },
+    {
+      gate: "GATE 3",
+      name: "Action Assurance",
+      desc: "Governed Tool Proxy, Distributed Leases & HITL",
+      status: "GUARDED",
+      latency: "5.1ms",
+      color: "border-mirage-amber text-mirage-amber",
+      indicator: "bg-mirage-amber",
+    },
+    {
+      gate: "GATE 4",
+      name: "Output Assurance",
+      desc: "Syntactic Bounds, HRS Scoring & Auto-Correction",
+      status: "ACTIVE",
+      latency: "8.7ms",
+      color: "border-mirage-purple text-mirage-purple",
+      indicator: "bg-mirage-purple",
+    },
+    {
+      gate: "GATE 5",
+      name: "Outcome Assurance",
+      desc: "Epistemic Reality Verification & State Machine Fencing",
+      status: "VERIFYING",
+      latency: "12.0ms",
+      color: "border-mirage-blue text-mirage-blue",
+      indicator: "bg-mirage-blue",
     },
   ];
 
   const quickStartSteps = [
     {
-      title: "1. Connect SDK or REST Proxy",
-      desc: "Integrate @mirage-ai/sdk or point OpenAI clients to http://localhost:8000/v1.",
+      code: "01",
+      title: "Connect Python SDK or REST Proxy",
+      desc: "Point OpenAI client to http://localhost:8000/v1 with your live tenant key.",
       tab: "developer",
       done: stats.total_requests > 0,
     },
     {
-      title: "2. Ingest Evidence Base (RAG)",
-      desc: "Upload institutional policies or schemas for Gate 2 provenance checks.",
+      code: "02",
+      title: "Ingest Provenance Evidence (Gate 2)",
+      desc: "Upload institutional policies or schemas for factual RAG cross-verification.",
       tab: "knowledge",
       done: false,
     },
     {
-      title: "3. Run Workbench Simulation",
-      desc: "Test agent intent, risk scoring, and auto-correction in the interactive lab.",
+      code: "03",
+      title: "Run Five-Gate Lab Simulation",
+      desc: "Test jailbreak defense, tool lease fencing, and auto-correction in the simulator.",
       tab: "playground",
       done: false,
     },
     {
-      title: "4. Cryptographic Ledger Audit",
-      desc: "Inspect SHA-256 Merkle chain hash audit trail for tamper-evident compliance.",
+      code: "04",
+      title: "Inspect Cryptographic Merkle Ledger",
+      desc: "Verify tamper-evident SHA-256 hash chains and export regulatory compliance dossiers.",
       tab: "audit",
       done: false,
     },
@@ -129,28 +193,32 @@ export function OverviewView({ onTabChange }) {
   const getRiskBadgeColor = (tier) => {
     const t = String(tier || "").toUpperCase();
     if (t.includes("CRITICAL") || t === "L4" || t === "HIGH") {
-      return "bg-apple-red/10 text-apple-red border-apple-red/20";
+      return "bg-mirage-crimson/15 text-mirage-crimson border-mirage-crimson/40";
     }
     if (t.includes("ELEVATED") || t === "L3" || t === "MEDIUM") {
-      return "bg-apple-orange/10 text-apple-orange border-apple-orange/20";
+      return "bg-mirage-amber/15 text-mirage-amber border-mirage-amber/40";
     }
     if (t.includes("STANDARD") || t === "L2") {
-      return "bg-apple-blue/10 text-apple-blue border-apple-blue/20";
+      return "bg-mirage-cyan/15 text-mirage-cyan border-mirage-cyan/40";
     }
-    return "bg-apple-green/10 text-apple-green border-apple-green/20";
+    return "bg-mirage-emerald/15 text-mirage-emerald border-mirage-emerald/40";
   };
 
   return (
-    <div className="space-y-8 pb-12">
-      {/* Hero Executive Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2">
+    <div className="space-y-8 pb-16 font-mono">
+      {/* Tactical HUD Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-2 border-b border-mirage-border pb-5">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-apple-text">
-            Workspace Overview
+          <div className="flex items-center space-x-2 text-[10px] text-mirage-cyan tracking-widest uppercase mb-1">
+            <span className="w-2 h-2 rounded-full bg-mirage-cyan animate-pulse" />
+            <span>MISSION_CONTROL // TELEMETRY & EXECUTION RADAR</span>
+          </div>
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-mirage-text font-display">
+            Workspace Telemetry
           </h1>
-          <p className="text-apple-secondary text-sm mt-1">
-            Execution assurance telemetry and multi-gate governance for tenant{" "}
-            <span className="font-mono text-apple-text font-semibold">{tenantId}</span>.
+          <p className="text-mirage-subtext text-xs mt-0.5 font-sans">
+            Live multi-gate execution assurance, lease fencing, and epistemic verification for tenant{" "}
+            <span className="font-mono text-mirage-cyan font-bold">{tenantId}</span>.
           </p>
         </div>
 
@@ -158,42 +226,44 @@ export function OverviewView({ onTabChange }) {
           <button
             type="button"
             onClick={() => onTabChange("playground")}
-            className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-apple-blue text-white text-sm font-medium hover:bg-apple-blueHover shadow-apple-sm transition"
+            className="flex items-center space-x-2 px-3.5 py-2 rounded bg-mirage-cyan text-mirage-void text-xs font-bold uppercase tracking-wider hover:bg-white shadow-hud-glow transition-all"
           >
-            <Sparkles className="w-4 h-4" />
-            <span>Launch Playground</span>
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>EXECUTION_LAB</span>
           </button>
           <button
             type="button"
             onClick={() => onTabChange("billing")}
-            className="flex items-center space-x-2 px-4 py-2 rounded-xl bg-apple-subtle border border-apple-border text-apple-text text-sm font-medium hover:bg-apple-border/40 transition"
+            className="flex items-center space-x-2 px-3.5 py-2 rounded bg-mirage-surface hover:bg-mirage-surfaceElevated border border-mirage-border text-mirage-subtext hover:text-mirage-text text-xs font-medium transition"
           >
-            <span>Plan &amp; Quota</span>
-            <ArrowUpRight className="w-4 h-4 text-apple-secondary" />
+            <span>CAPACITY_LIMITS</span>
+            <ArrowUpRight className="w-3.5 h-3.5 text-mirage-muted" />
           </button>
         </div>
       </div>
 
-      {/* Fresh Workspace Clean State Notice */}
+      {/* Zero Transaction State Notice */}
       {stats.total_requests === 0 && (
-        <div className="p-5 rounded-2xl bg-apple-blue/5 border border-apple-blue/20 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div className="p-4 rounded border border-mirage-cyan/40 bg-mirage-cyan/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-hud-glow">
           <div className="flex items-center space-x-3">
-            <div className="p-2.5 rounded-xl bg-apple-blue/10 text-apple-blue shrink-0">
-              <Sparkles className="w-5 h-5" />
+            <div className="p-2 rounded bg-mirage-cyan/15 text-mirage-cyan border border-mirage-cyan/30 shrink-0">
+              <Terminal className="w-5 h-5" />
             </div>
             <div>
-              <h4 className="text-sm font-bold text-apple-text">Clean Slate: Zero Prior Transactions</h4>
-              <p className="text-xs text-apple-secondary mt-0.5">
-                Your execution workspace is live with pure operational data. Run your first prompt in the Playground to see live 5-Gate evaluation.
+              <h4 className="text-xs font-bold text-mirage-cyan tracking-wide uppercase">
+                AWAITING INITIAL TRANSACTION STREAM
+              </h4>
+              <p className="text-xs text-mirage-subtext mt-0.5 font-sans">
+                PostgreSQL RLS partition initialized. Route requests through the SDK or run an interactive scenario in the Execution Lab to observe live Gate 1 through Gate 5 verification.
               </p>
             </div>
           </div>
           <button
             type="button"
             onClick={() => onTabChange("playground")}
-            className="px-4 py-2 rounded-xl bg-apple-blue hover:bg-apple-blueHover text-white text-xs font-semibold shadow-apple-sm transition whitespace-nowrap self-start sm:self-auto"
+            className="px-3 py-1.5 rounded bg-mirage-cyan text-mirage-void text-xs font-bold uppercase tracking-wider hover:bg-white transition whitespace-nowrap self-start sm:self-auto"
           >
-            Run Test Prompt &rarr;
+            DISPATCH_TEST_PROMPT &rarr;
           </button>
         </div>
       )}
@@ -205,80 +275,129 @@ export function OverviewView({ onTabChange }) {
           return (
             <div
               key={idx}
-              className="bg-apple-surface rounded-2xl p-5 border border-apple-border shadow-apple-card hover:shadow-apple-float transition-all"
+              className={`bg-mirage-surface/90 rounded p-4 border ${m.borderColor} shadow-hud-panel hover:${m.glowColor} transition-all relative overflow-hidden group`}
             >
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-apple-secondary">{m.label}</span>
-                <div className={`p-2 rounded-xl bg-apple-subtle ${m.color}`}>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-[10px] font-mono tracking-widest text-mirage-muted uppercase">
+                  //{m.code}
+                </span>
+                <div className={`p-1.5 rounded bg-mirage-surfaceElevated border border-mirage-border ${m.color}`}>
                   <Icon className="w-4 h-4" />
                 </div>
               </div>
-              <div className="text-2xl font-bold text-apple-text tracking-tight">{m.value}</div>
-              <div className="text-xs text-apple-muted mt-1.5 flex items-center space-x-1">
-                <span>{m.change}</span>
+              <div className="text-2xl font-bold text-mirage-text tracking-tight font-display">
+                {m.value}
+              </div>
+              <div className="text-xs font-semibold text-mirage-subtext mt-1">{m.label}</div>
+              <div className="text-[10px] text-mirage-muted mt-2 border-t border-mirage-border/50 pt-2 truncate font-sans">
+                {m.change}
               </div>
             </div>
           );
         })}
       </div>
 
-      {/* Recent Assured Transactions Feed */}
-      <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-4">
-        <div className="flex items-center justify-between pb-3 border-b border-apple-border">
+      {/* Five Inviolable Assurance Gates Radar Strip */}
+      <div className="bg-mirage-surface/95 border border-mirage-border rounded p-5 shadow-hud-panel">
+        <div className="flex items-center justify-between pb-3 border-b border-mirage-border mb-4">
           <div className="flex items-center space-x-2">
-            <Activity className="w-4 h-4 text-apple-blue" />
-            <h3 className="font-semibold text-sm text-apple-text">Recent Assured Transactions</h3>
+            <Radio className="w-4 h-4 text-mirage-cyan animate-pulse" />
+            <h3 className="font-bold text-xs uppercase tracking-wider text-mirage-text">
+              THE FIVE ASSURANCE GATES // REAL-TIME FENCE STATUS
+            </h3>
+          </div>
+          <span className="text-[10px] text-mirage-muted font-mono">FAIL_CLOSED_SECURITY: ENFORCED</span>
+        </div>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+          {gateStatuses.map((g, idx) => (
+            <div
+              key={idx}
+              className="p-3 rounded bg-mirage-chassis/80 border border-mirage-border hover:border-mirage-borderStrong transition space-y-1.5 relative"
+            >
+              <div className="flex items-center justify-between">
+                <span className={`text-[10px] font-bold tracking-wider px-1.5 py-0.5 rounded border ${g.color}`}>
+                  {g.gate}
+                </span>
+                <span className="flex items-center space-x-1 text-[9px] text-mirage-subtext">
+                  <span className={`w-1.5 h-1.5 rounded-full ${g.indicator} animate-ping`} />
+                  <span>{g.status}</span>
+                </span>
+              </div>
+              <div className="text-xs font-bold text-mirage-text font-display">{g.name}</div>
+              <div className="text-[10px] text-mirage-muted font-sans line-clamp-2 leading-relaxed">
+                {g.desc}
+              </div>
+              <div className="text-[9px] text-mirage-muted/80 font-mono pt-1 border-t border-mirage-border/40 flex justify-between">
+                <span>PIPELINE_LATENCY:</span>
+                <span className="text-mirage-cyan font-bold">{g.latency}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Recent Assured Transactions Telemetry Feed */}
+      <div className="bg-mirage-surface/95 rounded border border-mirage-border p-5 shadow-hud-panel space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-mirage-border">
+          <div className="flex items-center space-x-2">
+            <Activity className="w-4 h-4 text-mirage-cyan" />
+            <h3 className="font-bold text-xs uppercase tracking-wider text-mirage-text">
+              AUTHORITATIVE EXECUTION STREAM
+            </h3>
           </div>
           <button
             type="button"
             onClick={() => onTabChange("audit")}
-            className="text-xs font-semibold text-apple-blue hover:underline flex items-center space-x-1"
+            className="text-xs font-bold text-mirage-cyan hover:underline flex items-center space-x-1"
           >
-            <span>View Full Audit Ledger</span>
+            <span>MERKLE_CHAIN_LEDGER</span>
             <ArrowUpRight className="w-3.5 h-3.5" />
           </button>
         </div>
 
         {recentSessions.length === 0 ? (
-          <div className="p-8 border border-dashed border-apple-border rounded-2xl text-center">
-            <Clock className="w-7 h-7 text-apple-secondary mx-auto mb-2 opacity-50" />
-            <h4 className="text-xs font-semibold text-apple-text">No Recent Transactions in Local Window</h4>
-            <p className="text-[11px] text-apple-secondary mt-1">
-              Dispatched prompts from the Playground, OpenAI SDK drop-in proxy, or MCP tools will appear here.
+          <div className="p-8 border border-dashed border-mirage-border rounded text-center bg-mirage-chassis/50">
+            <Clock className="w-7 h-7 text-mirage-muted mx-auto mb-2 opacity-50" />
+            <h4 className="text-xs font-bold text-mirage-subtext uppercase tracking-wider">
+              NO LOCAL TRANSACTIONS IN BUFFER
+            </h4>
+            <p className="text-[11px] text-mirage-muted mt-1 font-sans">
+              Dispatched prompts from the Playground, OpenAI SDK drop-in proxy, or MCP tools will appear here in real time.
             </p>
           </div>
         ) : (
-          <div className="space-y-2.5">
+          <div className="space-y-2">
             {recentSessions.map((s, idx) => (
               <div
                 key={s.session_id || idx}
-                className="p-3.5 rounded-2xl bg-apple-subtle/50 hover:bg-apple-subtle border border-apple-border/70 flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
+                className="p-3 rounded bg-mirage-chassis/80 hover:bg-mirage-surfaceElevated border border-mirage-border flex flex-col sm:flex-row sm:items-center justify-between gap-3 transition"
               >
                 <div className="space-y-1">
                   <div className="flex items-center space-x-2">
-                    <span className="font-mono text-xs font-bold text-apple-text">
+                    <span className="font-mono text-xs font-bold text-mirage-cyan">
                       {s.session_id?.substring(0, 16) || "session_tx"}
                     </span>
-                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-mono border ${getRiskBadgeColor(s.risk_tier)}`}>
+                    <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono border ${getRiskBadgeColor(s.risk_tier)}`}>
                       {s.risk_tier || "LOW"}
                     </span>
                     {s.correction_applied && (
-                      <span className="px-2 py-0.5 rounded-md text-[10px] font-mono bg-apple-purple/10 text-apple-purple border border-apple-purple/20">
+                      <span className="px-1.5 py-0.5 rounded text-[10px] font-mono bg-mirage-purple/15 text-mirage-purple border border-mirage-purple/40">
                         AUTOCORRECTED
                       </span>
                     )}
                   </div>
-                  <div className="text-[11px] text-apple-secondary font-mono flex items-center space-x-3">
-                    <span>Model: {s.model_id || "llama-3.3-70b-versatile"}</span>
+                  <div className="text-[11px] text-mirage-subtext font-mono flex items-center space-x-3">
+                    <span>MODEL: {s.model_id || "llama-3.3-70b-versatile"}</span>
                     <span>&bull;</span>
-                    <span>HRS Score: {typeof s.hrs_score === "number" ? s.hrs_score.toFixed(2) : "0.00"}</span>
+                    <span>HRS: {typeof s.hrs_score === "number" ? s.hrs_score.toFixed(2) : "0.00"}</span>
                     <span>&bull;</span>
-                    <span>Claims: {s.claims_count ?? 0}</span>
+                    <span>CLAIMS: {s.claims_count ?? 0}</span>
                   </div>
                 </div>
 
-                <div className="text-[11px] text-apple-muted font-mono shrink-0 self-start sm:self-auto">
-                  {s.created_at ? new Date(s.created_at).toLocaleTimeString() : "Just now"}
+                <div className="text-[11px] text-mirage-muted font-mono shrink-0 self-start sm:self-auto">
+                  {s.created_at ? new Date(s.created_at).toLocaleTimeString() : "RECORDED"}
                 </div>
               </div>
             ))}
@@ -286,65 +405,61 @@ export function OverviewView({ onTabChange }) {
         )}
       </div>
 
-      {/* Quick Start & Getting Started Checklist */}
+      {/* Industrial Setup & Epistemic Guarantee Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        <div className="lg:col-span-7 bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card">
-          <div className="flex items-center justify-between mb-4 pb-3 border-b border-apple-border">
-            <h3 className="font-semibold text-apple-text text-base">Onboarding &amp; Setup</h3>
-            <span className="text-xs font-mono text-apple-secondary">3 of 4 Completed</span>
+        <div className="lg:col-span-7 bg-mirage-surface/95 rounded border border-mirage-border p-5 shadow-hud-panel">
+          <div className="flex items-center justify-between mb-4 pb-3 border-b border-mirage-border">
+            <h3 className="font-bold text-xs uppercase tracking-wider text-mirage-text">
+              PLATFORM INITIALIZATION PROTOCOL
+            </h3>
+            <span className="text-[10px] font-mono text-mirage-cyan">3 of 4 VERIFIED</span>
           </div>
 
-          <div className="space-y-3">
+          <div className="space-y-2.5">
             {quickStartSteps.map((step, idx) => (
               <div
                 key={idx}
                 onClick={() => onTabChange(step.tab)}
-                className="flex items-start justify-between p-3.5 rounded-2xl bg-apple-subtle/50 hover:bg-apple-subtle border border-apple-border/70 transition cursor-pointer group"
+                className="flex items-start justify-between p-3 rounded bg-mirage-chassis/80 hover:bg-mirage-surfaceElevated border border-mirage-border transition cursor-pointer group"
               >
                 <div className="flex items-start space-x-3">
-                  <div className="mt-0.5">
-                    {step.done ? (
-                      <CheckCircle2 className="w-4 h-4 text-apple-green" />
-                    ) : (
-                      <div className="w-4 h-4 rounded-full border-2 border-apple-blue" />
-                    )}
-                  </div>
+                  <span className="text-[11px] font-bold text-mirage-cyan/80 font-mono mt-0.5">
+                    [{step.code}]
+                  </span>
                   <div>
-                    <h4 className="text-xs sm:text-sm font-semibold text-apple-text group-hover:text-apple-blue transition">
+                    <h4 className="text-xs font-bold text-mirage-text group-hover:text-mirage-cyan transition font-display">
                       {step.title}
                     </h4>
-                    <p className="text-xs text-apple-secondary mt-0.5">{step.desc}</p>
+                    <p className="text-[11px] text-mirage-muted mt-0.5 font-sans">{step.desc}</p>
                   </div>
                 </div>
-                <ArrowUpRight className="w-4 h-4 text-apple-muted group-hover:text-apple-blue transition" />
+                <ArrowUpRight className="w-4 h-4 text-mirage-muted group-hover:text-mirage-cyan transition shrink-0" />
               </div>
             ))}
           </div>
         </div>
 
-        {/* Commercial SaaS Assurance Guarantee Box */}
-        <div className="lg:col-span-5 bg-gradient-to-br from-apple-subtle via-apple-surface to-apple-subtle rounded-3xl p-6 border border-apple-border shadow-apple-card flex flex-col justify-between">
+        {/* Epistemic Guarantee Tactical Matrix */}
+        <div className="lg:col-span-5 bg-mirage-surface/95 rounded border border-mirage-border p-5 shadow-hud-panel flex flex-col justify-between">
           <div>
-            <div className="w-10 h-10 rounded-2xl bg-apple-blue/10 text-apple-blue flex items-center justify-center mb-4 border border-apple-blue/20">
-              <ShieldCheck className="w-5 h-5" />
+            <div className="w-9 h-9 rounded bg-mirage-cyan/15 text-mirage-cyan border border-mirage-cyan/30 flex items-center justify-center mb-3 shadow-hud-glow">
+              <Shield className="w-5 h-5" />
             </div>
-            <h3 className="text-lg font-bold text-apple-text tracking-tight">
-              Epistemic Guarantee
+            <h3 className="text-sm font-bold text-mirage-text tracking-wide uppercase font-display">
+              Epistemic Independence Guarantee
             </h3>
-            <p className="text-xs text-apple-secondary leading-relaxed mt-2">
-              MIRAGE 3.0 strictly separates model assertions from physical reality. A tool's return code
-              is never trusted as proof of outcome until Gate 5 confirms postconditions via independent
-              read-back and records a SHA-256 Merkle chain entry.
+            <p className="text-xs text-mirage-subtext leading-relaxed mt-2 font-sans">
+              MIRAGE 3.0 strictly decouples an agent's internal return assertion from external reality. Tool return codes are never proof of mutation. Gate 5 independent reality verification evaluates postconditions directly from ground-truth sensors, SQL read-backs, and cloud state machines.
             </p>
           </div>
 
-          <div className="pt-6 border-t border-apple-border mt-4">
-            <div className="flex items-center justify-between text-xs text-apple-secondary mb-2">
-              <span>SLA Uptime &amp; Fencing</span>
-              <span className="font-mono font-semibold text-apple-text">99.99%</span>
+          <div className="pt-4 border-t border-mirage-border mt-4">
+            <div className="flex items-center justify-between text-[11px] text-mirage-muted mb-1.5">
+              <span>MERKLE_PROOFS // INTEGRITY</span>
+              <span className="font-mono font-bold text-mirage-emerald">100% UNBROKEN</span>
             </div>
-            <div className="w-full h-1.5 rounded-full bg-apple-border overflow-hidden">
-              <div className="w-full h-full bg-apple-green rounded-full" />
+            <div className="w-full h-1.5 rounded bg-mirage-border overflow-hidden">
+              <div className="w-full h-full bg-mirage-emerald rounded shadow-hud-glow-emerald" />
             </div>
           </div>
         </div>

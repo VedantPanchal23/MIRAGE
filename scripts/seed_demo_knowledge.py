@@ -12,13 +12,15 @@ Usage:
 import argparse
 import asyncio
 import hashlib
+import io
 import os
 import sys
 
 # Ensure repository root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 try:
-    sys.stdout.reconfigure(encoding="utf-8")
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
     pass
 

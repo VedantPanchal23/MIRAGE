@@ -9,6 +9,8 @@ import {
   Clock,
   UserCheck,
   Search,
+  Terminal,
+  Cpu,
 } from "lucide-react";
 import { api } from "../api";
 import { useAuth } from "../context/AuthContext";
@@ -85,44 +87,49 @@ export function ApprovalsView() {
   };
 
   return (
-    <div className="space-y-8 pb-12">
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-apple-text">
-          Human-in-the-Loop (HITL) Queue
+    <div className="space-y-8 pb-16 font-mono">
+      {/* Tactical Header */}
+      <div className="border-b border-mirage-border pb-5 pt-2">
+        <div className="flex items-center space-x-2 text-[10px] text-mirage-amber tracking-widest uppercase mb-1">
+          <span className="w-2 h-2 rounded-full bg-mirage-amber animate-pulse" />
+          <span>GATE 3 // ACTION ASSURANCE & HITL QUORUM ESCALATIONS</span>
+        </div>
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-mirage-text font-display">
+          HITL Quorum Escalations
         </h1>
-        <p className="text-apple-secondary text-sm mt-1">
-          Gate 3 Action Assurance escalation: Inspect and decide high-risk mutations, external API calls, and elevated blast-radius actions before execution.
+        <p className="text-mirage-subtext text-xs mt-0.5 font-sans">
+          Inspect, evaluate, and authorize high-risk autonomous mutations, external tool invocations, and elevated blast-radius operations before dispatch.
         </p>
       </div>
 
       {successMessage && (
-        <div className="p-4 rounded-2xl bg-apple-green/10 border border-apple-green/20 text-xs sm:text-sm text-apple-green flex items-center justify-between">
+        <div className="p-3.5 rounded bg-mirage-emerald/15 border border-mirage-emerald/40 text-xs text-mirage-emerald flex items-center justify-between shadow-hud-glow-emerald">
           <div className="flex items-center space-x-2">
-            <CheckCircle className="w-4 h-4" />
-            <span>{successMessage}</span>
+            <CheckCircle className="w-4 h-4 shrink-0" />
+            <span className="font-bold">{successMessage}</span>
           </div>
           <button
             type="button"
             onClick={() => setSuccessMessage(null)}
-            className="text-apple-secondary hover:text-apple-text text-xs"
+            className="text-mirage-subtext hover:text-mirage-text text-[11px] uppercase font-bold"
           >
-            Dismiss
+            [DISMISS]
           </button>
         </div>
       )}
 
       {errorMessage && (
-        <div className="p-4 rounded-2xl bg-apple-red/10 border border-apple-red/20 text-xs sm:text-sm text-apple-red flex items-center justify-between">
+        <div className="p-3.5 rounded bg-mirage-crimson/15 border border-mirage-crimson/40 text-xs text-mirage-crimson flex items-center justify-between shadow-hud-glow-crimson">
           <div className="flex items-center space-x-2">
-            <AlertCircle className="w-4 h-4" />
-            <span>{errorMessage}</span>
+            <AlertCircle className="w-4 h-4 shrink-0" />
+            <span className="font-bold">{errorMessage}</span>
           </div>
           <button
             type="button"
             onClick={() => setErrorMessage(null)}
-            className="text-apple-secondary hover:text-apple-text text-xs"
+            className="text-mirage-subtext hover:text-mirage-text text-[11px] uppercase font-bold"
           >
-            Dismiss
+            [DISMISS]
           </button>
         </div>
       )}
@@ -131,18 +138,20 @@ export function ApprovalsView() {
         {/* Left Column: Pending List */}
         <div className="lg:col-span-5 space-y-3">
           <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-semibold text-apple-secondary uppercase tracking-wider">
-              Pending Tickets ({approvals.length})
+            <span className="text-[11px] font-bold text-mirage-subtext uppercase tracking-wider">
+              PENDING TICKETS ({approvals.length})
             </span>
-            <span className="text-xs text-apple-muted">L4 Escalation</span>
+            <span className="text-[10px] text-mirage-amber font-mono font-bold">L4_CRITICAL</span>
           </div>
 
           {approvals.length === 0 ? (
-            <div className="bg-apple-surface rounded-2xl p-8 border border-apple-border text-center">
-              <CheckCircle className="w-8 h-8 text-apple-green mx-auto mb-2" />
-              <h4 className="text-sm font-semibold text-apple-text">Queue Clear</h4>
-              <p className="text-xs text-apple-secondary mt-1">
-                Zero actions pending human approval. Automated Gate 3 policy controls are active.
+            <div className="bg-mirage-surface/90 rounded border border-mirage-border p-8 text-center shadow-hud-panel">
+              <CheckCircle className="w-8 h-8 text-mirage-emerald mx-auto mb-2 opacity-80" />
+              <h4 className="text-xs font-bold text-mirage-text uppercase tracking-wider">
+                QUEUE CLEAR // ZERO ESCALATIONS
+              </h4>
+              <p className="text-[11px] text-mirage-muted mt-1 font-sans">
+                Zero actions pending human approval. Automated Gate 3 distributed lease fencer and capability filters are guarding the execution boundary.
               </p>
             </div>
           ) : (
@@ -153,27 +162,27 @@ export function ApprovalsView() {
                   <div
                     key={a.id}
                     onClick={() => setActiveApproval(a)}
-                    className={`p-4 rounded-2xl border transition cursor-pointer ${
+                    className={`p-3.5 rounded border transition cursor-pointer relative ${
                       isSelected
-                        ? "bg-apple-surface border-apple-blue shadow-apple-card ring-1 ring-apple-blue/20"
-                        : "bg-apple-surface hover:bg-apple-subtle/50 border-apple-border"
+                        ? "bg-mirage-surfaceElevated border-mirage-amber text-mirage-text shadow-hud-glow-amber"
+                        : "bg-mirage-surface/80 hover:bg-mirage-surfaceElevated border-mirage-border text-mirage-subtext"
                     }`}
                   >
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="font-mono text-xs font-semibold text-apple-text">
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-mono text-xs font-bold text-mirage-cyan">
                         {a.tool_name}
                       </span>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-apple-red/10 text-apple-red border border-apple-red/20">
-                        Risk: {a.risk_score.toFixed(2)}
+                      <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-mirage-crimson/20 text-mirage-crimson border border-mirage-crimson/40">
+                        RISK: {a.risk_score?.toFixed(2) || "0.85"}
                       </span>
                     </div>
 
-                    <p className="text-xs text-apple-secondary font-mono truncate">
-                      Target: {a.target_resource}
+                    <p className="text-[11px] text-mirage-muted font-mono truncate">
+                      TARGET: {a.target_resource}
                     </p>
 
-                    <div className="flex items-center justify-between text-[11px] text-apple-muted mt-3 pt-2 border-t border-apple-border/50">
-                      <span>{a.blast_radius}</span>
+                    <div className="flex items-center justify-between text-[10px] text-mirage-muted mt-2 pt-2 border-t border-mirage-border/50">
+                      <span className="text-mirage-amber font-semibold">{a.blast_radius}</span>
                       <span className="font-mono">{a.id}</span>
                     </div>
                   </div>
@@ -186,62 +195,62 @@ export function ApprovalsView() {
         {/* Right Column: Detailed Ticket Inspection & Decision */}
         <div className="lg:col-span-7">
           {activeApproval ? (
-            <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-5">
-              <div className="flex items-start justify-between pb-4 border-b border-apple-border">
+            <div className="bg-mirage-surface/95 rounded border border-mirage-border p-5 shadow-hud-panel space-y-4">
+              <div className="flex items-start justify-between pb-3 border-b border-mirage-border">
                 <div>
-                  <div className="text-xs font-mono text-apple-secondary">
-                    Ticket ID: {activeApproval.id}
+                  <div className="text-[10px] font-mono text-mirage-muted">
+                    TICKET_ID: <span className="text-mirage-cyan">{activeApproval.id}</span>
                   </div>
-                  <h3 className="text-lg font-bold text-apple-text mt-0.5">
+                  <h3 className="text-base font-bold text-mirage-text mt-0.5 font-display">
                     {activeApproval.tool_name}
                   </h3>
-                  <div className="text-xs font-mono text-apple-muted mt-0.5">
-                    Transaction: {activeApproval.transaction_id}
+                  <div className="text-[10px] font-mono text-mirage-muted mt-0.5">
+                    TX_IDENTIFIER: {activeApproval.transaction_id}
                   </div>
                 </div>
 
                 <div className="text-right">
-                  <div className="text-xs font-bold text-apple-red">
-                    Risk Score: {activeApproval.risk_score.toFixed(2)}
+                  <div className="text-xs font-bold text-mirage-crimson">
+                    RISK SCORE: {activeApproval.risk_score?.toFixed(2) || "0.85"}
                   </div>
-                  <div className="text-[11px] text-apple-secondary mt-0.5">
-                    {activeApproval.blast_radius}
+                  <div className="text-[10px] text-mirage-amber mt-0.5 font-bold uppercase">
+                    BLAST RADIUS: {activeApproval.blast_radius}
                   </div>
                 </div>
               </div>
 
               {/* Reason for Escalation */}
-              <div className="p-3.5 rounded-2xl bg-apple-orange/10 border border-apple-orange/20 text-xs text-apple-orange space-y-1">
-                <div className="font-semibold flex items-center space-x-1.5">
+              <div className="p-3 rounded bg-mirage-amber/10 border border-mirage-amber/30 text-xs text-mirage-amber space-y-1">
+                <div className="font-bold flex items-center space-x-1.5 uppercase tracking-wider text-[11px]">
                   <AlertTriangle className="w-3.5 h-3.5" />
-                  <span>Escalation Rule Triggered</span>
+                  <span>ESCALATION POLICY TRIGGERED</span>
                 </div>
-                <p className="text-apple-text leading-relaxed">
+                <p className="text-mirage-text leading-relaxed font-sans text-xs">
                   {activeApproval.reason_for_escalation}
                 </p>
               </div>
 
               {/* Parameters JSON Inspector */}
               <div>
-                <label className="block text-xs font-semibold text-apple-text mb-1.5">
-                  Proposed Action Parameters (Target State Transition)
+                <label className="block text-[11px] font-bold text-mirage-subtext uppercase tracking-wider mb-1">
+                  PROPOSED TARGET MUTATION PAYLOAD
                 </label>
-                <pre className="p-3.5 rounded-2xl bg-apple-subtle border border-apple-border text-xs font-mono text-apple-text overflow-x-auto leading-relaxed">
+                <pre className="p-3 rounded bg-mirage-chassis border border-mirage-border text-xs font-mono text-mirage-cyan overflow-x-auto leading-relaxed max-h-56">
                   {JSON.stringify(activeApproval.parameters, null, 2)}
                 </pre>
               </div>
 
               {/* Decision Input & Action Buttons */}
-              <div className="pt-2 border-t border-apple-border space-y-3">
-                <label className="block text-xs font-semibold text-apple-text">
-                  Decision Notes (Recorded in Cryptographic Audit Ledger)
+              <div className="pt-3 border-t border-mirage-border space-y-3">
+                <label className="block text-[11px] font-bold text-mirage-subtext uppercase tracking-wider">
+                  OPERATOR JUSTIFICATION (ANCHORED IN MERKLE LEDGER)
                 </label>
                 <input
                   type="text"
                   value={decisionReason}
                   onChange={(e) => setDecisionReason(e.target.value)}
-                  placeholder="e.g., Verified authorized vendor invoice #INV-2026-99"
-                  className="w-full text-xs p-2.5 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-sans"
+                  placeholder="e.g. Verified authorized invoice #INV-2026-99 against vendor ledger"
+                  className="w-full text-xs p-2.5 rounded bg-mirage-chassis border border-mirage-border focus:outline-none focus:border-mirage-cyan font-mono text-mirage-text"
                 />
 
                 <div className="grid grid-cols-2 gap-3 pt-2">
@@ -249,30 +258,30 @@ export function ApprovalsView() {
                     type="button"
                     disabled={isSubmitting}
                     onClick={handleDeny}
-                    className="flex items-center justify-center space-x-2 py-2.5 rounded-xl border border-apple-red/30 bg-apple-red/10 text-apple-red text-xs font-semibold hover:bg-apple-red/20 transition disabled:opacity-50"
+                    className="flex items-center justify-center space-x-2 py-2.5 rounded border border-mirage-crimson/40 bg-mirage-crimson/15 text-mirage-crimson text-xs font-bold uppercase tracking-wider hover:bg-mirage-crimson hover:text-white transition disabled:opacity-50"
                   >
                     <XCircle className="w-4 h-4" />
-                    <span>Deny Action</span>
+                    <span>DENY & TERMINATE</span>
                   </button>
 
                   <button
                     type="button"
                     disabled={isSubmitting}
                     onClick={handleGrant}
-                    className="flex items-center justify-center space-x-2 py-2.5 rounded-xl bg-apple-blue hover:bg-apple-blueHover text-white text-xs font-semibold shadow-apple-sm transition disabled:opacity-50"
+                    className="flex items-center justify-center space-x-2 py-2.5 rounded bg-mirage-cyan text-mirage-void text-xs font-bold uppercase tracking-wider hover:bg-white shadow-hud-glow transition disabled:opacity-50"
                   >
                     <CheckCircle className="w-4 h-4" />
-                    <span>Grant & Dispatch (Gate 3 Lease)</span>
+                    <span>GRANT LEASE & DISPATCH</span>
                   </button>
                 </div>
               </div>
             </div>
           ) : (
-            <div className="h-full min-h-[320px] flex flex-col items-center justify-center rounded-3xl border border-dashed border-apple-border p-8 text-center text-apple-secondary text-xs space-y-2">
-              <Shield className="w-8 h-8 text-apple-muted mx-auto" />
-              <div className="font-semibold text-apple-text">No Action Selected</div>
-              <p className="max-w-xs text-apple-muted">
-                Proposed actions requiring elevated capabilities or human-in-the-loop review will appear here for parameter inspection.
+            <div className="h-full min-h-[320px] flex flex-col items-center justify-center rounded border border-dashed border-mirage-border p-8 text-center text-mirage-muted text-xs space-y-2 bg-mirage-surface/50">
+              <Shield className="w-8 h-8 text-mirage-muted mx-auto opacity-50" />
+              <div className="font-bold text-mirage-text uppercase tracking-wider">NO TICKET SELECTED</div>
+              <p className="max-w-xs text-mirage-muted font-sans text-xs">
+                Select an escalation ticket from the queue to inspect proposed parameters, target state machines, and authorize execution.
               </p>
             </div>
           )}

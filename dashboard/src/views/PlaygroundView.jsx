@@ -326,23 +326,23 @@ export function PlaygroundView() {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-apple-text">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-mirage-text">
             Assurance Playground
           </h1>
-          <p className="text-apple-secondary text-sm mt-1">
+          <p className="text-mirage-subtext text-sm mt-1">
             Interactive multi-gate testbench: evaluate completions, govern tool actions, and explore MCP servers.
           </p>
         </div>
 
         {/* Tab Selector */}
-        <div className="flex p-1 bg-apple-subtle border border-apple-border rounded-xl w-fit">
+        <div className="flex p-1 bg-mirage-surfaceElevated border border-mirage-border rounded w-fit">
           <button
             type="button"
             onClick={() => setActiveTab("output")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${
               activeTab === "output"
-                ? "bg-white text-apple-text shadow-apple-sm"
-                : "text-apple-secondary hover:text-apple-text"
+                ? "bg-white text-mirage-text shadow-sm"
+                : "text-mirage-subtext hover:text-mirage-text"
             }`}
           >
             <Shield className="w-3.5 h-3.5" />
@@ -353,8 +353,8 @@ export function PlaygroundView() {
             onClick={() => setActiveTab("action")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${
               activeTab === "action"
-                ? "bg-white text-apple-text shadow-apple-sm"
-                : "text-apple-secondary hover:text-apple-text"
+                ? "bg-white text-mirage-text shadow-sm"
+                : "text-mirage-subtext hover:text-mirage-text"
             }`}
           >
             <Activity className="w-3.5 h-3.5" />
@@ -365,8 +365,8 @@ export function PlaygroundView() {
             onClick={() => setActiveTab("mcp")}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition flex items-center gap-1.5 ${
               activeTab === "mcp"
-                ? "bg-white text-apple-text shadow-apple-sm"
-                : "text-apple-secondary hover:text-apple-text"
+                ? "bg-white text-mirage-text shadow-sm"
+                : "text-mirage-subtext hover:text-mirage-text"
             }`}
           >
             <Server className="w-3.5 h-3.5" />
@@ -382,7 +382,7 @@ export function PlaygroundView() {
         <div className="space-y-6">
           {/* Preset Test Scenarios */}
           <div className="space-y-2">
-            <label className="text-xs font-semibold uppercase tracking-wider text-apple-secondary">
+            <label className="text-xs font-semibold uppercase tracking-wider text-mirage-subtext">
               Verification Scenarios
             </label>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
@@ -391,17 +391,17 @@ export function PlaygroundView() {
                   key={p.id}
                   type="button"
                   onClick={() => handleApplyPreset(p)}
-                  className="p-3 text-left rounded-xl bg-apple-surface hover:bg-apple-subtle border border-apple-border shadow-apple-sm transition group"
+                  className="p-3 text-left rounded bg-mirage-surface hover:bg-mirage-surfaceElevated border border-mirage-border shadow-sm transition group"
                 >
                   <div className="flex items-center justify-between">
-                    <span className="font-semibold text-xs text-apple-text group-hover:text-apple-blue transition">
+                    <span className="font-semibold text-xs text-mirage-text group-hover:text-mirage-cyan transition">
                       {p.title}
                     </span>
-                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-apple-subtle text-apple-secondary border border-apple-border">
+                    <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-mirage-surfaceElevated text-mirage-subtext border border-mirage-border">
                       {p.model}
                     </span>
                   </div>
-                  <p className="text-[11px] text-apple-muted mt-1 line-clamp-1">{p.prompt}</p>
+                  <p className="text-[11px] text-mirage-muted mt-1 line-clamp-1">{p.prompt}</p>
                 </button>
               ))}
             </div>
@@ -410,9 +410,9 @@ export function PlaygroundView() {
           {/* Workbench Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
             <div className="lg:col-span-6 space-y-4">
-              <div className="bg-apple-surface rounded-2xl p-5 border border-apple-border shadow-apple-card space-y-4">
+              <div className="bg-mirage-surface rounded p-5 border border-mirage-border shadow-mirage-surface space-y-4">
                 <div>
-                  <label className="block text-xs font-semibold text-apple-text mb-1.5">
+                  <label className="block text-xs font-semibold text-mirage-text mb-1.5">
                     Prompt (User / Agent Input)
                   </label>
                   <textarea
@@ -420,12 +420,12 @@ export function PlaygroundView() {
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     placeholder="Enter user prompt or agent execution instruction..."
-                    className="w-full text-xs sm:text-sm p-3 bg-apple-subtle/50 rounded-xl border border-apple-border focus:outline-none focus:border-apple-blue focus:ring-2 focus:ring-apple-blue/10 transition resize-none font-sans"
+                    className="w-full text-xs sm:text-sm p-3 bg-mirage-surfaceElevated/50 rounded border border-mirage-border focus:outline-none focus:border-mirage-cyan focus:ring-2 focus:ring-mirage-cyan/10 transition resize-none font-sans"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-xs font-semibold text-apple-text mb-1.5">
+                  <label className="block text-xs font-semibold text-mirage-text mb-1.5">
                     Target Model Completion (To be verified)
                   </label>
                   <textarea
@@ -433,19 +433,19 @@ export function PlaygroundView() {
                     value={response}
                     onChange={(e) => setResponse(e.target.value)}
                     placeholder="Enter the LLM generated response to evaluate..."
-                    className="w-full text-xs sm:text-sm p-3 bg-apple-subtle/50 rounded-xl border border-apple-border focus:outline-none focus:border-apple-blue focus:ring-2 focus:ring-apple-blue/10 transition resize-none font-mono text-apple-text"
+                    className="w-full text-xs sm:text-sm p-3 bg-mirage-surfaceElevated/50 rounded border border-mirage-border focus:outline-none focus:border-mirage-cyan focus:ring-2 focus:ring-mirage-cyan/10 transition resize-none font-mono text-mirage-text"
                   />
                 </div>
 
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2">
                   <div>
-                    <label className="block text-xs font-semibold text-apple-secondary mb-1">
+                    <label className="block text-xs font-semibold text-mirage-subtext mb-1">
                       Pipeline Model
                     </label>
                     <select
                       value={modelId}
                       onChange={(e) => setModelId(e.target.value)}
-                      className="w-full text-xs p-2.5 bg-apple-subtle rounded-xl border border-apple-border font-medium text-apple-text focus:outline-none focus:border-apple-blue"
+                      className="w-full text-xs p-2.5 bg-mirage-surfaceElevated rounded border border-mirage-border font-medium text-mirage-text focus:outline-none focus:border-mirage-cyan"
                     >
                       <option value="allam-2-7b">Allam-2 7B</option>
                       <option value="meta-llama/llama-3.3-70b-instruct">Llama 3.3 70B</option>
@@ -453,41 +453,41 @@ export function PlaygroundView() {
                     </select>
                   </div>
 
-                  <div className="flex items-center justify-between p-2.5 bg-apple-subtle rounded-xl border border-apple-border">
+                  <div className="flex items-center justify-between p-2.5 bg-mirage-surfaceElevated rounded border border-mirage-border">
                     <div>
-                      <span className="block text-xs font-semibold text-apple-text">Auto-Correct</span>
-                      <span className="text-[10px] text-apple-muted">LangGraph repair</span>
+                      <span className="block text-xs font-semibold text-mirage-text">Auto-Correct</span>
+                      <span className="text-[10px] text-mirage-muted">LangGraph repair</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setAutoCorrect(!autoCorrect)}
                       className={`w-9 h-5 flex items-center rounded-full p-0.5 transition ${
-                        autoCorrect ? "bg-apple-blue justify-end" : "bg-apple-border justify-start"
+                        autoCorrect ? "bg-mirage-cyan justify-end" : "bg-mirage-border justify-start"
                       }`}
                     >
-                      <span className="w-4 h-4 bg-white rounded-full shadow-apple-sm" />
+                      <span className="w-4 h-4 bg-white rounded-full shadow-sm" />
                     </button>
                   </div>
 
-                  <div className="flex items-center justify-between p-2.5 bg-apple-subtle rounded-xl border border-apple-border">
+                  <div className="flex items-center justify-between p-2.5 bg-mirage-surfaceElevated rounded border border-mirage-border">
                     <div>
-                      <span className="block text-xs font-semibold text-apple-text">SSE Stream</span>
-                      <span className="text-[10px] text-apple-muted">Live event feed</span>
+                      <span className="block text-xs font-semibold text-mirage-text">SSE Stream</span>
+                      <span className="text-[10px] text-mirage-muted">Live event feed</span>
                     </div>
                     <button
                       type="button"
                       onClick={() => setStreamMode(!streamMode)}
                       className={`w-9 h-5 flex items-center rounded-full p-0.5 transition ${
-                        streamMode ? "bg-apple-blue justify-end" : "bg-apple-border justify-start"
+                        streamMode ? "bg-mirage-cyan justify-end" : "bg-mirage-border justify-start"
                       }`}
                     >
-                      <span className="w-4 h-4 bg-white rounded-full shadow-apple-sm" />
+                      <span className="w-4 h-4 bg-white rounded-full shadow-sm" />
                     </button>
                   </div>
                 </div>
 
                 {error && (
-                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2">
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded flex items-center gap-2">
                     <XCircle className="w-4 h-4 shrink-0" />
                     <span>{error}</span>
                   </div>
@@ -502,7 +502,7 @@ export function PlaygroundView() {
                       setResult(null);
                       setError(null);
                     }}
-                    className="px-3 py-2 text-xs font-semibold text-apple-secondary hover:text-apple-text rounded-xl hover:bg-apple-subtle transition flex items-center gap-1.5"
+                    className="px-3 py-2 text-xs font-semibold text-mirage-subtext hover:text-mirage-text rounded hover:bg-mirage-surfaceElevated transition flex items-center gap-1.5"
                   >
                     <RotateCcw className="w-3.5 h-3.5" />
                     Reset
@@ -512,7 +512,7 @@ export function PlaygroundView() {
                     type="button"
                     onClick={handleExecuteAssurance}
                     disabled={isRunning}
-                    className="px-5 py-2.5 bg-apple-text text-white text-xs font-semibold rounded-xl hover:bg-black shadow-apple-sm transition flex items-center gap-2 disabled:opacity-50"
+                    className="px-5 py-2.5 bg-mirage-text text-white text-xs font-semibold rounded hover:bg-black shadow-sm transition flex items-center gap-2 disabled:opacity-50"
                   >
                     {isRunning ? (
                       <>
@@ -533,10 +533,10 @@ export function PlaygroundView() {
             {/* Right Column: Results */}
             <div className="lg:col-span-6 space-y-4">
               {result ? (
-                <div className="bg-apple-surface rounded-2xl p-5 border border-apple-border shadow-apple-card space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-apple-border">
+                <div className="bg-mirage-surface rounded p-5 border border-mirage-border shadow-mirage-surface space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-mirage-border">
                     <div className="flex items-center gap-2">
-                      <span className="text-xs font-bold uppercase tracking-wider text-apple-secondary">
+                      <span className="text-xs font-bold uppercase tracking-wider text-mirage-subtext">
                         Verification Status
                       </span>
                       <span
@@ -551,30 +551,30 @@ export function PlaygroundView() {
                         {result?.hrs_result?.tier || "EVALUATED"}
                       </span>
                     </div>
-                    <span className="text-[11px] font-mono text-apple-muted">
+                    <span className="text-[11px] font-mono text-mirage-muted">
                       Score: {result?.hrs_result?.hrs?.toFixed(4) || "0.0000"}
                     </span>
                   </div>
 
                   <div>
-                    <label className="block text-xs font-semibold text-apple-secondary mb-1">
+                    <label className="block text-xs font-semibold text-mirage-subtext mb-1">
                       Verified Response
                     </label>
-                    <div className="p-3 bg-apple-subtle/70 rounded-xl border border-apple-border text-xs text-apple-text font-mono leading-relaxed">
+                    <div className="p-3 bg-mirage-surfaceElevated/70 rounded border border-mirage-border text-xs text-mirage-text font-mono leading-relaxed">
                       {result.verified_response || result.response}
                     </div>
                   </div>
 
                   {result.claims && result.claims.length > 0 && (
                     <div>
-                      <label className="block text-xs font-semibold text-apple-secondary mb-1.5">
+                      <label className="block text-xs font-semibold text-mirage-subtext mb-1.5">
                         Extracted Claims & Entailment
                       </label>
                       <div className="space-y-2">
                         {result.claims.map((c, i) => (
-                          <div key={i} className="p-2.5 rounded-xl bg-apple-subtle border border-apple-border text-xs space-y-1">
+                          <div key={i} className="p-2.5 rounded bg-mirage-surfaceElevated border border-mirage-border text-xs space-y-1">
                             <div className="flex items-center justify-between">
-                              <span className="font-semibold text-apple-text">{c.claim?.text || c.claim_text}</span>
+                              <span className="font-semibold text-mirage-text">{c.claim?.text || c.claim_text}</span>
                               <span
                                 className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
                                   c.status === "SUPPORTED" || c.status === "VERIFIED_TRUE"
@@ -592,32 +592,32 @@ export function PlaygroundView() {
                   )}
                 </div>
               ) : isRunning && streamMode ? (
-                <div className="bg-apple-surface rounded-2xl p-5 border border-apple-border shadow-apple-card space-y-4">
-                  <div className="flex items-center justify-between pb-3 border-b border-apple-border">
+                <div className="bg-mirage-surface rounded p-5 border border-mirage-border shadow-mirage-surface space-y-4">
+                  <div className="flex items-center justify-between pb-3 border-b border-mirage-border">
                     <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-apple-blue animate-pulse" />
-                      <span className="text-xs font-bold uppercase tracking-wider text-apple-text">
+                      <span className="w-2.5 h-2.5 rounded-full bg-mirage-cyan animate-pulse" />
+                      <span className="text-xs font-bold uppercase tracking-wider text-mirage-text">
                         Real-Time SSE Stream
                       </span>
                     </div>
-                    <span className="text-[11px] font-mono text-apple-secondary animate-pulse">
+                    <span className="text-[11px] font-mono text-mirage-subtext animate-pulse">
                       {streamingStatus || "Processing stream..."}
                     </span>
                   </div>
 
                   {streamingClaims.length > 0 ? (
                     <div className="space-y-3">
-                      <label className="block text-xs font-semibold text-apple-secondary">
+                      <label className="block text-xs font-semibold text-mirage-subtext">
                         Progressive Claims Evaluated ({streamingClaims.length})
                       </label>
                       <div className="space-y-2">
                         {streamingClaims.map((c, i) => (
                           <div
                             key={i}
-                            className="p-3 rounded-xl bg-apple-subtle border border-apple-border text-xs space-y-1.5 transition-all"
+                            className="p-3 rounded bg-mirage-surfaceElevated border border-mirage-border text-xs space-y-1.5 transition-all"
                           >
                             <div className="flex items-center justify-between gap-2">
-                              <span className="font-semibold text-apple-text">{c.text}</span>
+                              <span className="font-semibold text-mirage-text">{c.text}</span>
                               <span
                                 className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                                   c.status === "SUPPORTED" || c.status === "VERIFIED_TRUE"
@@ -629,7 +629,7 @@ export function PlaygroundView() {
                               </span>
                             </div>
                             {c.attribution && (
-                              <div className="flex items-center gap-2 text-[10px] font-mono text-apple-muted pt-1 border-t border-apple-border/50">
+                              <div className="flex items-center gap-2 text-[10px] font-mono text-mirage-muted pt-1 border-t border-mirage-border/50">
                                 <span>RAV: {(c.attribution.rav ?? 0).toFixed(2)}</span>
                                 <span>•</span>
                                 <span>SCS: {(c.attribution.scs ?? 0).toFixed(2)}</span>
@@ -645,20 +645,20 @@ export function PlaygroundView() {
                     </div>
                   ) : (
                     <div className="py-12 flex flex-col items-center justify-center text-center space-y-3">
-                      <div className="w-8 h-8 rounded-full border-2 border-apple-blue/20 border-t-apple-blue animate-spin" />
-                      <p className="text-xs text-apple-secondary font-medium">
+                      <div className="w-8 h-8 rounded-full border-2 border-mirage-cyan/20 border-t-mirage-cyan animate-spin" />
+                      <p className="text-xs text-mirage-subtext font-medium">
                         {streamingStatus || "Awaiting initial stream events..."}
                       </p>
                     </div>
                   )}
                 </div>
               ) : (
-                <div className="h-full min-h-[380px] flex flex-col items-center justify-center rounded-2xl border-2 border-dashed border-apple-border p-8 text-center bg-apple-subtle/20">
-                  <div className="w-12 h-12 rounded-2xl bg-apple-subtle text-apple-muted flex items-center justify-center mb-3">
+                <div className="h-full min-h-[380px] flex flex-col items-center justify-center rounded border-2 border-dashed border-mirage-border p-8 text-center bg-mirage-surfaceElevated/20">
+                  <div className="w-12 h-12 rounded bg-mirage-surfaceElevated text-mirage-muted flex items-center justify-center mb-3">
                     <Layers className="w-6 h-6" />
                   </div>
-                  <h3 className="text-sm font-semibold text-apple-text">Ready for Output Assurance</h3>
-                  <p className="text-xs text-apple-secondary max-w-sm mt-1">
+                  <h3 className="text-sm font-semibold text-mirage-text">Ready for Output Assurance</h3>
+                  <p className="text-xs text-mirage-subtext max-w-sm mt-1">
                     Select a scenario or enter a custom prompt and candidate response, then click Execute.
                   </p>
                 </div>
@@ -674,15 +674,15 @@ export function PlaygroundView() {
       {activeTab === "action" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-6 space-y-4">
-            <div className="bg-apple-surface rounded-2xl p-5 border border-apple-border shadow-apple-card space-y-4">
+            <div className="bg-mirage-surface rounded p-5 border border-mirage-border shadow-mirage-surface space-y-4">
               <div>
-                <label className="block text-xs font-semibold text-apple-text mb-1.5">
+                <label className="block text-xs font-semibold text-mirage-text mb-1.5">
                   Governed Tool Name
                 </label>
                 <select
                   value={actionTool}
                   onChange={(e) => setActionTool(e.target.value)}
-                  className="w-full text-xs sm:text-sm p-3 bg-apple-subtle rounded-xl border border-apple-border font-mono text-apple-text focus:outline-none focus:border-apple-blue"
+                  className="w-full text-xs sm:text-sm p-3 bg-mirage-surfaceElevated rounded border border-mirage-border font-mono text-mirage-text focus:outline-none focus:border-mirage-cyan"
                 >
                   <option value="database.update_order_status">database.update_order_status (Internal SQL)</option>
                   <option value="quickstart.payment_capture">quickstart.payment_capture (Payment Bridge)</option>
@@ -691,14 +691,14 @@ export function PlaygroundView() {
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-apple-text mb-1.5">
+                <label className="block text-xs font-semibold text-mirage-text mb-1.5">
                   Action Parameters (JSON)
                 </label>
                 <textarea
                   rows={4}
                   value={actionParams}
                   onChange={(e) => setActionParams(e.target.value)}
-                  className="w-full text-xs p-3 bg-apple-subtle/70 rounded-xl border border-apple-border font-mono text-apple-text focus:outline-none focus:border-apple-blue"
+                  className="w-full text-xs p-3 bg-mirage-surfaceElevated/70 rounded border border-mirage-border font-mono text-mirage-text focus:outline-none focus:border-mirage-cyan"
                 />
               </div>
 
@@ -707,7 +707,7 @@ export function PlaygroundView() {
                   type="button"
                   onClick={handleProposeAction}
                   disabled={actionLoading}
-                  className="px-4 py-2 bg-apple-text text-white text-xs font-semibold rounded-xl hover:bg-black transition flex items-center gap-1.5 disabled:opacity-50"
+                  className="px-4 py-2 bg-mirage-text text-white text-xs font-semibold rounded hover:bg-black transition flex items-center gap-1.5 disabled:opacity-50"
                 >
                   1. Propose Action (Gate 3)
                 </button>
@@ -715,7 +715,7 @@ export function PlaygroundView() {
                   type="button"
                   onClick={handleExecuteAction}
                   disabled={actionLoading || !actionDecision}
-                  className="px-4 py-2 bg-apple-blue text-white text-xs font-semibold rounded-xl hover:bg-blue-600 transition flex items-center gap-1.5 disabled:opacity-40"
+                  className="px-4 py-2 bg-mirage-cyan text-white text-xs font-semibold rounded hover:bg-blue-600 transition flex items-center gap-1.5 disabled:opacity-40"
                 >
                   2. Execute via Tool Proxy
                 </button>
@@ -723,14 +723,14 @@ export function PlaygroundView() {
                   type="button"
                   onClick={handleVerifyOutcome}
                   disabled={actionLoading || !actionExecResult}
-                  className="px-4 py-2 bg-emerald-600 text-white text-xs font-semibold rounded-xl hover:bg-emerald-700 transition flex items-center gap-1.5 disabled:opacity-40"
+                  className="px-4 py-2 bg-emerald-600 text-white text-xs font-semibold rounded hover:bg-emerald-700 transition flex items-center gap-1.5 disabled:opacity-40"
                 >
                   3. Verify Reality (Gate 5)
                 </button>
               </div>
 
               {actionError && (
-                <div className="p-3 rounded-xl bg-apple-red/10 border border-apple-red/20 text-xs text-apple-red flex items-center space-x-2">
+                <div className="p-3 rounded bg-mirage-crimson/10 border border-mirage-crimson/20 text-xs text-mirage-crimson flex items-center space-x-2">
                   <AlertTriangle className="w-4 h-4 shrink-0" />
                   <span>{actionError}</span>
                 </div>
@@ -739,15 +739,15 @@ export function PlaygroundView() {
           </div>
 
           <div className="lg:col-span-6 space-y-4">
-            <div className="bg-apple-surface rounded-2xl p-5 border border-apple-border shadow-apple-card space-y-4">
-              <h3 className="text-xs font-bold uppercase tracking-wider text-apple-secondary">
+            <div className="bg-mirage-surface rounded p-5 border border-mirage-border shadow-mirage-surface space-y-4">
+              <h3 className="text-xs font-bold uppercase tracking-wider text-mirage-subtext">
                 Assurance Lifecycle Trace
               </h3>
 
               {/* Step 1: Proposal Decision */}
-              <div className="p-3 bg-apple-subtle rounded-xl border border-apple-border text-xs space-y-1.5">
+              <div className="p-3 bg-mirage-surfaceElevated rounded border border-mirage-border text-xs space-y-1.5">
                 <div className="flex items-center justify-between font-semibold">
-                  <span className="text-apple-text">Gate 3 Action Contract:</span>
+                  <span className="text-mirage-text">Gate 3 Action Contract:</span>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                     actionDecision?.decision === "ALLOW" ? "bg-emerald-100 text-emerald-800" : "bg-amber-100 text-amber-800"
                   }`}>
@@ -755,7 +755,7 @@ export function PlaygroundView() {
                   </span>
                 </div>
                 {actionDecision && (
-                  <div className="font-mono text-[11px] text-apple-muted space-y-0.5">
+                  <div className="font-mono text-[11px] text-mirage-muted space-y-0.5">
                     <p>Action ID: {actionDecision.action_id}</p>
                     <p>Risk Score: {actionDecision.risk_score} | Fencing Token: {actionDecision.fencing_token || "None"}</p>
                   </div>
@@ -763,9 +763,9 @@ export function PlaygroundView() {
               </div>
 
               {/* Step 2: Tool Execution */}
-              <div className="p-3 bg-apple-subtle rounded-xl border border-apple-border text-xs space-y-1.5">
+              <div className="p-3 bg-mirage-surfaceElevated rounded border border-mirage-border text-xs space-y-1.5">
                 <div className="flex items-center justify-between font-semibold">
-                  <span className="text-apple-text">Governed Tool Proxy Dispatch:</span>
+                  <span className="text-mirage-text">Governed Tool Proxy Dispatch:</span>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                     actionExecResult?.state === "EXECUTED" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
                   }`}>
@@ -773,16 +773,16 @@ export function PlaygroundView() {
                   </span>
                 </div>
                 {actionExecResult?.observed_output && (
-                  <pre className="p-2 bg-white rounded-lg border border-apple-border font-mono text-[10px] text-apple-text overflow-x-auto">
+                  <pre className="p-2 bg-white rounded-lg border border-mirage-border font-mono text-[10px] text-mirage-text overflow-x-auto">
                     {JSON.stringify(actionExecResult.observed_output, null, 2)}
                   </pre>
                 )}
               </div>
 
               {/* Step 3: Reality Verification */}
-              <div className="p-3 bg-apple-subtle rounded-xl border border-apple-border text-xs space-y-1.5">
+              <div className="p-3 bg-mirage-surfaceElevated rounded border border-mirage-border text-xs space-y-1.5">
                 <div className="flex items-center justify-between font-semibold">
-                  <span className="text-apple-text">Gate 5 Reality Verification:</span>
+                  <span className="text-mirage-text">Gate 5 Reality Verification:</span>
                   <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
                     outcomeResult?.outcome_status === "VERIFIED_SUCCESS" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-700"
                   }`}>
@@ -790,7 +790,7 @@ export function PlaygroundView() {
                   </span>
                 </div>
                 {outcomeResult && (
-                  <div className="font-mono text-[11px] text-apple-muted space-y-0.5">
+                  <div className="font-mono text-[11px] text-mirage-muted space-y-0.5">
                     <p>Epistemic Confidence: {(outcomeResult.epistemic_confidence * 100).toFixed(1)}%</p>
                     <p>Discrepancies: {outcomeResult.discrepancies?.length || 0}</p>
                   </div>
@@ -807,16 +807,16 @@ export function PlaygroundView() {
       {activeTab === "mcp" && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
           <div className="lg:col-span-5 space-y-4">
-            <div className="bg-apple-surface rounded-2xl p-5 border border-apple-border shadow-apple-card space-y-3">
+            <div className="bg-mirage-surface rounded p-5 border border-mirage-border shadow-mirage-surface space-y-3">
               <div className="flex items-center justify-between">
-                <h3 className="text-xs font-bold uppercase tracking-wider text-apple-secondary">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-mirage-subtext">
                   Discovered MCP Tools
                 </h3>
                 <button
                   type="button"
                   onClick={loadMcpTools}
                   disabled={mcpLoading}
-                  className="text-xs text-apple-blue hover:underline font-medium"
+                  className="text-xs text-mirage-cyan hover:underline font-medium"
                 >
                   Refresh
                 </button>
@@ -831,14 +831,14 @@ export function PlaygroundView() {
                       setSelectedMcpTool(t);
                       setMcpInputArgs(JSON.stringify({ text: "Water boils at 100 degrees Celsius." }, null, 2));
                     }}
-                    className={`w-full p-3 rounded-xl border text-left transition ${
+                    className={`w-full p-3 rounded border text-left transition ${
                       selectedMcpTool?.name === t.name
-                        ? "bg-apple-blue/5 border-apple-blue text-apple-text"
-                        : "bg-apple-subtle/50 border-apple-border text-apple-secondary hover:text-apple-text"
+                        ? "bg-mirage-cyan/5 border-mirage-cyan text-mirage-text"
+                        : "bg-mirage-surfaceElevated/50 border-mirage-border text-mirage-subtext hover:text-mirage-text"
                     }`}
                   >
                     <span className="font-mono text-xs font-semibold block">{t.name}</span>
-                    <span className="text-[11px] text-apple-muted line-clamp-1 mt-0.5">{t.description}</span>
+                    <span className="text-[11px] text-mirage-muted line-clamp-1 mt-0.5">{t.description}</span>
                   </button>
                 ))}
               </div>
@@ -846,16 +846,16 @@ export function PlaygroundView() {
           </div>
 
           <div className="lg:col-span-7 space-y-4">
-            <div className="bg-apple-surface rounded-2xl p-5 border border-apple-border shadow-apple-card space-y-4">
+            <div className="bg-mirage-surface rounded p-5 border border-mirage-border shadow-mirage-surface space-y-4">
               <div>
-                <h3 className="text-xs font-bold uppercase tracking-wider text-apple-secondary mb-1">
+                <h3 className="text-xs font-bold uppercase tracking-wider text-mirage-subtext mb-1">
                   JSON-RPC 2.0 Invocation ({selectedMcpTool?.name || "No tool selected"})
                 </h3>
                 <textarea
                   rows={4}
                   value={mcpInputArgs}
                   onChange={(e) => setMcpInputArgs(e.target.value)}
-                  className="w-full text-xs p-3 bg-apple-subtle/70 rounded-xl border border-apple-border font-mono text-apple-text focus:outline-none focus:border-apple-blue"
+                  className="w-full text-xs p-3 bg-mirage-surfaceElevated/70 rounded border border-mirage-border font-mono text-mirage-text focus:outline-none focus:border-mirage-cyan"
                   placeholder="Enter arguments JSON..."
                 />
               </div>
@@ -864,17 +864,17 @@ export function PlaygroundView() {
                 type="button"
                 onClick={handleExecuteMcpTool}
                 disabled={mcpLoading || !selectedMcpTool}
-                className="px-4 py-2 bg-apple-text text-white text-xs font-semibold rounded-xl hover:bg-black transition flex items-center gap-2 disabled:opacity-50"
+                className="px-4 py-2 bg-mirage-text text-white text-xs font-semibold rounded hover:bg-black transition flex items-center gap-2 disabled:opacity-50"
               >
                 {mcpLoading ? "Calling MCP RPC..." : "Execute via POST /v1/mcp/rpc"}
               </button>
 
               {mcpRpcOutput && (
                 <div>
-                  <label className="block text-xs font-semibold text-apple-secondary mb-1">
+                  <label className="block text-xs font-semibold text-mirage-subtext mb-1">
                     JSON-RPC 2.0 Response
                   </label>
-                  <pre className="p-3 bg-apple-subtle/80 rounded-xl border border-apple-border font-mono text-[11px] text-apple-text overflow-x-auto max-h-[300px]">
+                  <pre className="p-3 bg-mirage-surfaceElevated/80 rounded border border-mirage-border font-mono text-[11px] text-mirage-text overflow-x-auto max-h-[300px]">
                     {JSON.stringify(mcpRpcOutput, null, 2)}
                   </pre>
                 </div>

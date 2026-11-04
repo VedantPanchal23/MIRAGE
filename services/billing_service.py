@@ -385,10 +385,12 @@ class BillingService:
         email_sent = email_service.send_invoice_receipt(
             to_email=user_email,
             tenant_id=auth.tenant_id,
-            plan_name=target_spec["name"],
-            amount_usd=target_spec.get("price_usd", 0.0),
+            plan_name=str(target_spec["name"]),
+            amount=float(target_spec.get("price_usd", 0.0)),
             invoice_id=invoice_id,
             payment_id=payment_id,
+            currency="USD",
+            payment_method="Stripe",
         )
 
         logger.info(

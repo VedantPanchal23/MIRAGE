@@ -111,45 +111,45 @@ export function KnowledgeBaseView() {
   return (
     <div className="space-y-8 pb-12">
       <div>
-        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-apple-text">
+        <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-mirage-text">
           Knowledge Base (Gate 2 RAG)
         </h1>
-        <p className="text-apple-secondary text-sm mt-1">
+        <p className="text-mirage-subtext text-sm mt-1">
           Context Assurance & Provenance: Ingest authoritative ground-truth documents into Qdrant vector store with PostgreSQL Row-Level Security isolation.
         </p>
       </div>
 
       {/* Vector Store KPI Status Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-apple-surface rounded-2xl p-4 border border-apple-border shadow-apple-card flex items-center space-x-3">
-          <div className="p-2.5 rounded-xl bg-apple-blue/10 text-apple-blue">
+        <div className="bg-mirage-surface rounded p-4 border border-mirage-border shadow-mirage-surface flex items-center space-x-3">
+          <div className="p-2.5 rounded bg-mirage-cyan/10 text-mirage-cyan">
             <Database className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-xs text-apple-secondary">Indexed Documents</div>
-            <div className="text-xl font-bold text-apple-text mt-0.5">{documents.length}</div>
+            <div className="text-xs text-mirage-subtext">Indexed Documents</div>
+            <div className="text-xl font-bold text-mirage-text mt-0.5">{documents.length}</div>
           </div>
         </div>
 
-        <div className="bg-apple-surface rounded-2xl p-4 border border-apple-border shadow-apple-card flex items-center space-x-3">
-          <div className="p-2.5 rounded-xl bg-apple-green/10 text-apple-green">
+        <div className="bg-mirage-surface rounded p-4 border border-mirage-border shadow-mirage-surface flex items-center space-x-3">
+          <div className="p-2.5 rounded bg-mirage-emerald/10 text-mirage-emerald">
             <Layers className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-xs text-apple-secondary">Vector Chunks in Qdrant</div>
-            <div className="text-xl font-bold text-apple-text mt-0.5">
+            <div className="text-xs text-mirage-subtext">Vector Chunks in Qdrant</div>
+            <div className="text-xl font-bold text-mirage-text mt-0.5">
               {documents.reduce((acc, d) => acc + (d.chunks_count || 1), 0)}
             </div>
           </div>
         </div>
 
-        <div className="bg-apple-surface rounded-2xl p-4 border border-apple-border shadow-apple-card flex items-center space-x-3">
-          <div className="p-2.5 rounded-xl bg-apple-purple/10 text-apple-purple">
+        <div className="bg-mirage-surface rounded p-4 border border-mirage-border shadow-mirage-surface flex items-center space-x-3">
+          <div className="p-2.5 rounded bg-mirage-purple/10 text-mirage-purple">
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <div className="text-xs text-apple-secondary">Poisoning Defense</div>
-            <div className="text-xl font-bold text-apple-text mt-0.5">Fail-Closed</div>
+            <div className="text-xs text-mirage-subtext">Poisoning Defense</div>
+            <div className="text-xl font-bold text-mirage-text mt-0.5">Fail-Closed</div>
           </div>
         </div>
       </div>
@@ -157,15 +157,15 @@ export function KnowledgeBaseView() {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Ingest New Document Form */}
         <div className="lg:col-span-5 space-y-4">
-          <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card">
-            <div className="flex items-center space-x-2 pb-3 mb-4 border-b border-apple-border">
-              <UploadCloud className="w-4 h-4 text-apple-blue" />
-              <h3 className="font-semibold text-sm text-apple-text">Ingest Authoritative Document</h3>
+          <div className="bg-mirage-surface rounded p-6 border border-mirage-border shadow-mirage-surface">
+            <div className="flex items-center space-x-2 pb-3 mb-4 border-b border-mirage-border">
+              <UploadCloud className="w-4 h-4 text-mirage-cyan" />
+              <h3 className="font-semibold text-sm text-mirage-text">Ingest Authoritative Document</h3>
             </div>
 
             <form onSubmit={handleUpload} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold text-apple-text mb-1">
+                <label className="block text-xs font-semibold text-mirage-text mb-1">
                   Document Filename
                 </label>
                 <input
@@ -173,12 +173,12 @@ export function KnowledgeBaseView() {
                   value={filename}
                   onChange={(e) => setFilename(e.target.value)}
                   placeholder="e.g. Clinical_Guidelines_2026.md"
-                  className="w-full text-xs p-2.5 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-mono"
+                  className="w-full text-xs p-2.5 rounded bg-mirage-surfaceElevated border border-mirage-border focus:outline-none focus:border-mirage-cyan font-mono"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-apple-text mb-1">
+                <label className="block text-xs font-semibold text-mirage-text mb-1">
                   Target Qdrant Collection
                 </label>
                 <input
@@ -186,12 +186,12 @@ export function KnowledgeBaseView() {
                   value={collectionName}
                   onChange={(e) => setCollectionName(e.target.value)}
                   placeholder="default_kb"
-                  className="w-full text-xs p-2.5 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-mono"
+                  className="w-full text-xs p-2.5 rounded bg-mirage-surfaceElevated border border-mirage-border focus:outline-none focus:border-mirage-cyan font-mono"
                 />
               </div>
 
               <div>
-                <label className="block text-xs font-semibold text-apple-text mb-1">
+                <label className="block text-xs font-semibold text-mirage-text mb-1">
                   Plaintext / Markdown Content
                 </label>
                 <textarea
@@ -199,10 +199,10 @@ export function KnowledgeBaseView() {
                   value={content}
                   onChange={(e) => setContent(e.target.value)}
                   placeholder="Paste ground-truth reference policies, documentation, or contracts..."
-                  className="w-full text-xs p-2.5 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-mono resize-none"
+                  className="w-full text-xs p-2.5 rounded bg-mirage-surfaceElevated border border-mirage-border focus:outline-none focus:border-mirage-cyan font-mono resize-none"
                 />
                 {content.trim().length > 0 && (
-                  <div className="flex items-center justify-between text-[11px] text-apple-secondary mt-1 px-1 font-mono">
+                  <div className="flex items-center justify-between text-[11px] text-mirage-subtext mt-1 px-1 font-mono">
                     <span>
                       Size: {new Blob([content.trim()]).size > 1024 ? `${(new Blob([content.trim()]).size / 1024).toFixed(1)} KB` : `${new Blob([content.trim()]).size} B`}
                     </span>
@@ -214,14 +214,14 @@ export function KnowledgeBaseView() {
               </div>
 
               {uploadSuccess && (
-                <div className="p-3 rounded-xl bg-apple-green/10 border border-apple-green/20 text-xs text-apple-green flex items-center space-x-2">
+                <div className="p-3 rounded bg-mirage-emerald/10 border border-mirage-emerald/20 text-xs text-mirage-emerald flex items-center space-x-2">
                   <CheckCircle className="w-4 h-4 shrink-0" />
                   <span>{uploadSuccess}</span>
                 </div>
               )}
 
               {uploadError && (
-                <div className="p-3 rounded-xl bg-apple-red/10 border border-apple-red/20 text-xs text-apple-red flex items-center space-x-2">
+                <div className="p-3 rounded bg-mirage-crimson/10 border border-mirage-crimson/20 text-xs text-mirage-crimson flex items-center space-x-2">
                   <AlertCircle className="w-4 h-4 shrink-0" />
                   <span>{uploadError}</span>
                 </div>
@@ -230,7 +230,7 @@ export function KnowledgeBaseView() {
               <button
                 type="submit"
                 disabled={isUploading}
-                className="w-full py-2.5 rounded-xl bg-apple-blue hover:bg-apple-blueHover text-white text-xs font-semibold shadow-apple-sm transition disabled:opacity-50"
+                className="w-full py-2.5 rounded bg-mirage-cyan hover:bg-mirage-cyanHover text-white text-xs font-semibold shadow-sm transition disabled:opacity-50"
               >
                 {isUploading ? "Chunking & Vectorizing in Qdrant..." : "Index Ground-Truth Document"}
               </button>
@@ -238,10 +238,10 @@ export function KnowledgeBaseView() {
           </div>
 
           {/* Semantic Search Sandbox */}
-          <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-3">
-            <div className="flex items-center space-x-2 pb-3 border-b border-apple-border">
-              <Search className="w-4 h-4 text-apple-blue" />
-              <h3 className="font-semibold text-sm text-apple-text">Vector Search Tester</h3>
+          <div className="bg-mirage-surface rounded p-6 border border-mirage-border shadow-mirage-surface space-y-3">
+            <div className="flex items-center space-x-2 pb-3 border-b border-mirage-border">
+              <Search className="w-4 h-4 text-mirage-cyan" />
+              <h3 className="font-semibold text-sm text-mirage-text">Vector Search Tester</h3>
             </div>
 
             <form onSubmit={handleSearch} className="flex space-x-2">
@@ -250,23 +250,23 @@ export function KnowledgeBaseView() {
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search semantic chunks..."
-                className="w-full text-xs p-2 rounded-xl bg-apple-subtle border border-apple-border focus:outline-none focus:border-apple-blue font-sans"
+                className="w-full text-xs p-2 rounded bg-mirage-surfaceElevated border border-mirage-border focus:outline-none focus:border-mirage-cyan font-sans"
               />
               <button
                 type="submit"
                 disabled={isSearching}
-                className="px-3.5 py-2 bg-apple-text hover:bg-black text-white text-xs font-medium rounded-xl transition"
+                className="px-3.5 py-2 bg-mirage-text hover:bg-black text-white text-xs font-medium rounded transition"
               >
                 Query
               </button>
             </form>
 
             {searchError && (
-              <p className="text-xs text-apple-red px-1 mt-1">{searchError}</p>
+              <p className="text-xs text-mirage-crimson px-1 mt-1">{searchError}</p>
             )}
 
             {hasSearched && !isSearching && searchResults.length === 0 && !searchError && (
-              <p className="text-xs text-apple-secondary px-1 mt-2 text-center py-2">
+              <p className="text-xs text-mirage-subtext px-1 mt-2 text-center py-2">
                 No matching evidence chunks found in tenant vector space.
               </p>
             )}
@@ -276,15 +276,15 @@ export function KnowledgeBaseView() {
                 {searchResults.map((res, i) => (
                   <div
                     key={i}
-                    className="p-3 rounded-xl bg-apple-subtle/50 border border-apple-border text-xs space-y-1"
+                    className="p-3 rounded bg-mirage-surfaceElevated/50 border border-mirage-border text-xs space-y-1"
                   >
-                    <div className="flex items-center justify-between text-[10px] font-mono text-apple-secondary">
+                    <div className="flex items-center justify-between text-[10px] font-mono text-mirage-subtext">
                       <span>{res.source_doc}</span>
-                      <span className="font-bold text-apple-green">
+                      <span className="font-bold text-mirage-emerald">
                         {(res.similarity * 100).toFixed(0)}% match
                       </span>
                     </div>
-                    <p className="text-apple-text text-[11px] leading-relaxed">
+                    <p className="text-mirage-text text-[11px] leading-relaxed">
                       "{res.snippet}"
                     </p>
                   </div>
@@ -297,17 +297,17 @@ export function KnowledgeBaseView() {
         {/* Right Column: Indexed Documents List */}
         <div className="lg:col-span-7 space-y-3">
           <div className="flex items-center justify-between px-1">
-            <span className="text-xs font-semibold text-apple-secondary uppercase tracking-wider">
+            <span className="text-xs font-semibold text-mirage-subtext uppercase tracking-wider">
               Tenant Documents ({documents.length})
             </span>
-            <span className="text-xs font-mono text-apple-secondary">RLS Enforced</span>
+            <span className="text-xs font-mono text-mirage-subtext">RLS Enforced</span>
           </div>
 
           {documents.length === 0 ? (
-            <div className="bg-apple-surface rounded-2xl p-8 border border-apple-border text-center">
-              <Database className="w-8 h-8 text-apple-secondary mx-auto mb-2 opacity-60" />
-              <h4 className="text-sm font-semibold text-apple-text">No Documents Indexed</h4>
-              <p className="text-xs text-apple-secondary mt-1 max-w-sm mx-auto">
+            <div className="bg-mirage-surface rounded p-8 border border-mirage-border text-center">
+              <Database className="w-8 h-8 text-mirage-subtext mx-auto mb-2 opacity-60" />
+              <h4 className="text-sm font-semibold text-mirage-text">No Documents Indexed</h4>
+              <p className="text-xs text-mirage-subtext mt-1 max-w-sm mx-auto">
                 Ingest policies, guides, or specifications on the left to ground your AI agents and prevent Gate 2 context poisoning.
               </p>
             </div>
@@ -316,22 +316,22 @@ export function KnowledgeBaseView() {
               {documents.map((doc) => (
                 <div
                   key={doc.document_id}
-                  className="p-4 rounded-2xl bg-apple-surface border border-apple-border shadow-apple-sm flex items-center justify-between hover:shadow-apple-card transition group"
+                  className="p-4 rounded bg-mirage-surface border border-mirage-border shadow-sm flex items-center justify-between hover:shadow-mirage-surface transition group"
                 >
                   <div className="flex items-start space-x-3">
-                    <div className="p-2.5 rounded-xl bg-apple-subtle text-apple-secondary group-hover:text-apple-blue group-hover:bg-apple-blue/10 transition">
+                    <div className="p-2.5 rounded bg-mirage-surfaceElevated text-mirage-subtext group-hover:text-mirage-cyan group-hover:bg-mirage-cyan/10 transition">
                       <FileText className="w-4 h-4" />
                     </div>
                     <div>
-                      <h4 className="text-xs sm:text-sm font-semibold text-apple-text">
+                      <h4 className="text-xs sm:text-sm font-semibold text-mirage-text">
                         {doc.filename}
                       </h4>
-                      <div className="flex items-center space-x-2 text-[11px] text-apple-secondary mt-1 font-mono">
+                      <div className="flex items-center space-x-2 text-[11px] text-mirage-subtext mt-1 font-mono">
                         <span>{doc.chunks_count} chunks</span>
                         <span>•</span>
                         <span>{new Date(doc.upload_timestamp).toLocaleDateString()}</span>
                         <span>•</span>
-                        <span className="text-apple-green font-medium">INDEXED</span>
+                        <span className="text-mirage-emerald font-medium">INDEXED</span>
                       </div>
                     </div>
                   </div>
@@ -340,7 +340,7 @@ export function KnowledgeBaseView() {
                     type="button"
                     onClick={() => handleDelete(doc.document_id)}
                     title="Purge document chunks from Qdrant and PostgreSQL"
-                    className="p-2 rounded-xl text-apple-muted hover:text-apple-red hover:bg-apple-red/10 transition"
+                    className="p-2 rounded text-mirage-muted hover:text-mirage-crimson hover:bg-mirage-crimson/10 transition"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>

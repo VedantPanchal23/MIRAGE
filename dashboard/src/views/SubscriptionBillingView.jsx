@@ -198,23 +198,23 @@ export function SubscriptionBillingView() {
       {/* Title & Currency Switcher */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-apple-text">
+          <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-mirage-text">
             Subscriptions & Budget Headroom
           </h1>
-          <p className="text-apple-secondary text-sm mt-1">
+          <p className="text-mirage-subtext text-sm mt-1">
             Commercial SaaS plans with instant online checkout via Razorpay (UPI, Netbanking, Cards).
           </p>
         </div>
 
         {/* Currency Toggle */}
-        <div className="flex items-center space-x-1 p-1 bg-apple-surface rounded-2xl border border-apple-border shadow-apple-sm self-start sm:self-auto">
+        <div className="flex items-center space-x-1 p-1 bg-mirage-surface rounded border border-mirage-border shadow-sm self-start sm:self-auto">
           <button
             type="button"
             onClick={() => setCurrency("INR")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`px-3 py-1.5 rounded text-xs font-semibold transition ${
               currency === "INR"
-                ? "bg-apple-blue text-white shadow-apple-sm"
-                : "text-apple-secondary hover:text-apple-text"
+                ? "bg-mirage-cyan text-white shadow-sm"
+                : "text-mirage-subtext hover:text-mirage-text"
             }`}
           >
             ₹ INR (India)
@@ -222,10 +222,10 @@ export function SubscriptionBillingView() {
           <button
             type="button"
             onClick={() => setCurrency("USD")}
-            className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition ${
+            className={`px-3 py-1.5 rounded text-xs font-semibold transition ${
               currency === "USD"
-                ? "bg-apple-blue text-white shadow-apple-sm"
-                : "text-apple-secondary hover:text-apple-text"
+                ? "bg-mirage-cyan text-white shadow-sm"
+                : "text-mirage-subtext hover:text-mirage-text"
             }`}
           >
             $ USD (Global)
@@ -234,7 +234,7 @@ export function SubscriptionBillingView() {
       </div>
 
       {paymentSuccess && (
-        <div className="p-4 rounded-2xl bg-apple-green/10 border border-apple-green/20 text-xs sm:text-sm text-apple-green flex items-center justify-between">
+        <div className="p-4 rounded bg-mirage-emerald/10 border border-mirage-emerald/20 text-xs sm:text-sm text-mirage-emerald flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <CheckCircle2 className="w-5 h-5 shrink-0" />
             <span>{paymentSuccess}</span>
@@ -242,7 +242,7 @@ export function SubscriptionBillingView() {
           <button
             type="button"
             onClick={() => setPaymentSuccess(null)}
-            className="text-xs text-apple-secondary hover:text-apple-text"
+            className="text-xs text-mirage-subtext hover:text-mirage-text"
           >
             Dismiss
           </button>
@@ -250,7 +250,7 @@ export function SubscriptionBillingView() {
       )}
 
       {paymentError && (
-        <div className="p-4 rounded-2xl bg-apple-red/10 border border-apple-red/20 text-xs sm:text-sm text-apple-red flex items-center justify-between">
+        <div className="p-4 rounded bg-mirage-crimson/10 border border-mirage-crimson/20 text-xs sm:text-sm text-mirage-crimson flex items-center justify-between">
           <div className="flex items-center space-x-2">
             <AlertCircle className="w-5 h-5 shrink-0" />
             <span>{paymentError}</span>
@@ -258,7 +258,7 @@ export function SubscriptionBillingView() {
           <button
             type="button"
             onClick={() => setPaymentError(null)}
-            className="text-xs text-apple-secondary hover:text-apple-text"
+            className="text-xs text-mirage-subtext hover:text-mirage-text"
           >
             Dismiss
           </button>
@@ -266,32 +266,32 @@ export function SubscriptionBillingView() {
       )}
 
       {/* Spend Ceiling & Quota Gauge */}
-      <div className="bg-apple-surface rounded-3xl p-6 border border-apple-border shadow-apple-card space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-apple-border">
+      <div className="bg-mirage-surface rounded p-6 border border-mirage-border shadow-mirage-surface space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-4 border-b border-mirage-border">
           <div>
-            <div className="text-xs text-apple-secondary uppercase tracking-wider font-semibold">
+            <div className="text-xs text-mirage-subtext uppercase tracking-wider font-semibold">
               Current Plan & Headroom
             </div>
-            <div className="text-lg font-bold text-apple-text mt-0.5">
+            <div className="text-lg font-bold text-mirage-text mt-0.5">
               {plans.find((p) => p.id === activePlanId)?.name}
             </div>
           </div>
 
           <div className="flex items-center space-x-2">
-            <span className="w-2.5 h-2.5 rounded-full bg-apple-green animate-pulse" />
-            <span className="text-xs font-mono font-medium text-apple-text">
+            <span className="w-2.5 h-2.5 rounded-full bg-mirage-emerald animate-pulse" />
+            <span className="text-xs font-mono font-medium text-mirage-text">
               Budget Status: HEALTHY
             </span>
           </div>
         </div>
 
         <div className="space-y-2">
-          <div className="flex justify-between text-xs text-apple-secondary">
+          <div className="flex justify-between text-xs text-mirage-subtext">
             <span>Monthly Consumption: 18,420 / 250,000 transactions</span>
-            <span className="font-semibold text-apple-text">7.3% used</span>
+            <span className="font-semibold text-mirage-text">7.3% used</span>
           </div>
-          <div className="w-full h-2 rounded-full bg-apple-subtle border border-apple-border overflow-hidden">
-            <div className="h-full bg-apple-blue rounded-full" style={{ width: "7.3%" }} />
+          <div className="w-full h-2 rounded-full bg-mirage-surfaceElevated border border-mirage-border overflow-hidden">
+            <div className="h-full bg-mirage-cyan rounded-full" style={{ width: "7.3%" }} />
           </div>
         </div>
       </div>
@@ -305,50 +305,50 @@ export function SubscriptionBillingView() {
           return (
             <div
               key={p.id}
-              className={`rounded-3xl p-6 flex flex-col justify-between transition-all ${
+              className={`rounded p-6 flex flex-col justify-between transition-all ${
                 p.popular
-                  ? "bg-apple-surface border-2 border-apple-blue shadow-apple-float relative"
-                  : "bg-apple-surface border border-apple-border shadow-apple-card hover:shadow-apple-float"
+                  ? "bg-mirage-surface border-2 border-mirage-cyan shadow-hud-panel relative"
+                  : "bg-mirage-surface border border-mirage-border shadow-mirage-surface hover:shadow-hud-panel"
               }`}
             >
               {p.popular && (
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-apple-blue text-white text-[10px] font-bold uppercase tracking-wider shadow-apple-sm">
+                <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 rounded-full bg-mirage-cyan text-white text-[10px] font-bold uppercase tracking-wider shadow-sm">
                   Most Popular
                 </div>
               )}
 
               <div>
-                <h3 className="text-lg font-bold text-apple-text">{p.name}</h3>
-                <p className="text-xs text-apple-secondary mt-1 min-h-[32px]">{p.description}</p>
+                <h3 className="text-lg font-bold text-mirage-text">{p.name}</h3>
+                <p className="text-xs text-mirage-subtext mt-1 min-h-[32px]">{p.description}</p>
 
                 <div className="my-6">
-                  <span className="text-3xl sm:text-4xl font-extrabold text-apple-text tracking-tight">
+                  <span className="text-3xl sm:text-4xl font-extrabold text-mirage-text tracking-tight">
                     {displayPrice}
                   </span>
-                  <span className="text-xs text-apple-secondary ml-1.5">/ {p.period}</span>
+                  <span className="text-xs text-mirage-subtext ml-1.5">/ {p.period}</span>
                 </div>
 
-                <div className="space-y-2.5 border-t border-apple-border pt-4">
+                <div className="space-y-2.5 border-t border-mirage-border pt-4">
                   {p.features.map((feat, i) => (
-                    <div key={i} className="flex items-start space-x-2.5 text-xs text-apple-text">
-                      <Check className="w-4 h-4 text-apple-green shrink-0 mt-0.5" />
+                    <div key={i} className="flex items-start space-x-2.5 text-xs text-mirage-text">
+                      <Check className="w-4 h-4 text-mirage-emerald shrink-0 mt-0.5" />
                       <span>{feat}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <div className="pt-6 mt-6 border-t border-apple-border">
+              <div className="pt-6 mt-6 border-t border-mirage-border">
                 <button
                   type="button"
                   disabled={isCurrent}
                   onClick={() => handleOpenCheckout(p)}
-                  className={`w-full py-2.5 rounded-xl text-xs font-semibold transition shadow-apple-sm ${
+                  className={`w-full py-2.5 rounded text-xs font-semibold transition shadow-sm ${
                     isCurrent
-                      ? "bg-apple-subtle text-apple-muted border border-apple-border cursor-default"
+                      ? "bg-mirage-surfaceElevated text-mirage-muted border border-mirage-border cursor-default"
                       : p.popular
-                      ? "bg-apple-blue hover:bg-apple-blueHover text-white"
-                      : "bg-apple-text hover:bg-black text-white"
+                      ? "bg-mirage-cyan hover:bg-mirage-cyanHover text-white"
+                      : "bg-mirage-text hover:bg-black text-white"
                   }`}
                 >
                   {isCurrent ? "Current Plan" : `Upgrade to ${p.name}`}
@@ -362,37 +362,37 @@ export function SubscriptionBillingView() {
       {/* Payment Modal (Razorpay / Stripe) */}
       {paymentModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-apple-surface rounded-3xl max-w-md w-full p-6 border border-apple-border shadow-apple-modal space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-apple-border">
+          <div className="bg-mirage-surface rounded max-w-md w-full p-6 border border-mirage-border shadow-hud-panel space-y-5">
+            <div className="flex items-center justify-between pb-3 border-b border-mirage-border">
               <div>
-                <h3 className="text-base font-bold text-apple-text">
+                <h3 className="text-base font-bold text-mirage-text">
                   Complete Subscription Checkout
                 </h3>
-                <p className="text-xs text-apple-secondary mt-0.5">
-                  Plan: <span className="font-semibold text-apple-text">{paymentModal.name}</span>
+                <p className="text-xs text-mirage-subtext mt-0.5">
+                  Plan: <span className="font-semibold text-mirage-text">{paymentModal.name}</span>
                 </p>
               </div>
               <div className="text-right">
-                <div className="text-lg font-bold text-apple-blue font-mono">
+                <div className="text-lg font-bold text-mirage-cyan font-mono">
                   {currency === "INR" ? paymentModal.priceINR : paymentModal.priceUSD}
                 </div>
-                <div className="text-[10px] text-apple-muted">per month</div>
+                <div className="text-[10px] text-mirage-muted">per month</div>
               </div>
             </div>
 
             {/* Payment Method Selector */}
             <div className="space-y-2">
-              <label className="text-xs font-semibold text-apple-text block">
+              <label className="text-xs font-semibold text-mirage-text block">
                 Select Razorpay Payment Method
               </label>
               <div className="grid grid-cols-3 gap-2">
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("upi")}
-                  className={`p-3 rounded-2xl border text-center transition ${
+                  className={`p-3 rounded border text-center transition ${
                     paymentMethod === "upi"
-                      ? "bg-apple-blue/10 border-apple-blue text-apple-blue font-semibold"
-                      : "bg-apple-subtle border-apple-border text-apple-secondary hover:text-apple-text"
+                      ? "bg-mirage-cyan/10 border-mirage-cyan text-mirage-cyan font-semibold"
+                      : "bg-mirage-surfaceElevated border-mirage-border text-mirage-subtext hover:text-mirage-text"
                   }`}
                 >
                   <Smartphone className="w-4 h-4 mx-auto mb-1" />
@@ -402,10 +402,10 @@ export function SubscriptionBillingView() {
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("card")}
-                  className={`p-3 rounded-2xl border text-center transition ${
+                  className={`p-3 rounded border text-center transition ${
                     paymentMethod === "card"
-                      ? "bg-apple-blue/10 border-apple-blue text-apple-blue font-semibold"
-                      : "bg-apple-subtle border-apple-border text-apple-secondary hover:text-apple-text"
+                      ? "bg-mirage-cyan/10 border-mirage-cyan text-mirage-cyan font-semibold"
+                      : "bg-mirage-surfaceElevated border-mirage-border text-mirage-subtext hover:text-mirage-text"
                   }`}
                 >
                   <CreditCard className="w-4 h-4 mx-auto mb-1" />
@@ -415,10 +415,10 @@ export function SubscriptionBillingView() {
                 <button
                   type="button"
                   onClick={() => setPaymentMethod("netbanking")}
-                  className={`p-3 rounded-2xl border text-center transition ${
+                  className={`p-3 rounded border text-center transition ${
                     paymentMethod === "netbanking"
-                      ? "bg-apple-blue/10 border-apple-blue text-apple-blue font-semibold"
-                      : "bg-apple-subtle border-apple-border text-apple-secondary hover:text-apple-text"
+                      ? "bg-mirage-cyan/10 border-mirage-cyan text-mirage-cyan font-semibold"
+                      : "bg-mirage-surfaceElevated border-mirage-border text-mirage-subtext hover:text-mirage-text"
                   }`}
                 >
                   <Building className="w-4 h-4 mx-auto mb-1" />
@@ -428,22 +428,22 @@ export function SubscriptionBillingView() {
             </div>
 
             {/* Simulated Payment Method Preview */}
-            <div className="p-4 rounded-2xl bg-apple-subtle border border-apple-border text-xs text-apple-secondary space-y-2">
+            <div className="p-4 rounded bg-mirage-surfaceElevated border border-mirage-border text-xs text-mirage-subtext space-y-2">
               {paymentMethod === "upi" && (
                 <div>
-                  <div className="font-semibold text-apple-text mb-1">Instant UPI &amp; Dynamic QR</div>
+                  <div className="font-semibold text-mirage-text mb-1">Instant UPI &amp; Dynamic QR</div>
                   <div className="text-[11px]">Pay via Google Pay, PhonePe, Paytm, or BHIM UPI ID</div>
                 </div>
               )}
               {paymentMethod === "card" && (
                 <div>
-                  <div className="font-semibold text-apple-text mb-1">RuPay, Visa, Mastercard</div>
+                  <div className="font-semibold text-mirage-text mb-1">RuPay, Visa, Mastercard</div>
                   <div className="text-[11px]">Indian &amp; International cards with RBI-mandated 2FA OTP verification</div>
                 </div>
               )}
               {paymentMethod === "netbanking" && (
                 <div>
-                  <div className="font-semibold text-apple-text mb-1">50+ Indian Banks</div>
+                  <div className="font-semibold text-mirage-text mb-1">50+ Indian Banks</div>
                   <div className="text-[11px]">HDFC, ICICI, SBI, Axis, Kotak, and all major retail netbanking</div>
                 </div>
               )}
@@ -454,7 +454,7 @@ export function SubscriptionBillingView() {
               <button
                 type="button"
                 onClick={() => setPaymentModal(null)}
-                className="py-2.5 rounded-xl border border-apple-border bg-apple-subtle text-xs font-semibold text-apple-text hover:bg-apple-border/50 transition"
+                className="py-2.5 rounded border border-mirage-border bg-mirage-surfaceElevated text-xs font-semibold text-mirage-text hover:bg-mirage-border/50 transition"
               >
                 Cancel
               </button>
@@ -462,7 +462,7 @@ export function SubscriptionBillingView() {
                 type="button"
                 disabled={isProcessingPayment}
                 onClick={handleSimulatePayment}
-                className="py-2.5 rounded-xl bg-apple-blue hover:bg-apple-blueHover text-white text-xs font-semibold shadow-apple-sm transition flex items-center justify-center space-x-2 disabled:opacity-50"
+                className="py-2.5 rounded bg-mirage-cyan hover:bg-mirage-cyanHover text-white text-xs font-semibold shadow-sm transition flex items-center justify-center space-x-2 disabled:opacity-50"
               >
                 {isProcessingPayment ? (
                   <>

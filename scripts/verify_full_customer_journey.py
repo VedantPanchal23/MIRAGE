@@ -15,6 +15,7 @@ platform infrastructure:
 from __future__ import annotations
 
 import asyncio
+import io
 import os
 import sys
 import uuid
@@ -23,7 +24,8 @@ from datetime import UTC, datetime
 # Ensure repository root is on sys.path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 try:
-    sys.stdout.reconfigure(encoding="utf-8")
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
 except Exception:
     pass
 
@@ -149,9 +151,7 @@ async def run_customer_journey() -> None:
         log_step(3, "OpenAI-Compatible Drop-In Proxy Assurance", "Routing chat completion via /v1/chat/completions")
         proxy_payload = {
             "model": "llama-3.3-70b-versatile",
-            "messages": [
-                {"role": "user", "content": "What is the requirement for disbursements over $50,000?"}
-            ],
+            "messages": [{"role": "user", "content": "What is the requirement for disbursements over $50,000?"}],
             "temperature": 0.2,
         }
         proxy_res = await client.post("/v1/chat/completions", json=proxy_payload, headers=api_headers)

@@ -8,7 +8,7 @@ Implements Technical Architecture Document §2, §8.2, §10.1 and ADR 0003:
 """
 
 from celery import Celery
-from kombu import Exchange, Queue
+from kombu.entity import Exchange, Queue
 
 from shared.config import get_settings
 

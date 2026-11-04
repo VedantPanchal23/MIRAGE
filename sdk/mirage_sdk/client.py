@@ -353,9 +353,9 @@ class MirageClient:
                 if not line:
                     continue
                 if line.startswith("event:"):
-                    current_event = line[len("event:"):].strip()
+                    current_event = line[len("event:") :].strip()
                 elif line.startswith("data:"):
-                    raw_data = line[len("data:"):].strip()
+                    raw_data = line[len("data:") :].strip()
                     try:
                         parsed_data = json.loads(raw_data)
                     except json.JSONDecodeError:
@@ -787,7 +787,9 @@ class AsyncMirageClient:
             images=images or [],
         )
         headers = {"Accept": "text/event-stream"}
-        async with self._http.stream("POST", "/v1/verify/stream", json=req.model_dump(mode="json"), headers=headers) as resp:
+        async with self._http.stream(
+            "POST", "/v1/verify/stream", json=req.model_dump(mode="json"), headers=headers
+        ) as resp:
             if resp.status_code >= 400:
                 await resp.aread()
                 _handle_error_response(resp)
@@ -797,9 +799,9 @@ class AsyncMirageClient:
                 if not line:
                     continue
                 if line.startswith("event:"):
-                    current_event = line[len("event:"):].strip()
+                    current_event = line[len("event:") :].strip()
                 elif line.startswith("data:"):
-                    raw_data = line[len("data:"):].strip()
+                    raw_data = line[len("data:") :].strip()
                     try:
                         parsed_data = json.loads(raw_data)
                     except json.JSONDecodeError:

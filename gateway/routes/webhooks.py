@@ -49,4 +49,3 @@ async def test_webhook_endpoint(
 ) -> dict[str, str]:
     """Dispatch a test ping alert to verify webhook reachability."""
     return await webhook_service.test_webhook(auth, webhook_id)
-

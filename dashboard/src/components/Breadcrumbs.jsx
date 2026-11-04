@@ -1,7 +1,7 @@
 import React from 'react';
 
 /**
- * Breadcrumbs: Semantic breadcrumb navigation supporting Schema.org microdata.
+ * Breadcrumbs: Semantic breadcrumb navigation supporting Schema.org microdata with tactical telemetry style.
  *
  * @param {Array<{label: string, onClick?: () => void, href?: string, current?: boolean}>} items
  */
@@ -11,7 +11,7 @@ export default function Breadcrumbs({ items = [] }) {
   return (
     <nav
       aria-label="Breadcrumb"
-      className="py-3 px-1 text-xs text-apple-gray flex items-center space-x-2"
+      className="py-2.5 px-1 text-xs font-mono text-mirage-muted flex items-center space-x-2 select-none"
     >
       <ol
         itemScope
@@ -32,7 +32,7 @@ export default function Breadcrumbs({ items = [] }) {
                 <span
                   itemProp="name"
                   aria-current="page"
-                  className="font-medium text-apple-text cursor-default"
+                  className="font-medium text-mirage-cyan cursor-default tracking-wide uppercase"
                 >
                   {item.label}
                 </span>
@@ -41,7 +41,7 @@ export default function Breadcrumbs({ items = [] }) {
                   type="button"
                   onClick={item.onClick}
                   itemProp="item"
-                  className="text-apple-subtext hover:text-apple-blue transition-colors focus:outline-none"
+                  className="text-mirage-subtext hover:text-mirage-cyan transition-colors focus:outline-none uppercase"
                 >
                   <span itemProp="name">{item.label}</span>
                 </button>
@@ -49,16 +49,9 @@ export default function Breadcrumbs({ items = [] }) {
               <meta itemProp="position" content={String(index + 1)} />
 
               {!isLast && (
-                <svg
-                  className="w-3.5 h-3.5 text-apple-gray/60"
-                  fill="none"
-                  viewBox="0 0 24 24"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  aria-hidden="true"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
-                </svg>
+                <span className="text-mirage-borderStrong font-mono text-xs select-none" aria-hidden="true">
+                  /
+                </span>
               )}
             </li>
           );

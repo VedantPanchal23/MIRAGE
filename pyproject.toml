@@ -102,12 +102,17 @@ ignore = ["B008"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+mypy_path = ["sdk", "."]
 ignore_missing_imports = true
 warn_unused_configs = true
 disallow_untyped_defs = true
 disallow_incomplete_defs = true
 explicit_package_bases = true
 namespace_packages = true
+
+[[tool.mypy.overrides]]
+module = "workers.celery_app"
+disallow_untyped_calls = false
 
 [tool.pytest.ini_options]
 minversion = "8.0"

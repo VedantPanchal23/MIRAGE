@@ -455,6 +455,7 @@ This specification is supported by the following documents, each elaborating a s
 | [Compatibility_and_Migration.md](Compatibility_and_Migration.md) | MIRAGE 2.x component migration map |
 | [GLOSSARY.md](GLOSSARY.md) | Canonical term definitions |
 | [CHANGELOG.md](CHANGELOG.md) | Version history |
+| [Residual_Risk_Register.md](Residual_Risk_Register.md) | Operational boundaries and residual risks |
 | [ADRs/README.md](ADRs/README.md) | Architecture Decision Record framework |
 
 ---

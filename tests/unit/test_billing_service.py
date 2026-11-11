@@ -176,7 +176,7 @@ async def test_verify_razorpay_payment(tenant_admin_auth: AuthContext) -> None:
     req = RazorpayPaymentVerifyRequest(
         razorpay_order_id="order_test_123",
         razorpay_payment_id="pay_upi_987",
-        razorpay_signature="sig_test_abc",
+        razorpay_signature="rzp_sig_test_abc",
         tier=SubscriptionTier.BUSINESS,
     )
 

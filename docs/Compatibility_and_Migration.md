@@ -185,10 +185,10 @@ This document maps MIRAGE 2.x components to the MIRAGE 3.0 architecture and prov
 * **Rationale:** Streamlit is insufficient for the interactive complexity, state management, and scalability required by the MIRAGE 3.0 Control Plane UI.
 
 ### Dashboard (React 18/JSX)
-* **Current 2.x Role:** The Phase 10 dashboard from 2.x.
-* **Classification:** PRESERVE and EXPAND
-* **Migration Path:** Becomes the primary frontend, expanding into a full management console for policies, identity, routing, and audit viewing.
-* **Rationale:** React provides the necessary component ecosystem and performance for a production-grade enterprise console.
+* **Target Role:** Modern enterprise operational dashboard and management console.
+* **Classification:** REBUILD
+* **Migration Path:** Clean React 18 / Vite / JSX interface for policies, transactions, actions, outcomes, and audit verification.
+* **Rationale:** React 18 / Vite provides a responsive, performant architecture for a production-grade enterprise console without legacy UI debt.
 
 ---
 

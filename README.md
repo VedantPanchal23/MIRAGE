@@ -225,9 +225,6 @@ pytest tests/chaos/ -v
 
 # 5. Core Gate 5 Uncertainty & Fail-Closed Security Suites
 pytest tests/unit/test_gate5_uncertainty_remediation.py tests/integration/test_five_gates_e2e.py -v
-
-# 6. React 18 / JSX Frontend Suite (Vitest)
-cd dashboard && npm test -- --run
 ```
 
 ---

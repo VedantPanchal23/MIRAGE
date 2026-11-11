@@ -177,10 +177,10 @@ Prometheus metrics are collected across the five assurance gates with strictly b
 - **Compliance PDFs:** Generated reports summarizing transaction assurance and policy violations over a time period, digitally signed.
 - **Sealed Compliance Evidence Bundles:** JSON-structured evidence bundles containing events, chain verification proofs, anchor signatures, and canonical SHA-256 bundle digests.
 
-## 15. Dashboard Integration
+## 15. Operator Audit & Verification Capabilities
 
-The React 18 / JSX frontend (`AuditIntegrityView.jsx`) provides operators with:
-- Live status badges reflecting audit chain integrity (`ANCHORED`, `ANCHOR_STALE`, `CHAIN_VALID`, `INTEGRITY_FAILURE`).
-- Comprehensive defect lists on tamper or truncation detection.
-- Interactive external anchor commitment and sealed evidence bundle exports.
-- Paginated, filterable event browsers with sequence numbers, actor attribution, decisions, and SHA-256 hashes.
+MIRAGE exposes programmatic and operator audit interfaces supporting:
+- Live status reporting for audit chain integrity (`ANCHORED`, `ANCHOR_STALE`, `CHAIN_VALID`, `INTEGRITY_FAILURE`).
+- Comprehensive defect identification on tamper or truncation detection.
+- External anchor commitment and sealed compliance evidence bundle exports.
+- Paginated, filterable event queries with sequence numbers, actor attribution, decisions, and SHA-256 hashes.

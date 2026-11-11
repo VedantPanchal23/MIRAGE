@@ -21,7 +21,14 @@ async def get_dashboard_stats(
     target_tenant = verify_tenant_access(auth, tenant_id)
     logger.info("Fetching dashboard stats", target_tenant=target_tenant)
 
-    return await default_session_store.get_stats_authoritative(tenant_id=target_tenant)
+    try:
+        authoritative_stats = await default_session_store.get_stats_authoritative(tenant_id=target_tenant)
+        if authoritative_stats.get("total_requests", 0) > 0:
+            return authoritative_stats
+    except Exception as exc:
+        logger.debug("Authoritative stats query fallback to local cache", error=str(exc))
+
+    return default_session_store.get_stats(tenant_id=target_tenant)
 
 
 @router.get("/v1/dashboard/sessions")
@@ -37,7 +44,26 @@ async def get_dashboard_sessions(
     """Retrieve paginated verification sessions with full claim breakdowns and TreeSHAP attributions."""
     target_tenant = verify_tenant_access(auth, tenant_id)
 
-    total, items = await default_session_store.list_sessions_authoritative(
+    try:
+        total, items = await default_session_store.list_sessions_authoritative(
+            tenant_id=target_tenant,
+            risk_tier=risk_tier,
+            min_hrs=min_hrs,
+            max_hrs=max_hrs,
+            page=page,
+            page_size=page_size,
+        )
+        if total > 0:
+            return {
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+                "items": items,
+            }
+    except Exception as exc:
+        logger.debug("Authoritative sessions query fallback to local cache", error=str(exc))
+
+    total, items = default_session_store.list_sessions(
         tenant_id=target_tenant,
         risk_tier=risk_tier,
         min_hrs=min_hrs,
@@ -65,9 +91,11 @@ async def get_drift_report(
 
     try:
         time_series = await default_session_store.get_time_series_authoritative(tenant_id=target_tenant, days=days)
+        if not time_series:
+            time_series = default_session_store.get_time_series(tenant_id=target_tenant, days=days)
     except Exception as exc:
-        logger.error("Authoritative time series query failed", error=str(exc))
-        time_series = []
+        logger.debug("Authoritative time series query fallback to local cache", error=str(exc))
+        time_series = default_session_store.get_time_series(tenant_id=target_tenant, days=days)
 
     return {
         "tenant_id": target_tenant,

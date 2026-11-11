@@ -1,10 +1,10 @@
 """Tenant Budget and Cost Optimization API routes for MIRAGE 3.0."""
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 
-from gateway.middleware.auth import get_current_auth
+from gateway.dependencies import Auth, verify_tenant_access
 from services.budget_manager import budget_manager_service
-from shared.schemas.auth import AuthContext, Role
+from shared.schemas.auth import Role
 from shared.schemas.budget import TenantBudget, TenantBudgetUpdateRequest
 
 router = APIRouter(prefix="/v1/budgets", tags=["Budget Manager & Cost Optimization"])
@@ -16,19 +16,11 @@ router = APIRouter(prefix="/v1/budgets", tags=["Budget Manager & Cost Optimizati
     summary="Get tenant budget ledger and remaining headroom",
 )
 async def get_tenant_budget(
+    auth: Auth,
     tenant_id: str | None = Query(default=None, description="Optional tenant ID (SUPER_ADMIN only)"),
-    auth: AuthContext = Depends(get_current_auth),
 ) -> TenantBudget:
     """Retrieve tenant budget configuration, spent micros, reserved micros, and available headroom."""
-    target_tenant = auth.tenant_id
-    if tenant_id and tenant_id != auth.tenant_id:
-        if auth.role != Role.SUPER_ADMIN:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only SUPER_ADMIN can query budgets of other tenants",
-            )
-        target_tenant = tenant_id
-
+    target_tenant = verify_tenant_access(auth, tenant_id)
     return await budget_manager_service.get_tenant_budget(target_tenant)
 
 
@@ -39,8 +31,8 @@ async def get_tenant_budget(
 )
 async def update_tenant_budget(
     request: TenantBudgetUpdateRequest,
+    auth: Auth,
     tenant_id: str | None = Query(default=None, description="Optional tenant ID (SUPER_ADMIN only)"),
-    auth: AuthContext = Depends(get_current_auth),
 ) -> TenantBudget:
     """Configure total budget limit, hard limit enforcement, and reset cycle."""
     if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
@@ -49,15 +41,7 @@ async def update_tenant_budget(
             detail=f"Role '{auth.role.value}' is not authorized to update budget allocations",
         )
 
-    target_tenant = auth.tenant_id
-    if tenant_id and tenant_id != auth.tenant_id:
-        if auth.role != Role.SUPER_ADMIN:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only SUPER_ADMIN can configure budgets for other tenants",
-            )
-        target_tenant = tenant_id
-
+    target_tenant = verify_tenant_access(auth, tenant_id)
     return await budget_manager_service.update_tenant_budget(
         tenant_id=target_tenant,
         total_budget_micros=request.total_budget_micros,
@@ -71,7 +55,7 @@ async def update_tenant_budget(
     summary="Reconcile expired orphaned reservations",
 )
 async def reconcile_reservations(
-    auth: AuthContext = Depends(get_current_auth),
+    auth: Auth,
 ) -> dict[str, int]:
     """Execute background sweep to release expired in-flight budget reservations."""
     if auth.role != Role.SUPER_ADMIN:

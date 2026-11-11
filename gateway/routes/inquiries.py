@@ -2,16 +2,16 @@
 
 import uuid
 from datetime import UTC, datetime
-from typing import Annotated, Any
+from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
 from db import session as db_session
 from db.models import InquiryRecord
-from gateway.middleware.auth import get_current_auth
+from gateway.dependencies import Auth
 from shared.logging import get_logger
-from shared.schemas.auth import AuthContext, Role
+from shared.schemas.auth import Role
 from shared.schemas.inquiry import InquiryCreateRequest, InquiryResponse
 
 router = APIRouter(prefix="/v1/inquiries", tags=["Contact & Enterprise Inquiries"])
@@ -72,7 +72,7 @@ async def submit_inquiry(req: InquiryCreateRequest) -> InquiryResponse:
 
 @router.get("", response_model=list[dict[str, Any]])
 async def list_inquiries(
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
     limit: int = Query(default=50, ge=1, le=100),
 ) -> list[dict[str, Any]]:
     """Administrative inspection of pending enterprise inquiries (SUPER_ADMIN only)."""

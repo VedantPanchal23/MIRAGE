@@ -10,15 +10,14 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from db.persistence import default_persistence_service
-from gateway.middleware.auth import get_current_auth
-from gateway.middleware.rbac import require_permission
+from gateway.dependencies import Auth, require_permission
 from shared.logging import get_logger
 from shared.schemas.alerts import (
     AcknowledgeAlertRequest,
     AlertsListResponse,
     OperatorAlertResponse,
 )
-from shared.schemas.auth import AuthContext, Permission
+from shared.schemas.auth import Permission
 
 router = APIRouter(prefix="/v1/alerts", tags=["Alerts"])
 logger = get_logger("alerts_routes")
@@ -72,7 +71,7 @@ async def list_alerts(
 async def acknowledge_alert(
     alert_id: str,
     tenant_id: Annotated[str, Depends(require_permission(Permission.ALERTS_ACKNOWLEDGE))],
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
     body: AcknowledgeAlertRequest | None = None,
 ) -> OperatorAlertResponse:
     """Acknowledge an active operator alert."""

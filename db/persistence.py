@@ -59,6 +59,21 @@ class AmbiguousPostgresCommitError(DatabasePersistenceError):
     pass
 
 
+def _to_json_compatible(val: Any) -> Any:
+    """Recursively convert datetime, sets, enums, and models to JSON-serializable types."""
+    if isinstance(val, datetime):
+        return val.isoformat()
+    if isinstance(val, dict):
+        return {str(k): _to_json_compatible(v) for k, v in val.items()}
+    if isinstance(val, (list, tuple, set)):
+        return [_to_json_compatible(item) for item in val]
+    if hasattr(val, "model_dump"):
+        return _to_json_compatible(val.model_dump())
+    if hasattr(val, "value"):
+        return val.value
+    return val
+
+
 class PostgresPersistenceService:
     """Authoritative persistence service for verification sessions, claims, and audit logs."""
 
@@ -97,6 +112,7 @@ class PostgresPersistenceService:
         verified_claims: list[Any],
         correction_applied: bool = False,
         timestamp: datetime | None = None,
+        execution_trace: dict[str, Any] | None = None,
     ) -> tuple[VerificationSession, list[ClaimRecord], AuditLogRecord]:
         """Atomically persist a verification session, all associated claims, and chained audit record.
 
@@ -163,6 +179,7 @@ class PostgresPersistenceService:
                     )
 
                 created_at = timestamp or datetime.now(UTC)
+                clean_trace = _to_json_compatible(execution_trace) if execution_trace else None
 
                 # Insert VerificationSession
                 sess_record = VerificationSession(
@@ -175,6 +192,7 @@ class PostgresPersistenceService:
                     hrs_score=hrs_score,
                     risk_tier=risk_tier,
                     correction_applied=correction_applied,
+                    execution_trace=clean_trace,
                     created_at=created_at,
                 )
                 session.add(sess_record)

@@ -63,26 +63,25 @@ async def get_session_by_id(
             detail=f"Verification session '{session_id}' not found for tenant",
         )
 
-    # 2. Enrich with MongoDB execution trace
-    trace_data: dict[str, Any] | None = None
-    try:
-        trace_data = await default_mongo_trace_service.get_trace_by_session_id(
-            tenant_id=tenant_id, session_id=session_id
-        )
-        if not trace_data and session_record.trace_id:
-            trace_data = await default_mongo_trace_service.get_trace_by_trace_id(
-                tenant_id=tenant_id, trace_id=session_record.trace_id
+    # 2. Enrich with execution trace (native PostgreSQL JSONB with fallback)
+    trace_data: dict[str, Any] | None = getattr(session_record, "execution_trace", None)
+    if not trace_data:
+        try:
+            trace_data = await default_mongo_trace_service.get_trace_by_session_id(
+                tenant_id=tenant_id, session_id=session_id
             )
-        response.headers["X-Trace-Status"] = "AVAILABLE" if trace_data else "NOT_FOUND"
-    except Exception as exc:
-        logger.warning(
-            "MongoDB trace retrieval failed; degrading gracefully",
-            session_id=session_id,
-            tenant_id=tenant_id,
-            error=str(exc),
-        )
-        response.headers["X-Trace-Status"] = "DEGRADED"
-        trace_data = None
+            if not trace_data and session_record.trace_id:
+                trace_data = await default_mongo_trace_service.get_trace_by_trace_id(
+                    tenant_id=tenant_id, trace_id=session_record.trace_id
+                )
+        except Exception as exc:
+            logger.warning(
+                "Secondary trace retrieval degraded",
+                session_id=session_id,
+                tenant_id=tenant_id,
+                error=str(exc),
+            )
+    response.headers["X-Trace-Status"] = "AVAILABLE" if trace_data else "NOT_FOUND"
 
     # Format claims list
     formatted_claims = [

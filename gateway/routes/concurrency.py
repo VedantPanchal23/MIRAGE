@@ -1,12 +1,9 @@
 """Shared-Resource Concurrency, Leases, and Fencing Tokens REST Endpoints."""
 
-from typing import Annotated
+from fastapi import APIRouter, Query, status
 
-from fastapi import APIRouter, Depends, Query, status
-
-from gateway.middleware.auth import get_current_auth
+from gateway.dependencies import Auth
 from services.concurrency_service import concurrency_service
-from shared.schemas.auth import AuthContext
 from shared.schemas.concurrency import (
     LeaseStatus,
     ResourceLeaseAcquireRequest,
@@ -21,7 +18,7 @@ router = APIRouter(prefix="/v1/resources", tags=["Resource Concurrency"])
 @router.post("/leases/acquire", response_model=ResourceLeaseResponse, status_code=status.HTTP_201_CREATED)
 async def acquire_lease_endpoint(
     req: ResourceLeaseAcquireRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> ResourceLeaseResponse:
     """Acquire an exclusive or shared concurrency lease on a resource with a monotonic fencing token."""
     return await concurrency_service.acquire_lease(auth=auth, request=req)
@@ -29,7 +26,7 @@ async def acquire_lease_endpoint(
 
 @router.get("/leases", response_model=list[ResourceLeaseResponse])
 async def list_leases_endpoint(
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
     resource_uri: str | None = Query(default=None, description="Optional target resource URI filter"),
     holder_transaction_id: str | None = Query(default=None, description="Optional holder transaction ID filter"),
     status: LeaseStatus | None = Query(default=None, description="Optional lease status filter"),
@@ -51,7 +48,7 @@ async def list_leases_endpoint(
 async def release_lease_endpoint(
     lease_id: str,
     req: ResourceLeaseReleaseRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> ResourceLeaseResponse:
     """Safely release an acquired lease after verifying ownership and fencing token."""
     return await concurrency_service.release_lease(auth=auth, lease_id=lease_id, request=req)
@@ -61,7 +58,7 @@ async def release_lease_endpoint(
 async def renew_lease_endpoint(
     lease_id: str,
     req: ResourceLeaseRenewRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> ResourceLeaseResponse:
     """Extend the duration of an active lease before expiration."""
     return await concurrency_service.renew_lease(auth=auth, lease_id=lease_id, request=req)

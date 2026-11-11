@@ -2,11 +2,10 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Query, status
 
-from gateway.middleware.auth import get_current_auth
+from gateway.dependencies import Auth
 from services.tenant_service import tenant_service
-from shared.schemas.auth import AuthContext
 from shared.schemas.tenant import (
     TenantCreateRequest,
     TenantListResponse,
@@ -20,7 +19,7 @@ router = APIRouter(prefix="/v1/admin", tags=["Tenant Administration"])
 
 @router.get("/tenants", response_model=TenantListResponse)
 async def list_tenants(
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
     limit: Annotated[int, Query(ge=1, le=100)] = 50,
     cursor: Annotated[str | None, Query()] = None,
 ) -> TenantListResponse:
@@ -31,7 +30,7 @@ async def list_tenants(
 @router.post("/tenants", response_model=TenantResponse, status_code=status.HTTP_201_CREATED)
 async def create_tenant(
     req: TenantCreateRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> TenantResponse:
     """Provision a new tenant account with default identity, audit ledger, and budget (SUPER_ADMIN only)."""
     return await tenant_service.create_tenant(auth=auth, req=req)
@@ -40,7 +39,7 @@ async def create_tenant(
 @router.get("/tenants/{tenant_id}", response_model=TenantResponse)
 async def get_tenant(
     tenant_id: str,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> TenantResponse:
     """Retrieve details for a specific tenant account."""
     return await tenant_service.get_tenant(auth=auth, tenant_id=tenant_id)
@@ -50,7 +49,7 @@ async def get_tenant(
 async def update_tenant(
     tenant_id: str,
     req: TenantUpdateRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> TenantResponse:
     """Update permitted configuration settings for a tenant."""
     return await tenant_service.update_tenant(auth=auth, tenant_id=tenant_id, req=req)
@@ -60,7 +59,7 @@ async def update_tenant(
 async def suspend_tenant(
     tenant_id: str,
     req: TenantSuspendRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> TenantResponse:
     """Suspend a tenant account and enforce immediate authentication boundary cutoff (SUPER_ADMIN only)."""
     return await tenant_service.suspend_tenant(auth=auth, tenant_id=tenant_id, reason=req.reason)
@@ -69,7 +68,7 @@ async def suspend_tenant(
 @router.post("/tenants/{tenant_id}/reactivate", response_model=TenantResponse)
 async def reactivate_tenant(
     tenant_id: str,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> TenantResponse:
     """Reactivate a suspended tenant account (SUPER_ADMIN only)."""
     return await tenant_service.reactivate_tenant(auth=auth, tenant_id=tenant_id)
@@ -79,7 +78,7 @@ async def reactivate_tenant(
 async def offboard_tenant(
     tenant_id: str,
     req: TenantSuspendRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> TenantResponse:
     """Soft-offboard a tenant with permanent API key revocation and immutable audit trail (SUPER_ADMIN only)."""
     return await tenant_service.offboard_tenant(auth=auth, tenant_id=tenant_id, reason=req.reason)

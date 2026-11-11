@@ -1,12 +1,10 @@
 """Commercial SaaS Billing and Subscription routes for MIRAGE 3.0."""
 
-from typing import Annotated
+from fastapi import APIRouter, HTTPException, status
 
-from fastapi import APIRouter, Depends, HTTPException, status
-
-from gateway.middleware.auth import get_current_auth
+from gateway.dependencies import Auth
 from services.billing_service import billing_service
-from shared.schemas.auth import AuthContext, Role
+from shared.schemas.auth import Role
 from shared.schemas.billing import (
     RazorpayOrderCreateRequest,
     RazorpayOrderResponse,
@@ -34,7 +32,7 @@ async def list_subscription_plans() -> list[SubscriptionPlanInfo]:
 
 @router.get("/subscription", response_model=TenantSubscriptionResponse)
 async def get_tenant_subscription(
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> TenantSubscriptionResponse:
     """Retrieve caller's active subscription tier, budget utilization, and limits."""
     return await billing_service.get_tenant_subscription(auth=auth)
@@ -43,7 +41,7 @@ async def get_tenant_subscription(
 @router.post("/subscribe", response_model=SubscriptionUpgradeResponse)
 async def upgrade_subscription(
     req: SubscriptionUpgradeRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> SubscriptionUpgradeResponse:
     """Upgrade or modify tenant commercial subscription tier (TENANT_ADMIN or SUPER_ADMIN)."""
     if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
@@ -64,7 +62,7 @@ async def billing_webhook(req: StripeWebhookRequest) -> dict[str, str]:
 @router.post("/stripe/create-checkout-session", response_model=StripeCheckoutSessionResponse)
 async def create_stripe_checkout_session(
     req: StripeCheckoutSessionCreateRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> StripeCheckoutSessionResponse:
     """Generate a Stripe USD Checkout Session for credit/debit cards and global payments."""
     if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
@@ -78,7 +76,7 @@ async def create_stripe_checkout_session(
 @router.post("/stripe/verify-payment", response_model=StripePaymentVerifyResponse)
 async def verify_stripe_payment(
     req: StripePaymentVerifyRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> StripePaymentVerifyResponse:
     """Verify Stripe checkout payment, activate subscription tier, and dispatch official email receipt."""
     if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
@@ -92,7 +90,7 @@ async def verify_stripe_payment(
 @router.post("/razorpay/create-order", response_model=RazorpayOrderResponse)
 async def create_razorpay_order(
     req: RazorpayOrderCreateRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> RazorpayOrderResponse:
     """Generate an Indian Rupee (INR) Razorpay Order for UPI, Netbanking, Cards, and Wallets."""
     if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
@@ -106,7 +104,7 @@ async def create_razorpay_order(
 @router.post("/razorpay/verify-payment", response_model=RazorpayPaymentVerifyResponse)
 async def verify_razorpay_payment(
     req: RazorpayPaymentVerifyRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> RazorpayPaymentVerifyResponse:
     """Verify Razorpay payment signature and activate commercial subscription tier."""
     if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):

@@ -364,6 +364,7 @@ class VerificationOrchestrator:
                         risk_tier=hrs_result.tier.value,
                         verified_claims=verified_claims,
                         correction_applied=correction_applied,
+                        execution_trace=trace_doc,
                     )
                 except DuplicateSessionError:
                     # Idempotent duplicate delivery: PostgreSQL already committed this session.

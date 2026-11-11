@@ -1,12 +1,9 @@
 """Cross-Agent Delegation Governance REST endpoints."""
 
-from typing import Annotated
+from fastapi import APIRouter, Query, status
 
-from fastapi import APIRouter, Depends, Query, status
-
-from gateway.middleware.auth import get_current_auth
+from gateway.dependencies import Auth
 from services.delegation_service import delegation_service
-from shared.schemas.auth import AuthContext
 from shared.schemas.control_plane import PolicyDecision
 from shared.schemas.delegation import (
     DelegationActivationRequest,
@@ -23,7 +20,7 @@ router = APIRouter(prefix="/v1", tags=["Delegation Governance"])
 @router.post("/delegations", response_model=DelegationGrantResponse, status_code=status.HTTP_201_CREATED)
 async def create_delegation_endpoint(
     req: DelegationGrantRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> DelegationGrantResponse:
     """Create a new pending delegation grant after strict authority attenuation and confinement checks."""
     return await delegation_service.create_delegation_grant(auth=auth, request=req)
@@ -32,7 +29,7 @@ async def create_delegation_endpoint(
 @router.get("/delegations/{delegation_id}", response_model=DelegationGrantResponse)
 async def get_delegation_endpoint(
     delegation_id: str,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> DelegationGrantResponse:
     """Retrieve an authoritative delegation grant by ID within the caller's tenant."""
     return await delegation_service.get_delegation_grant(auth=auth, delegation_id=delegation_id)
@@ -40,7 +37,7 @@ async def get_delegation_endpoint(
 
 @router.get("/delegations", response_model=list[DelegationGrantResponse])
 async def list_delegations_endpoint(
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
     status: DelegationStatus | None = Query(default=None, description="Optional status filter"),
     parent_transaction_id: str | None = Query(default=None, description="Optional parent transaction filter"),
     child_agent_id: str | None = Query(default=None, description="Optional child agent filter"),
@@ -62,7 +59,7 @@ async def list_delegations_endpoint(
 async def activate_delegation_endpoint(
     delegation_id: str,
     req: DelegationActivationRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> DelegationGrantResponse:
     """Atomically bind a pending delegation grant to a child transaction and transition to ACTIVE."""
     return await delegation_service.activate_delegation_grant(
@@ -76,7 +73,7 @@ async def activate_delegation_endpoint(
 async def revoke_delegation_endpoint(
     delegation_id: str,
     req: DelegationRevocationRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> DelegationGrantResponse:
     """Explicitly revoke an active or pending delegation grant with required audit reason."""
     return await delegation_service.revoke_delegation_grant(
@@ -90,7 +87,7 @@ async def revoke_delegation_endpoint(
 async def validate_delegation_operation_endpoint(
     delegation_id: str,
     req: DelegationOperationValidationRequest,
-    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    auth: Auth,
 ) -> PolicyDecision:
     """Evaluate whether an active delegation grant authorizes a specific operation and scope."""
     return await delegation_service.validate_delegation_for_operation(

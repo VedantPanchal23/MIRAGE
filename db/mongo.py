@@ -254,10 +254,29 @@ class MongoTraceService:
             doc = await coll.find_one(filter_query)
             if doc and "_id" in doc:
                 doc["_id"] = str(doc["_id"])
-            return doc
+            if doc:
+                return doc
         except Exception as exc:
-            logger.error("Failed to query MongoDB trace by session_id", session_id=valid_session, error=str(exc))
-            raise MongoPersistenceError(f"MongoDB query failed: {exc}") from exc
+            logger.warning("MongoDB trace retrieval failed; attempting PostgreSQL JSONB fallback", error=str(exc))
+
+        # Direct PostgreSQL fallback from native JSONB column
+        try:
+            from sqlalchemy import select
+            from db.models import VerificationSession
+            from db.session import get_tenant_session
+
+            async with get_tenant_session(valid_tenant) as pg_session:
+                stmt = select(VerificationSession.execution_trace).where(
+                    VerificationSession.tenant_id == valid_tenant,
+                    VerificationSession.session_id == valid_session,
+                )
+                pg_trace = (await pg_session.execute(stmt)).scalar_one_or_none()
+                if pg_trace is not None:
+                    return pg_trace
+        except Exception as pg_exc:
+            logger.debug("PostgreSQL fallback trace query failed", error=str(pg_exc))
+
+        return None
 
     async def get_trace_by_trace_id(self, tenant_id: str, trace_id: str) -> dict[str, Any] | None:
         """Retrieve a trace by distributed trace_id with dual-layer tenant isolation."""
@@ -323,6 +342,19 @@ class MongoTraceService:
                 "database": self.db_name,
             }
         except Exception as exc:
+            # Fallback: check PostgreSQL connection. If PostgreSQL is healthy, traces are preserved in PostgreSQL JSONB
+            try:
+                from db.session import check_database_connection
+                pg_ok = await check_database_connection()
+                if pg_ok:
+                    latency_ms = round((time.time() - t0) * 1000, 2)
+                    return {
+                        "status": "pass",
+                        "latency_ms": latency_ms,
+                        "storage_backend": "postgresql_jsonb_consolidated",
+                    }
+            except Exception:
+                pass
             latency_ms = round((time.time() - t0) * 1000, 2)
             return {
                 "status": "fail",

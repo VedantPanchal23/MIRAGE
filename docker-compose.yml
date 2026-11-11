@@ -182,6 +182,9 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
+    ports:
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-mirage}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-mirage_rabbit_secret}
@@ -286,6 +289,8 @@ services:
     restart: unless-stopped
     networks:
       - observability_net
+    ports:
+      - "9090:9090"
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheusdata:/prometheus

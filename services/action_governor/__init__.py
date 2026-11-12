@@ -14,11 +14,14 @@ from .proxy import (
     ToolProxyBypassError,
     _safe_eval_math,
 )
-from .service import (
+from .budget import (
     MAX_WINDOW_ACTION_COUNT,
     MAX_WINDOW_CUMULATIVE_COST,
     MAX_WINDOW_CUMULATIVE_RISK,
     MAX_WINDOW_HOURS,
+    evaluate_risk_and_salami_budget,
+)
+from .service import (
     ActionGovernorService,
 )
 

@@ -493,9 +493,9 @@ governed_agent = gatekeeper.wrap_agent(agent, tools=[...])`;
 
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-6">
             {/* Gate 1 */}
-            <div className="p-6 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-card transition-all flex flex-col justify-between">
+            <div className="p-6 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-card-hover hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center font-bold font-mono text-sm mb-4">
+                <div className="w-10 h-10 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center font-bold font-mono text-sm mb-4 group-hover:scale-105 transition-transform duration-200">
                   G1
                 </div>
                 <h3 className="text-base font-bold text-slate-900 font-display">Input Assurance</h3>
@@ -511,9 +511,9 @@ governed_agent = gatekeeper.wrap_agent(agent, tools=[...])`;
             </div>
 
             {/* Gate 2 */}
-            <div className="p-6 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-card transition-all flex flex-col justify-between">
+            <div className="p-6 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-card-hover hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-slate-900 text-blue-400 flex items-center justify-center font-bold font-mono text-sm mb-4">
+                <div className="w-10 h-10 rounded-xl bg-slate-900 text-blue-400 flex items-center justify-center font-bold font-mono text-sm mb-4 group-hover:scale-105 transition-transform duration-200">
                   G2
                 </div>
                 <h3 className="text-base font-bold text-slate-900 font-display">Context Assurance</h3>
@@ -529,9 +529,9 @@ governed_agent = gatekeeper.wrap_agent(agent, tools=[...])`;
             </div>
 
             {/* Gate 3 */}
-            <div className="p-6 rounded-2xl border border-slate-900 bg-slate-50/50 hover:shadow-card transition-all flex flex-col justify-between ring-1 ring-slate-900">
+            <div className="p-6 rounded-2xl border border-slate-900 bg-slate-50/50 hover:shadow-card-hover hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between ring-1 ring-slate-900 group">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center font-bold font-mono text-sm mb-4">
+                <div className="w-10 h-10 rounded-xl bg-slate-900 text-amber-400 flex items-center justify-center font-bold font-mono text-sm mb-4 group-hover:scale-105 transition-transform duration-200">
                   G3
                 </div>
                 <h3 className="text-base font-bold text-slate-900 font-display">Action Assurance</h3>
@@ -547,9 +547,9 @@ governed_agent = gatekeeper.wrap_agent(agent, tools=[...])`;
             </div>
 
             {/* Gate 4 */}
-            <div className="p-6 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-card transition-all flex flex-col justify-between">
+            <div className="p-6 rounded-2xl border border-slate-200 bg-white hover:border-slate-300 hover:shadow-card-hover hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-slate-900 text-purple-400 flex items-center justify-center font-bold font-mono text-sm mb-4">
+                <div className="w-10 h-10 rounded-xl bg-slate-900 text-purple-400 flex items-center justify-center font-bold font-mono text-sm mb-4 group-hover:scale-105 transition-transform duration-200">
                   G4
                 </div>
                 <h3 className="text-base font-bold text-slate-900 font-display">Output Assurance</h3>
@@ -565,9 +565,9 @@ governed_agent = gatekeeper.wrap_agent(agent, tools=[...])`;
             </div>
 
             {/* Gate 5 */}
-            <div className="p-6 rounded-2xl border border-emerald-300 bg-emerald-50/30 hover:shadow-card transition-all flex flex-col justify-between">
+            <div className="p-6 rounded-2xl border border-emerald-300 bg-emerald-50/30 hover:border-emerald-400 hover:shadow-card-hover hover:-translate-y-1 transition-all duration-300 flex flex-col justify-between group">
               <div>
-                <div className="w-10 h-10 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center font-bold font-mono text-sm mb-4">
+                <div className="w-10 h-10 rounded-xl bg-slate-900 text-emerald-400 flex items-center justify-center font-bold font-mono text-sm mb-4 group-hover:scale-105 transition-transform duration-200">
                   G5
                 </div>
                 <h3 className="text-base font-bold text-slate-900 font-display">Outcome Assurance</h3>

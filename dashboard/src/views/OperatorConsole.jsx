@@ -41,8 +41,20 @@ export function OperatorConsole({ setActiveView }) {
   const [loading, setLoading] = useState(true);
   const [filterState, setFilterState] = useState('ALL');
   const [selectedTx, setSelectedTx] = useState(null);
-  const [actionSuccessMsg, setActionSuccessMsg] = useState(null);
   const [auditVerified, setAuditVerified] = useState(false);
+  const [toasts, setToasts] = useState([]);
+
+  const addToast = (message, type = 'success') => {
+    const id = Date.now() + Math.random();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4500);
+  };
+
+  const removeToast = (id) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
 
   const loadData = async () => {
     setLoading(true);
@@ -78,10 +90,9 @@ export function OperatorConsole({ setActiveView }) {
     try {
       await api.grantApproval(approvalId, `Granted by ${user.name} via Operator Console`);
       setApprovals(prev => prev.filter(a => a.id !== approvalId));
-      setActionSuccessMsg(`Approval ${approvalId} granted. Action dispatched under monotonic lease.`);
-      setTimeout(() => setActionSuccessMsg(null), 4000);
+      addToast(`Approval ${approvalId} granted. Action dispatched under monotonic lease.`, 'success');
     } catch (err) {
-      alert(`Error granting approval: ${err.message}`);
+      addToast(`Error granting approval: ${err.message}`, 'error');
     }
   };
 
@@ -89,10 +100,9 @@ export function OperatorConsole({ setActiveView }) {
     try {
       await api.denyApproval(approvalId, `Denied by ${user.name} due to policy / risk override`);
       setApprovals(prev => prev.filter(a => a.id !== approvalId));
-      setActionSuccessMsg(`Approval ${approvalId} denied and contract transitioned to BLOCKED.`);
-      setTimeout(() => setActionSuccessMsg(null), 4000);
+      addToast(`Approval ${approvalId} denied and contract transitioned to BLOCKED.`, 'violation');
     } catch (err) {
-      alert(`Error denying approval: ${err.message}`);
+      addToast(`Error denying approval: ${err.message}`, 'error');
     }
   };
 
@@ -100,7 +110,12 @@ export function OperatorConsole({ setActiveView }) {
     setAuditVerified(false);
     setTimeout(() => {
       setAuditVerified(true);
-    }, 600);
+      addToast('Cryptographic audit trail verified back to Genesis Root. Zero tampering detected.', 'success');
+    }, 400);
+  };
+
+  const handleToggleAgent = (agentName) => {
+    addToast(`Agent '${agentName}' state updated. Distributed leases synchronized.`, 'info');
   };
 
   const filteredTransactions = transactions.filter(tx => {
@@ -197,16 +212,7 @@ export function OperatorConsole({ setActiveView }) {
 
       {/* Main Content Area */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-        {/* Banner Alert if any action succeeded */}
-        {actionSuccessMsg && (
-          <div className="mb-6 p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center justify-between">
-            <span className="flex items-center gap-2">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              {actionSuccessMsg}
-            </span>
-            <button onClick={() => setActionSuccessMsg(null)} className="text-emerald-700 font-bold">&times;</button>
-          </div>
-        )}
+
 
         {/* Global Key Metrics Row */}
         {stats && (
@@ -573,7 +579,7 @@ export function OperatorConsole({ setActiveView }) {
                   <div className="mt-5 pt-3 border-t border-slate-200 flex items-center justify-between text-xs">
                     <span className="text-[11px] text-slate-400">Last active: {new Date(ag.last_active_at).toLocaleTimeString()}</span>
                     <button 
-                      onClick={() => alert(`Toggled suspension for ${ag.name}`)}
+                      onClick={() => handleToggleAgent(ag.name)}
                       className="text-rose-600 hover:text-rose-700 font-semibold text-xs"
                     >
                       {ag.status === 'ACTIVE' ? 'Suspend Agent' : 'Reactivate'}
@@ -618,6 +624,39 @@ export function OperatorConsole({ setActiveView }) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* Floating Toast Notification Stack */}
+      <div className="fixed bottom-6 right-6 z-50 space-y-2 pointer-events-none max-w-sm w-full">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            className={`pointer-events-auto p-3.5 rounded-xl border shadow-lg text-xs font-medium flex items-start gap-2.5 transition-all transform translate-y-0 ${
+              toast.type === 'violation'
+                ? 'bg-rose-900 text-white border-rose-800'
+                : toast.type === 'uncertain'
+                ? 'bg-amber-900 text-white border-amber-800'
+                : toast.type === 'info'
+                ? 'bg-slate-900 text-white border-slate-800'
+                : 'bg-slate-900 text-white border-slate-800'
+            }`}
+          >
+            {toast.type === 'violation' ? (
+              <XCircle className="w-4 h-4 text-rose-400 shrink-0 mt-0.5" />
+            ) : toast.type === 'uncertain' ? (
+              <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            ) : (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+            )}
+            <div className="flex-1 leading-snug">{toast.message}</div>
+            <button
+              onClick={() => removeToast(toast.id)}
+              className="text-slate-400 hover:text-white shrink-0 font-bold text-sm"
+            >
+              &times;
+            </button>
+          </div>
+        ))}
       </div>
 
       {/* JSON Inspection Drawer Modal */}

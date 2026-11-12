@@ -284,60 +284,62 @@ class VerificationOrchestrator:
             detected_types = sorted(set(prompt_pii["types"] + resp_pii["types"]))
             total_pii_count = int(prompt_pii["count"] + resp_pii["count"])
 
-            # Step 1: Persist deep unstructured execution trace to MongoDB
+            # Build authoritative execution trace payload (stored atomically in PostgreSQL JSONB)
+            trace_doc: dict[str, Any] = {
+                "session_id": req_id,
+                "tenant_id": request.tenant_id,
+                "trace_id": trace_id,
+                "model_id": request.model_id,
+                "raw_prompt": request.prompt,
+                "raw_response": request.response,
+                "verified_response": verified_text,
+                "hrs_result": hrs_result.model_dump() if hasattr(hrs_result, "model_dump") else {},
+                "claims": [
+                    {
+                        "claim_id": getattr(getattr(vc, "claim", vc), "claim_id", getattr(vc, "id", "")),
+                        "text": getattr(getattr(vc, "claim", vc), "text", getattr(vc, "claim_text", "")),
+                        "type": getattr(getattr(getattr(vc, "claim", vc), "claim_type", None), "value", "factual"),
+                        "criticality": getattr(
+                            getattr(getattr(vc, "claim", vc), "criticality", None), "value", "medium"
+                        ),
+                        "status": getattr(getattr(vc, "status", None), "value", "SUPPORTED"),
+                        "risk_score": float(getattr(vc, "risk_score", 0.0)),
+                        "signal_scores": getattr(vc, "signal_scores", {}),
+                    }
+                    for vc in verified_claims
+                ],
+                "evidence_chunks": [
+                    {
+                        "claim_index": idx,
+                        "claim_text": c.text,
+                        "chunks": [
+                            ch.model_dump()
+                            if hasattr(ch, "model_dump")
+                            else (ch.__dict__ if hasattr(ch, "__dict__") else ch)
+                            for ch in (evidence_results[idx] if idx < len(evidence_results) else [])
+                        ],
+                    }
+                    for idx, c in enumerate(claims)
+                ],
+                "correction_metadata": {
+                    "correction_applied": correction_applied,
+                    "iterations": correction_iters,
+                },
+                "execution_metadata": {
+                    "execution_time_ms": elapsed_ms,
+                    "pipeline_signals_used": signals_used,
+                    "cached_scs_hit": cached_scs_hit,
+                },
+                "pii_metadata": {
+                    "pii_flagged": pii_flagged,
+                    "detected_types": detected_types,
+                    "total_count": total_pii_count,
+                },
+                "created_at": datetime.now(UTC),
+            }
+
+            # Optional secondary trace persistence to MongoDB (if configured)
             if self.mongo_service is not None:
-                trace_doc: dict[str, Any] = {
-                    "session_id": req_id,
-                    "tenant_id": request.tenant_id,
-                    "trace_id": trace_id,
-                    "model_id": request.model_id,
-                    "raw_prompt": request.prompt,
-                    "raw_response": request.response,
-                    "verified_response": verified_text,
-                    "hrs_result": hrs_result.model_dump() if hasattr(hrs_result, "model_dump") else {},
-                    "claims": [
-                        {
-                            "claim_id": getattr(getattr(vc, "claim", vc), "claim_id", getattr(vc, "id", "")),
-                            "text": getattr(getattr(vc, "claim", vc), "text", getattr(vc, "claim_text", "")),
-                            "type": getattr(getattr(getattr(vc, "claim", vc), "claim_type", None), "value", "factual"),
-                            "criticality": getattr(
-                                getattr(getattr(vc, "claim", vc), "criticality", None), "value", "medium"
-                            ),
-                            "status": getattr(getattr(vc, "status", None), "value", "SUPPORTED"),
-                            "risk_score": float(getattr(vc, "risk_score", 0.0)),
-                            "signal_scores": getattr(vc, "signal_scores", {}),
-                        }
-                        for vc in verified_claims
-                    ],
-                    "evidence_chunks": [
-                        {
-                            "claim_index": idx,
-                            "claim_text": c.text,
-                            "chunks": [
-                                ch.model_dump()
-                                if hasattr(ch, "model_dump")
-                                else (ch.__dict__ if hasattr(ch, "__dict__") else ch)
-                                for ch in (evidence_results[idx] if idx < len(evidence_results) else [])
-                            ],
-                        }
-                        for idx, c in enumerate(claims)
-                    ],
-                    "correction_metadata": {
-                        "correction_applied": correction_applied,
-                        "iterations": correction_iters,
-                    },
-                    "execution_metadata": {
-                        "execution_time_ms": elapsed_ms,
-                        "pipeline_signals_used": signals_used,
-                        "cached_scs_hit": cached_scs_hit,
-                    },
-                    "pii_metadata": {
-                        "pii_flagged": pii_flagged,
-                        "detected_types": detected_types,
-                        "total_count": total_pii_count,
-                    },
-                    "created_at": datetime.now(UTC),
-                }
                 try:
                     await self.mongo_service.persist_verification_trace(
                         tenant_id=request.tenant_id,

@@ -126,13 +126,13 @@ async def readiness_check(response: Response) -> dict[str, Any]:
     }
 
     is_prod = settings.environment.value == "production"
-    mandatory_keys = ["postgres", "redis", "mongodb", "rabbitmq"]
+    mandatory_keys = ["postgres", "redis", "rabbitmq"]
     if is_prod:
         mandatory_keys.append("audit_anchor")
 
     mandatory_failures = [k for k in mandatory_keys if components.get(k) != "up"]
     degraded_failures = [
-        k for k in ("qdrant", "audit_anchor") if components.get(k) != "up" and k not in mandatory_failures
+        k for k in ("qdrant", "mongodb", "audit_anchor") if components.get(k) != "up" and k not in mandatory_failures
     ]
 
     if mandatory_failures:

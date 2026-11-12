@@ -18,6 +18,19 @@ from .adapters import (
     SimulatedTestAdapter,
     _redact_sensitive_payload,
 )
+from .audit_verifier import (
+    acquire_audit_chain_state,
+    append_audit_trail_entry,
+    extract_result_records,
+    validate_audit_correlation,
+    validate_chain_record_fields_and_hash,
+    verify_record_against_audit_trail,
+)
+from .evaluator import (
+    evaluate_outcome_status_and_confidence,
+    record_to_contract,
+    validate_outcome_transition,
+)
 from .reconciliation import (
     VALID_OUTCOME_TRANSITIONS,
     _extract_clauses,
@@ -46,7 +59,16 @@ __all__ = [
     "_normalize_text",
     "_redact_sensitive_payload",
     "_strip_quotes_and_citations",
+    "acquire_audit_chain_state",
+    "append_audit_trail_entry",
     "db_session",
-    "reconcile_output_with_outcome",
+    "evaluate_outcome_status_and_confidence",
+    "extract_result_records",
     "reality_verifier_service",
+    "reconcile_output_with_outcome",
+    "record_to_contract",
+    "validate_audit_correlation",
+    "validate_chain_record_fields_and_hash",
+    "validate_outcome_transition",
+    "verify_record_against_audit_trail",
 ]

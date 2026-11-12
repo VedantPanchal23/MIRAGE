@@ -7,7 +7,7 @@ from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from fastapi import HTTPException, status
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from db import session as db_session
@@ -33,9 +33,7 @@ from shared.schemas.action import (
     ActionExecutionResult,
     ActionProposal,
     ActionReconciliationRequest,
-    ActionReconciliationResolution,
     ActionState,
-    ActionType,
     ApprovalResponse,
     ApprovalStatus,
     BatchAuthorizationDecision,
@@ -62,18 +60,30 @@ from shared.schemas.control_plane import (
 from shared.schemas.delegation import DelegationStatus
 from shared.schemas.outcome import ObservabilityClass, OutcomeStatus
 
+from .approvals import (
+    deny_approval,
+    grant_approval,
+    list_pending_approvals,
+    validate_and_consume_approval,
+)
 from .audit import _record_action_audit_event
+from .budget import (
+    evaluate_risk_and_salami_budget,
+)
+from .conditions import (
+    build_outcome_assurance_contract,
+    evaluate_postcondition,
+    evaluate_precondition,
+)
 from .proxy import (
     GovernedToolProxy,
 )
+from .stranded import (
+    list_stranded_actions,
+    reconcile_stranded_action,
+)
 
 logger = logging.getLogger(__name__)
-
-# Constants for Salami-Slicing Defense & Cumulative Blast Radius
-MAX_WINDOW_HOURS = 1
-MAX_WINDOW_CUMULATIVE_COST = 1000.0  # Max aggregate dollars spent in 1-hour window
-MAX_WINDOW_CUMULATIVE_RISK = 250  # Max aggregate risk score points in 1-hour window
-MAX_WINDOW_ACTION_COUNT = 50  # Max actions in 1-hour window
 
 
 class ActionGovernorService:
@@ -242,81 +252,14 @@ class ActionGovernorService:
         now: datetime,
     ) -> tuple[int, int, float, int, float, bool]:
         """Compute single-action risk, autonomy level, and cumulative blast radius budget."""
-        base_risk = {
-            ActionType.READ.value: 10,
-            ActionType.WRITE.value: 35,
-            ActionType.EXECUTE.value: 40,
-            ActionType.EGRESS.value: 50,
-            ActionType.DELETE.value: 65,
-        }.get(req.action_type.value, 40)
-
-        trust_mod = {
-            ToolTrustLevel.INTERNAL.value: 0,
-            ToolTrustLevel.VERIFIED.value: 10,
-            ToolTrustLevel.UNTRUSTED.value: 25,
-        }.get(tool.trust_level, 10)
-
-        env_mod = {
-            "DEV": 0,
-            "STAGING": 15,
-            "PROD": 30,
-        }.get(req.blast_radius.target_environment.upper(), 10)
-
-        param_cost = 0.0
-        for cost_key in ("amount", "amount_usd", "estimated_cost", "dollar_cost", "spend"):
-            cval = normalized_params.get(cost_key)
-            if isinstance(cval, (int, float)):
-                param_cost = max(param_cost, float(cval))
-
-        effective_cost = max(float(req.blast_radius.estimated_dollar_cost), param_cost)
-        cost_mod = min(25, int(effective_cost / 100.0))
-        single_action_risk = min(100, base_risk + trust_mod + env_mod + cost_mod)
-        autonomy_level = min(4, single_action_risk // 20)
-
-        # Salami-Slicing Defense & Cumulative Blast Radius Accounting
-        window_start = now - timedelta(hours=MAX_WINDOW_HOURS)
-        blast_stmt = select(
-            func.count(ActionContract.id).label("count"),
-            func.coalesce(func.sum(ActionContract.risk_score), 0).label("cumulative_risk"),
-        ).where(
-            ActionContract.tenant_id == tenant_id,
-            ActionContract.created_at >= window_start,
-            ActionContract.state.in_(
-                [
-                    ActionState.AUTHORIZED.value,
-                    ActionState.EXECUTING.value,
-                    ActionState.COMPLETED.value,
-                ]
-            ),
+        return await evaluate_risk_and_salami_budget(
+            session=session,
+            tenant_id=tenant_id,
+            req=req,
+            tool=tool,
+            normalized_params=normalized_params,
+            now=now,
         )
-        blast_res = await session.execute(blast_stmt)
-        blast_row = blast_res.one()
-        window_count = int(blast_row[0] or 0)
-        window_risk = int(blast_row[1] or 0)
-
-        # Sum cumulative dollar cost
-        cost_contracts_stmt = select(ActionContract.blast_radius).where(
-            ActionContract.tenant_id == tenant_id,
-            ActionContract.created_at >= window_start,
-            ActionContract.state.in_(
-                [
-                    ActionState.AUTHORIZED.value,
-                    ActionState.EXECUTING.value,
-                    ActionState.COMPLETED.value,
-                ]
-            ),
-        )
-        cost_contracts_res = await session.execute(cost_contracts_stmt)
-        all_radii = cost_contracts_res.scalars().all()
-        window_cost = sum(float(r.get("estimated_dollar_cost", 0.0) or 0.0) for r in all_radii if isinstance(r, dict))
-
-        is_salami_violation = bool(
-            (window_risk + single_action_risk > MAX_WINDOW_CUMULATIVE_RISK)
-            or (window_cost + effective_cost > MAX_WINDOW_CUMULATIVE_COST)
-            or (window_count >= MAX_WINDOW_ACTION_COUNT)
-        )
-
-        return single_action_risk, autonomy_level, effective_cost, window_risk, window_cost, is_salami_violation
 
     @staticmethod
     def _build_outcome_assurance_contract(
@@ -328,89 +271,14 @@ class ActionGovernorService:
         requires_human_approval: bool,
     ) -> tuple[bool, dict[str, Any] | None, str | None]:
         """Validate and construct Gate 5 Outcome Assurance Contract specification."""
-        requires_outcome_assurance = bool(
-            (req.outcome_contract and req.outcome_contract.requires_outcome_assurance)
-            or req.action_type in (ActionType.WRITE, ActionType.DELETE, ActionType.EXECUTE, ActionType.EGRESS)
-            or single_action_risk >= 40
-            or autonomy_level >= 2
-            or effective_cost > 0.0
+        return build_outcome_assurance_contract(
+            req=req,
+            tool=tool,
+            single_action_risk=single_action_risk,
+            autonomy_level=autonomy_level,
+            effective_cost=effective_cost,
+            requires_human_approval=requires_human_approval,
         )
-
-        if not requires_outcome_assurance:
-            return False, None, None
-
-        merged_postconditions = list(req.postconditions)
-        if req.outcome_contract and req.outcome_contract.expected_postconditions:
-            for ep in req.outcome_contract.expected_postconditions:
-                if isinstance(ep, dict) and "target" in ep:
-                    assertion = ep.get("assertion", "EQUALS")
-                    merged_postconditions.append(
-                        PostconditionRule(
-                            assertion=assertion,
-                            target=ep["target"],
-                            expected_value=ep.get("expected_value"),
-                        )
-                    )
-
-        # Criterion 1: Must define expected postconditions for autonomous authorization
-        if not requires_human_approval and len(merged_postconditions) == 0:
-            return (
-                True,
-                None,
-                (
-                    "Outcome Assurance contract violation: "
-                    "action requires outcome assurance but defines zero expected postconditions."
-                ),
-            )
-
-        # Criterion 2: Acceptable evidence sources
-        acceptable_sources: list[str] = []
-        if req.outcome_contract and req.outcome_contract.acceptable_evidence_sources:
-            acceptable_sources = req.outcome_contract.acceptable_evidence_sources
-        elif tool.tool_type == ToolType.HTTP:
-            scheme = req.target_resource.split("://")[0] if "://" in req.target_resource else "http"
-            acceptable_sources = [f"http:{scheme}", "HTTP_RESOURCE"]
-        else:
-            acceptable_sources = ["DATABASE", "HTTP_RESOURCE", "ASYNC_EVENT", "INDEPENDENT_OBSERVER"]
-
-        if req.outcome_contract and len(req.outcome_contract.acceptable_evidence_sources) == 0:
-            return (
-                True,
-                None,
-                (
-                    "Outcome Assurance contract violation: "
-                    "acceptable_evidence_sources cannot be empty when outcome contract is specified."
-                ),
-            )
-
-        # Criterion 3: Verification deadline
-        deadline_sec = 30.0
-        if req.outcome_contract:
-            if req.outcome_contract.verification_deadline_seconds <= 0:
-                return (
-                    True,
-                    None,
-                    "Outcome Assurance contract violation: verification_deadline_seconds must be positive.",
-                )
-            deadline_sec = req.outcome_contract.verification_deadline_seconds
-
-        outcome_contract_dict = {
-            "requires_outcome_assurance": True,
-            "expected_postconditions": [p.model_dump() for p in merged_postconditions],
-            "acceptable_evidence_sources": acceptable_sources,
-            "verification_deadline_seconds": deadline_sec,
-            "risk_sensitive_verification_policy": (
-                req.outcome_contract.risk_sensitive_verification_policy.value
-                if req.outcome_contract
-                else "STRICT_DIRECT_ONLY"
-                if single_action_risk >= 60
-                else "DEFAULT"
-            ),
-            "on_partial": req.outcome_contract.on_partial.value if req.outcome_contract else "HOLD_FOR_REVIEW",
-            "on_uncertain": req.outcome_contract.on_uncertain.value if req.outcome_contract else "ESCALATE",
-        }
-
-        return True, outcome_contract_dict, None
 
     @staticmethod
     async def _resolve_active_fencing_token(
@@ -613,78 +481,7 @@ class ActionGovernorService:
         now: datetime,
     ) -> None:
         """Validate single-use approval token and consume it atomically at execution boundary."""
-        if not contract.approval_id:
-            return
-
-        appr_stmt = (
-            select(ActionApproval)
-            .where(
-                ActionApproval.tenant_id == auth.tenant_id,
-                ActionApproval.id == contract.approval_id,
-            )
-            .with_for_update()
-        )
-        appr_res = await session.execute(appr_stmt)
-        approval = appr_res.scalar_one_or_none()
-        if not approval:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Execution forbidden: Required L4 approval was not found",
-            )
-        if approval.status == ApprovalStatus.CONSUMED.value:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Approval replay attack detected: Approval token has already been consumed.",
-            )
-        if approval.status != ApprovalStatus.GRANTED.value:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Execution forbidden: Approval is in status '{approval.status}'",
-            )
-        if approval.expires_at < now:
-            approval.status = ApprovalStatus.EXPIRED.value
-            await session.flush()
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Execution forbidden: Approval token has expired.",
-            )
-
-        # Cross-transaction & cross-action replay defense:
-        if approval.action_id != contract.id or approval.transaction_id != contract.transaction_id:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=("Approval replay attack detected: Approval token does not belong to this action/transaction."),
-            )
-
-        # Recompute and verify contract binding hash
-        cost_val = (
-            float(contract.blast_radius.get("estimated_dollar_cost", 0.0))
-            if isinstance(contract.blast_radius, dict)
-            else 0.0
-        )
-        recomputed_hash = compute_contract_binding_hash(
-            tenant_id=contract.tenant_id,
-            transaction_id=contract.transaction_id,
-            action_id=contract.id,
-            tool_name=contract.tool_name,
-            action_type=contract.action_type,
-            target_resource=contract.target_resource,
-            parameters_hash=compute_parameters_hash(contract.normalized_parameters),
-            required_capability=contract.required_capability,
-            estimated_dollar_cost=cost_val,
-            taint_flags=contract.taint_flags,
-        )
-        if recomputed_hash != approval.parameters_hash:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Parameter tampering detected: cryptographic binding fingerprint mismatch "
-                    "between contract and approval."
-                ),
-            )
-
-        # Transition approval to CONSUMED (single-use defense)
-        approval.status = ApprovalStatus.CONSUMED.value
+        await validate_and_consume_approval(session=session, auth=auth, contract=contract, now=now)
 
     async def _pre_dispatch_and_commit_executing(
         self,
@@ -1689,226 +1486,15 @@ class ActionGovernorService:
 
     async def grant_approval(self, auth: AuthContext, approval_id: str, reason: str) -> ApprovalResponse:
         """Grant a pending human approval. Agents cannot self-grant approvals."""
-        # Non-negotiable security invariant: Caller must be human Super Admin or Operator
-        if auth.role not in (Role.SUPER_ADMIN, Role.OPERATOR):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Agents cannot self-grant approvals. L4 approvals require human administrator/operator credentials."
-                ),
-            )
-
-        async with db_session.get_tenant_session(auth.tenant_id) as session:
-            stmt = (
-                select(ActionApproval)
-                .where(
-                    ActionApproval.tenant_id == auth.tenant_id,
-                    ActionApproval.id == approval_id,
-                )
-                .with_for_update()
-            )
-            res = await session.execute(stmt)
-            approval = res.scalar_one_or_none()
-            if not approval:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval request not found")
-
-            # Check self-approval: Requester cannot grant their own approval
-            if approval.requested_by == auth.identity_id:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail=(
-                        "Agent/Requester cannot approve their own action proposal. Distinct human sign-off required."
-                    ),
-                )
-
-            if approval.status != ApprovalStatus.PENDING.value:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Approval request is already in state '{approval.status}'",
-                )
-
-            now = datetime.now(UTC)
-            if approval.expires_at < now:
-                approval.status = ApprovalStatus.EXPIRED.value
-                await session.flush()
-                raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Approval request has expired")
-
-            # Transition action contract to AUTHORIZED with row lock
-            act_stmt = (
-                select(ActionContract)
-                .where(
-                    ActionContract.tenant_id == auth.tenant_id,
-                    ActionContract.id == approval.action_id,
-                )
-                .with_for_update()
-            )
-            act_res = await session.execute(act_stmt)
-            contract = act_res.scalar_one_or_none()
-            if not contract:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail="Associated action contract not found",
-                )
-
-            # Verify contract binding hash
-            cost_val = (
-                float(contract.blast_radius.get("estimated_dollar_cost", 0.0))
-                if isinstance(contract.blast_radius, dict)
-                else 0.0
-            )
-            recomputed_hash = compute_contract_binding_hash(
-                tenant_id=contract.tenant_id,
-                transaction_id=contract.transaction_id,
-                action_id=contract.id,
-                tool_name=contract.tool_name,
-                action_type=contract.action_type,
-                target_resource=contract.target_resource,
-                parameters_hash=compute_parameters_hash(contract.normalized_parameters),
-                required_capability=contract.required_capability,
-                estimated_dollar_cost=cost_val,
-                taint_flags=contract.taint_flags,
-            )
-            if recomputed_hash != approval.parameters_hash:
-                raise HTTPException(
-                    status_code=status.HTTP_403_FORBIDDEN,
-                    detail="Action contract tampering detected prior to approval: cryptographic binding hash mismatch.",
-                )
-
-            approval.status = ApprovalStatus.GRANTED.value
-            approval.decided_by = auth.identity_id
-            approval.decision_reason = reason
-            approval.decided_at = now
-
-            contract.state = ActionState.AUTHORIZED.value
-            contract.authorized_at = now
-
-            # Audit record
-            await _record_action_audit_event(
-                session=session,
-                tenant_id=auth.tenant_id,
-                event_type="APPROVAL_GRANTED",
-                actor_identity_id=auth.identity_id,
-                transaction_id=approval.transaction_id,
-                decision="GRANTED",
-                reason=reason,
-                payload={"approval_id": approval_id, "action_id": approval.action_id},
-            )
-            await session.flush()
-
-            return ApprovalResponse(
-                id=approval.id,
-                tenant_id=approval.tenant_id,
-                action_id=approval.action_id,
-                transaction_id=approval.transaction_id,
-                required_role=approval.required_role,
-                status=ApprovalStatus.GRANTED,
-                parameters_hash=approval.parameters_hash,
-                requested_by=approval.requested_by,
-                decided_by=approval.decided_by,
-                decision_reason=approval.decision_reason,
-                expires_at=approval.expires_at.isoformat(),
-                created_at=approval.created_at.isoformat(),
-            )
+        return await grant_approval(auth=auth, approval_id=approval_id, reason=reason)
 
     async def deny_approval(self, auth: AuthContext, approval_id: str, reason: str) -> ApprovalResponse:
         """Deny a pending human approval."""
-        if auth.role not in (Role.SUPER_ADMIN, Role.OPERATOR):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="L4 approvals require human administrator/operator credentials.",
-            )
-
-        async with db_session.get_tenant_session(auth.tenant_id) as session:
-            stmt = (
-                select(ActionApproval)
-                .where(
-                    ActionApproval.tenant_id == auth.tenant_id,
-                    ActionApproval.id == approval_id,
-                )
-                .with_for_update()
-            )
-            res = await session.execute(stmt)
-            approval = res.scalar_one_or_none()
-            if not approval:
-                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Approval request not found")
-
-            now = datetime.now(UTC)
-            approval.status = ApprovalStatus.DENIED.value
-            approval.decided_by = auth.identity_id
-            approval.decision_reason = reason
-            approval.decided_at = now
-
-            # Transition action contract to BLOCKED with row lock
-            act_stmt = (
-                select(ActionContract)
-                .where(
-                    ActionContract.tenant_id == auth.tenant_id,
-                    ActionContract.id == approval.action_id,
-                )
-                .with_for_update()
-            )
-            act_res = await session.execute(act_stmt)
-            contract = act_res.scalar_one_or_none()
-            if contract:
-                contract.state = ActionState.BLOCKED.value
-
-            # Audit record
-            await _record_action_audit_event(
-                session=session,
-                tenant_id=auth.tenant_id,
-                event_type="APPROVAL_DENIED",
-                actor_identity_id=auth.identity_id,
-                transaction_id=approval.transaction_id,
-                decision="DENIED",
-                reason=reason,
-                payload={"approval_id": approval_id, "action_id": approval.action_id},
-            )
-            await session.flush()
-
-            return ApprovalResponse(
-                id=approval.id,
-                tenant_id=approval.tenant_id,
-                action_id=approval.action_id,
-                transaction_id=approval.transaction_id,
-                required_role=approval.required_role,
-                status=ApprovalStatus.DENIED,
-                parameters_hash=approval.parameters_hash,
-                requested_by=approval.requested_by,
-                decided_by=approval.decided_by,
-                decision_reason=approval.decision_reason,
-                expires_at=approval.expires_at.isoformat(),
-                created_at=approval.created_at.isoformat(),
-            )
+        return await deny_approval(auth=auth, approval_id=approval_id, reason=reason)
 
     async def list_pending_approvals(self, auth: AuthContext) -> list[ApprovalResponse]:
         """List active pending approvals for the caller's tenant."""
-        async with db_session.get_tenant_session(auth.tenant_id) as session:
-            now = datetime.now(UTC)
-            stmt = select(ActionApproval).where(
-                ActionApproval.tenant_id == auth.tenant_id,
-                ActionApproval.status == ApprovalStatus.PENDING.value,
-                ActionApproval.expires_at > now,
-            )
-            res = await session.execute(stmt)
-            approvals = res.scalars().all()
-
-            return [
-                ApprovalResponse(
-                    id=a.id,
-                    tenant_id=a.tenant_id,
-                    action_id=a.action_id,
-                    transaction_id=a.transaction_id,
-                    required_role=a.required_role,
-                    status=ApprovalStatus(a.status),
-                    parameters_hash=a.parameters_hash,
-                    requested_by=a.requested_by,
-                    decided_by=a.decided_by,
-                    decision_reason=a.decision_reason,
-                    expires_at=a.expires_at.isoformat(),
-                    created_at=a.created_at.isoformat(),
-                )
-                for a in approvals
-            ]
+        return await list_pending_approvals(auth=auth)
 
     # -------------------------------------------------------------------------
     # Tool Proxy Execution
@@ -2174,47 +1760,7 @@ class ActionGovernorService:
         older_than_seconds: int = 60,
     ) -> list[StrandedActionInfo]:
         """Find actions stranded in EXECUTING or EXECUTION_UNCERTAIN state after worker crash/restart."""
-        if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Caller is not authorized to list stranded actions "
-                    "(requires SUPER_ADMIN, TENANT_ADMIN, or OPERATOR)"
-                ),
-            )
-        cutoff = datetime.now(UTC) - timedelta(seconds=older_than_seconds)
-        async with db_session.get_tenant_session(auth.tenant_id) as session:
-            stmt = (
-                select(ActionContract)
-                .where(
-                    ActionContract.tenant_id == auth.tenant_id,
-                    (
-                        (ActionContract.state == ActionState.EXECUTION_UNCERTAIN.value)
-                        | (
-                            (ActionContract.state == ActionState.EXECUTING.value)
-                            & (ActionContract.executed_at.is_(None) | (ActionContract.executed_at <= cutoff))
-                        )
-                    ),
-                )
-                .order_by(ActionContract.created_at.desc())
-            )
-            res = await session.execute(stmt)
-            contracts = res.scalars().all()
-            return [
-                StrandedActionInfo(
-                    action_id=c.id,
-                    transaction_id=c.transaction_id,
-                    agent_id=c.agent_id,
-                    tool_name=c.tool_name,
-                    target_resource=c.target_resource,
-                    state=ActionState(c.state),
-                    executed_at=c.executed_at.isoformat() if c.executed_at else None,
-                    error_message=c.error_message,
-                    requires_outcome_assurance=c.requires_outcome_assurance,
-                    fencing_token=c.fencing_token,
-                )
-                for c in contracts
-            ]
+        return await list_stranded_actions(auth=auth, older_than_seconds=older_than_seconds)
 
     async def reconcile_stranded_action(
         self,
@@ -2222,146 +1768,7 @@ class ActionGovernorService:
         req: ActionReconciliationRequest,
     ) -> ActionExecutionResult:
         """Idempotently reconcile a stranded EXECUTING or EXECUTION_UNCERTAIN action with an immutable audit trail."""
-        if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.OPERATOR):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=(
-                    "Caller is not authorized to reconcile actions (requires SUPER_ADMIN, TENANT_ADMIN, or OPERATOR)"
-                ),
-            )
-
-        now = datetime.now(UTC)
-        async with db_session.get_tenant_session(auth.tenant_id) as session:
-            stmt = (
-                select(ActionContract)
-                .where(
-                    ActionContract.tenant_id == auth.tenant_id,
-                    ActionContract.id == req.action_id,
-                )
-                .with_for_update()
-            )
-            res = await session.execute(stmt)
-            contract = res.scalar_one_or_none()
-            if not contract:
-                raise HTTPException(
-                    status_code=status.HTTP_404_NOT_FOUND,
-                    detail=f"Action contract '{req.action_id}' not found in tenant '{auth.tenant_id}'",
-                )
-
-            # Idempotency check: if contract is already in a terminal state
-            if contract.state in (ActionState.COMPLETED.value, ActionState.FAILED.value, ActionState.EXECUTED.value):
-                # If requested resolution matches current terminal state, return idempotently
-                if (
-                    req.resolution == ActionReconciliationResolution.MARK_FAILED
-                    and contract.state == ActionState.FAILED.value
-                ) or (
-                    req.resolution == ActionReconciliationResolution.MARK_COMPLETED
-                    and contract.state in (ActionState.COMPLETED.value, ActionState.EXECUTED.value)
-                ):
-                    return ActionExecutionResult(
-                        action_id=contract.id,
-                        transaction_id=contract.transaction_id,
-                        state=ActionState(contract.state),
-                        observed_output=contract.observed_result or {},
-                        taints={Taint.UNTRUSTED},
-                        postconditions_satisfied=(contract.state == ActionState.COMPLETED.value),
-                        postcondition_evidence=[],
-                        error_message=contract.error_message,
-                        outcome_status=OutcomeStatus(contract.outcome_status) if contract.outcome_status else None,
-                        outcome_id=None,
-                        requires_outcome_assurance=contract.requires_outcome_assurance,
-                    )
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail=(
-                        f"Action contract '{req.action_id}' is already in terminal state '{contract.state}' "
-                        f"and cannot be re-reconciled to '{req.resolution}'"
-                    ),
-                )
-
-            if contract.state not in (ActionState.EXECUTING.value, ActionState.EXECUTION_UNCERTAIN.value):
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=(
-                        f"Action contract '{req.action_id}' is in state '{contract.state}'. "
-                        "Only EXECUTING or EXECUTION_UNCERTAIN actions can be reconciled."
-                    ),
-                )
-
-            prev_state = contract.state
-            outcome_id: str | None = None
-
-            if req.resolution == ActionReconciliationResolution.MARK_FAILED:
-                contract.state = ActionState.FAILED.value
-                contract.error_message = f"Reconciled as FAILED by operator: {req.notes}"
-                contract.outcome_status = OutcomeStatus.VERIFIED_FAILURE.value
-                contract.completed_at = now
-                final_state = ActionState.FAILED
-                postconditions_ok = False
-
-            elif req.resolution == ActionReconciliationResolution.MARK_UNCERTAIN:
-                contract.state = ActionState.EXECUTION_UNCERTAIN.value
-                contract.error_message = f"Confirmed EXECUTION_UNCERTAIN by operator: {req.notes}"
-                contract.completed_at = None
-                final_state = ActionState.EXECUTION_UNCERTAIN
-                postconditions_ok = False
-
-            elif req.resolution == ActionReconciliationResolution.MARK_COMPLETED:
-                if contract.requires_outcome_assurance:
-                    final_state = ActionState.EXECUTED
-                    contract.state = ActionState.EXECUTED.value
-                    contract.outcome_status = OutcomeStatus.PENDING_VERIFICATION.value
-                    postconditions_ok = False
-                else:
-                    final_state = ActionState.COMPLETED
-                    contract.state = ActionState.COMPLETED.value
-                    contract.outcome_status = None
-                    postconditions_ok = True
-
-                contract.observed_result = req.observed_evidence or {
-                    "reconciled_by": auth.identity_id,
-                    "notes": req.notes,
-                }
-                contract.completed_at = now
-            else:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Unsupported reconciliation resolution: '{req.resolution}'",
-                )
-
-            # Record immutable audit event
-            await _record_action_audit_event(
-                session=session,
-                tenant_id=auth.tenant_id,
-                event_type="ACTION_RECONCILED",
-                actor_identity_id=auth.identity_id,
-                transaction_id=contract.transaction_id,
-                decision=contract.state,
-                reason=f"Action reconciled by operator: {req.notes}",
-                payload={
-                    "action_id": contract.id,
-                    "previous_state": prev_state,
-                    "new_state": contract.state,
-                    "resolution": req.resolution.value,
-                    "notes": req.notes,
-                    "has_evidence": bool(req.observed_evidence),
-                },
-            )
-            await session.flush()
-
-            return ActionExecutionResult(
-                action_id=contract.id,
-                transaction_id=contract.transaction_id,
-                state=final_state,
-                observed_output=contract.observed_result or {},
-                taints={Taint.UNTRUSTED},
-                postconditions_satisfied=postconditions_ok,
-                postcondition_evidence=[],
-                error_message=contract.error_message,
-                outcome_status=OutcomeStatus(contract.outcome_status) if contract.outcome_status else None,
-                outcome_id=outcome_id,
-                requires_outcome_assurance=contract.requires_outcome_assurance,
-            )
+        return await reconcile_stranded_action(auth=auth, req=req)
 
     # -------------------------------------------------------------------------
     # Helper Evaluators
@@ -2369,43 +1776,8 @@ class ActionGovernorService:
 
     def _evaluate_precondition(self, precond: PreconditionRule, params: dict[str, Any], target_resource: str) -> bool:
         """Deterministic evaluation of pre-execution state checks."""
-        check = precond.check_type.upper()
-        if check == "RESOURCE_EXISTS":
-            return bool(target_resource and len(target_resource) > 0)
-        elif check == "PARAM_EXISTS":
-            return precond.target in params and params[precond.target] is not None
-        elif check == "NUMERIC_LTE":
-            val = params.get(precond.target)
-            if isinstance(val, (int, float)) and isinstance(precond.expected_value, (int, float)):
-                return val <= precond.expected_value
-            return False
-        elif check == "ALLOWLIST":
-            val = params.get(precond.target)
-            if isinstance(precond.expected_value, list):
-                return val in precond.expected_value
-            return False
-        elif check == "EQUALS":
-            return bool(params.get(precond.target) == precond.expected_value)
-        return True
+        return evaluate_precondition(precond=precond, params=params, target_resource=target_resource)
 
     def _evaluate_postcondition(self, post: PostconditionRule, observed: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
         """Evaluate postconditions against observed tool outputs."""
-        assertion = post.assertion.upper()
-        evidence: dict[str, Any] = {
-            "assertion": assertion,
-            "target": post.target,
-            "expected_value": post.expected_value,
-            "observed_value": observed.get(post.target),
-        }
-
-        if assertion == "KEY_EXISTS":
-            satisfied = post.target in observed
-        elif assertion == "STATUS_EQUALS":
-            satisfied = observed.get("status") == post.expected_value
-        elif assertion == "EQUALS":
-            satisfied = observed.get(post.target) == post.expected_value
-        else:
-            satisfied = post.target in observed
-
-        evidence["satisfied"] = satisfied
-        return satisfied, evidence
+        return evaluate_postcondition(post=post, observed=observed)

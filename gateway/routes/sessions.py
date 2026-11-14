@@ -9,7 +9,7 @@ Implements Technical Architecture §8.2, PRD FR-AUD-01, and ADR 0005:
 
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from db.models import ClaimRecord, VerificationSession
 from db.mongo import default_mongo_trace_service
@@ -20,6 +20,44 @@ from shared.schemas.auth import AuthContext, Permission, Role
 
 router = APIRouter(prefix="/v1/sessions", tags=["Sessions"])
 logger = get_logger("sessions_routes")
+
+
+@router.get("")
+@router.get("/")
+async def list_sessions_endpoint(
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+    risk_tier: str | None = Query(None, description="Filter by risk tier: LOW, MEDIUM, HIGH, CRITICAL"),
+    min_hrs: float | None = Query(None, description="Filter by minimum HRS score"),
+    max_hrs: float | None = Query(None, description="Filter by maximum HRS score"),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=100, description="Page size"),
+) -> dict[str, Any]:
+    """Retrieve paginated verification sessions with full claim breakdowns from PostgreSQL."""
+    if (
+        auth.role != Role.SUPER_ADMIN
+        and not auth.has_permission(Permission.VERIFY_READ)
+        and not auth.has_permission(Permission.AUDIT_READ)
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Forbidden: Insufficient permissions to view session records",
+        )
+
+    tenant_id = auth.tenant_id
+    total, items = await default_persistence_service.list_sessions(
+        tenant_id=tenant_id,
+        risk_tier=risk_tier,
+        min_hrs=min_hrs,
+        max_hrs=max_hrs,
+        page=page,
+        page_size=page_size,
+    )
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "items": items,
+    }
 
 
 @router.get("/{session_id}")

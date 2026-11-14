@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { X, Shield, Lock, ArrowRight, UserCheck, Key } from 'lucide-react';
+import { X, Shield, Lock, ArrowRight, UserCheck, Key, Loader2 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { api } from '../../api/client';
 
 export function AuthModal({ isOpen, onClose, initialMode = 'login', onSuccess }) {
   const { login, loginAsDemo } = useAuth();
@@ -8,29 +9,58 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login', onSuccess })
   const [tenantName, setTenantName] = useState('');
   const [email, setEmail] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
 
   if (!isOpen) return null;
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    setError(null);
     if (!email.trim()) {
       setError('Email address is required');
       return;
     }
 
-    login({
-      identity_id: `usr_${Date.now()}`,
-      name: email.split('@')[0],
-      email: email.trim(),
-      role: 'OPERATOR',
-      tenant_id: tenantName.trim() ? `tenant_${tenantName.toLowerCase().replace(/\s+/g, '_')}` : 'tenant_apex_assurance_corp',
-      tenant_name: tenantName.trim() || 'Apex Assurance Corp',
-      apiKeyId: apiKey.trim() || 'key_live_demo_01',
-    });
-
-    if (onSuccess) onSuccess();
-    onClose();
+    if (mode === 'register') {
+      try {
+        setIsLoading(true);
+        const res = await api.registerTenant({
+          name: tenantName.trim() || 'Apex Industrial Corp',
+          email: email.trim(),
+          tier: 'enterprise',
+        });
+        login({
+          identity_id: res.admin_identity_id,
+          name: res.name || email.split('@')[0],
+          email: email.trim(),
+          role: 'TENANT_ADMIN',
+          tenant_id: res.tenant_id,
+          tenant_name: res.name,
+          apiKey: res.api_key,
+          token: res.access_token,
+          access_token: res.access_token,
+        });
+        if (onSuccess) onSuccess();
+        onClose();
+      } catch (err) {
+        setError(err.message || 'Tenant self-registration failed');
+      } finally {
+        setIsLoading(false);
+      }
+    } else {
+      login({
+        identity_id: `usr_${Date.now()}`,
+        name: email.split('@')[0],
+        email: email.trim(),
+        role: 'OPERATOR',
+        tenant_id: tenantName.trim() ? `tenant_${tenantName.toLowerCase().replace(/\s+/g, '_')}` : 'tenant_apex_assurance_corp',
+        tenant_name: tenantName.trim() || 'Apex Assurance Corp',
+        apiKey: apiKey.trim() || undefined,
+      });
+      if (onSuccess) onSuccess();
+      onClose();
+    }
   };
 
   const handleDemoSelect = (role) => {
@@ -156,10 +186,20 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login', onSuccess })
 
           <button
             type="submit"
-            className="w-full py-2.5 rounded-lg bg-slate-900 text-white font-semibold hover:bg-slate-800 transition flex items-center justify-center gap-2 mt-2"
+            disabled={isLoading}
+            className="w-full py-2.5 rounded-lg bg-slate-900 text-white font-semibold hover:bg-slate-800 transition flex items-center justify-center gap-2 mt-2 disabled:opacity-50"
           >
-            <span>{mode === 'login' ? 'Access Console' : 'Provision Tenant'}</span>
-            <ArrowRight className="w-4 h-4" />
+            {isLoading ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin text-emerald-400" />
+                <span>Provisioning Tenant...</span>
+              </span>
+            ) : (
+              <>
+                <span>{mode === 'login' ? 'Access Console' : 'Provision Tenant'}</span>
+                <ArrowRight className="w-4 h-4" />
+              </>
+            )}
           </button>
         </form>
 

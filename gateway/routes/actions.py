@@ -166,6 +166,7 @@ async def reconcile_action_endpoint(
 
 
 @router.get("/approvals/pending", response_model=list[ApprovalResponse])
+@router.get("/actions/approvals", response_model=list[ApprovalResponse])
 async def list_pending_approvals_endpoint(
     auth: Annotated[AuthContext, Depends(get_current_auth)],
 ) -> list[ApprovalResponse]:
@@ -174,6 +175,7 @@ async def list_pending_approvals_endpoint(
 
 
 @router.post("/approvals/{approval_id}/grant", response_model=ApprovalResponse)
+@router.post("/actions/approvals/{approval_id}/grant", response_model=ApprovalResponse)
 async def grant_approval_endpoint(
     approval_id: str,
     req: ApprovalDecisionRequest,
@@ -184,6 +186,7 @@ async def grant_approval_endpoint(
 
 
 @router.post("/approvals/{approval_id}/deny", response_model=ApprovalResponse)
+@router.post("/actions/approvals/{approval_id}/deny", response_model=ApprovalResponse)
 async def deny_approval_endpoint(
     approval_id: str,
     req: ApprovalDecisionRequest,

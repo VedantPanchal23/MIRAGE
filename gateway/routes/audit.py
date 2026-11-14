@@ -495,6 +495,7 @@ class CreateAnchorRequest(BaseModel):
 
 
 @router.get("/events", summary="Query tenant audit events with pagination and filters")
+@router.get("/trail", summary="Query tenant audit events trail alias")
 async def get_audit_events(
     start_time: datetime | None = None,
     end_time: datetime | None = None,

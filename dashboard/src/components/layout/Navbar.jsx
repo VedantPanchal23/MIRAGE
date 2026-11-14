@@ -46,14 +46,14 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200/80">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)] transition-all">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
-        {/* Left: Custom High-Craft Logo Only (Removed v3.0 pill and Gateway pill per request) */}
+        {/* Left: Custom High-Craft Logo Lockup */}
         <div 
           onClick={() => setActiveView('landing')} 
           className="cursor-pointer group flex items-center select-none"
-          title="MIRAGE Platform Overview"
+          title="MIRAGE — Execution Assurance Platform"
         >
           <MirageLogo size="md" showText={true} />
         </div>

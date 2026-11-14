@@ -18,11 +18,69 @@ import {
   Code2, 
   RefreshCw,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  ShieldCheck,
+  Zap,
+  Fingerprint,
+  Radio,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { SEO } from '../components/common/SEO';
 import { MirageLogo } from '../components/common/MirageLogo';
+
+const HERO_PIPELINE_GATES = [
+  {
+    num: '01',
+    name: 'Input Assurance',
+    badge: 'Identity & Ingestion',
+    latency: '3.2ms',
+    status: 'PASSED',
+    color: 'emerald',
+    icon: Fingerprint,
+    proof: 'Tenant RLS session set · 0 injection vectors detected · Velocity within SLA bounds'
+  },
+  {
+    num: '02',
+    name: 'Context Assurance',
+    badge: 'RAG Provenance',
+    latency: '11.4ms',
+    status: 'GROUNDED',
+    color: 'blue',
+    icon: Database,
+    proof: 'Qdrant vector similarity 98.4% · Evidence age < 24h · Cross-tenant read fence verified'
+  },
+  {
+    num: '03',
+    name: 'Action Assurance',
+    badge: 'Monotonic Leases',
+    latency: '4.8ms',
+    status: 'LEASED',
+    color: 'amber',
+    icon: Key,
+    proof: 'CBAC parameters bound via SHA-256 · Redis lease acquired #4fe10029 · Blast radius ≤ $500'
+  },
+  {
+    num: '04',
+    name: 'Output Assurance',
+    badge: 'HRS & Factual Bounds',
+    latency: '21.0ms',
+    status: 'VERIFIED',
+    color: 'purple',
+    icon: Activity,
+    proof: 'HRS: 0.04 (Hallucination risk zero) · NLI entailment: 0.99 · Strict JSON schema validated'
+  },
+  {
+    num: '05',
+    name: 'Outcome Assurance',
+    badge: 'Reality Verification',
+    latency: '14.5ms',
+    status: 'CERTIFIED',
+    color: 'emerald',
+    icon: ShieldCheck,
+    proof: 'OBS_DIRECT SQL probe confirmed -$450.00 delta in ledger · Merkle hash chained to root'
+  }
+];
 
 const FIVE_GATES_DETAILS = [
   {
@@ -163,6 +221,7 @@ const SIMULATOR_SCENARIOS = [
 export function LandingPage({ onOpenAuth, onLaunchDemo }) {
   const { loginAsDemo, isAuthenticated } = useAuth();
   const [activeGateIndex, setActiveGateIndex] = useState(0);
+  const [heroActiveGate, setHeroActiveGate] = useState(4); // default Gate 5 (Outcome Assurance)
   const [simScenario, setSimScenario] = useState(SIMULATOR_SCENARIOS[0]);
   const [simRunning, setSimRunning] = useState(false);
   const [simResult, setSimResult] = useState(null);
@@ -178,115 +237,285 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
   };
 
   return (
-    <div className="bg-white text-slate-900 selection:bg-slate-900 selection:text-white">
+    <div className="bg-[#FAFBFD] text-slate-900 selection:bg-slate-950 selection:text-white relative">
       <SEO 
         title="MIRAGE — The AI Execution Assurance Platform"
         description="Control AI before it acts. Verify AI after it acts. MIRAGE governs identity, capabilities, distributed leases, and Gate 5 physical reality verification for autonomous agents."
       />
 
       {/* HERO SECTION */}
-      <section id="hero" className="relative pt-16 pb-20 sm:pt-24 sm:pb-28 overflow-hidden border-b border-slate-200/80">
-        <div className="absolute inset-0 bg-grid-pattern opacity-50 mask-radial-fade pointer-events-none" />
+      <section id="hero" className="relative pt-12 pb-20 sm:pt-20 sm:pb-28 overflow-hidden border-b border-slate-200/80">
+        {/* Atmospheric Luminous Aura (Soft Emerald & Azure Bloom) */}
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[650px] overflow-hidden pointer-events-none -z-10">
+          <div className="absolute -top-[280px] left-1/2 -translate-x-1/2 w-[900px] h-[550px] bg-gradient-to-b from-emerald-500/10 via-teal-500/5 to-transparent rounded-full blur-3xl opacity-80" />
+          <div className="absolute -top-[200px] left-1/4 w-[500px] h-[400px] bg-gradient-to-br from-cyan-500/8 to-transparent rounded-full blur-3xl opacity-60" />
+          <div className="absolute -top-[200px] right-1/4 w-[500px] h-[400px] bg-gradient-to-bl from-slate-500/5 to-transparent rounded-full blur-3xl opacity-50" />
+        </div>
+
+        {/* Delicate Blueprint Micro-Grid */}
+        <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:24px_24px] opacity-40 mask-radial-fade pointer-events-none -z-10" />
 
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
           <div className="text-center max-w-4xl mx-auto">
-            <span className="sr-only">Charter Specification 3.0 — Epistemic Reality Verification</span>
+            
+            {/* Dynamic Authority Eyebrow Badge (Contains Charter Specification 3.0 for test compatibility) */}
+            <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white/90 border border-slate-200/90 shadow-2xs backdrop-blur-md mb-8 hover:border-slate-300 transition-all cursor-default">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span className="text-[11px] font-semibold tracking-wider uppercase text-slate-800">
+                Autonomous AI Governance
+              </span>
+              <span className="text-slate-300">|</span>
+              <span className="text-[11px] font-mono text-emerald-700 font-bold">
+                Charter Specification 3.0 Active
+              </span>
+            </div>
 
-            {/* Core Product Promise */}
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-extrabold tracking-tight text-slate-900 font-display leading-[1.15]">
+            {/* Monumental Headline */}
+            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-[-0.035em] text-slate-950 font-display leading-[1.08]">
               Control AI before it acts.<br />
-              <span className="text-slate-800">Verify AI after it acts.</span>
+              <span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 bg-clip-text text-transparent">
+                Verify AI after it acts.
+              </span>
             </h1>
 
             {/* Subtitle */}
-            <p className="text-base sm:text-lg text-slate-600 mt-6 max-w-2xl mx-auto leading-relaxed">
-              The enterprise AI execution assurance platform that sits between autonomous agents and critical infrastructure. 
-              Enforcing capability tokens, monotonic concurrency leases, and Gate 5 reality verification.
+            <p className="text-base sm:text-xl text-slate-600 mt-6 max-w-2xl mx-auto leading-relaxed font-normal">
+              The enterprise execution assurance platform sitting between autonomous agents and critical infrastructure. 
+              Enforcing capability tokens, monotonic concurrency leases, and Gate 5 epistemic reality verification.
             </p>
 
             {/* Action Buttons */}
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3 sm:gap-4">
+            <div className="mt-8 flex flex-wrap items-center justify-center gap-3.5 sm:gap-4">
               <button
                 onClick={() => onLaunchDemo('OPERATOR')}
-                className="px-6 py-3.5 rounded-xl bg-slate-900 text-white font-semibold text-sm hover:bg-slate-800 transition flex items-center gap-2 shadow-sm"
+                className="px-7 py-3.5 rounded-xl bg-slate-950 text-white font-semibold text-sm hover:bg-slate-900 transition-all flex items-center gap-2.5 shadow-md hover:shadow-lg hover:-translate-y-0.5 border border-slate-800 group"
               >
                 <span>Launch Mission Control</span>
-                <ChevronRight className="w-4 h-4 text-emerald-400" />
+                <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
               </button>
 
               <button
                 onClick={() => onOpenAuth('register')}
-                className="px-5 py-3.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 font-semibold text-sm transition shadow-xs"
+                className="px-6 py-3.5 rounded-xl border border-slate-300/90 bg-white/90 hover:bg-white text-slate-800 font-semibold text-sm transition-all shadow-2xs hover:border-slate-400 hover:-translate-y-0.5"
               >
                 Provision Enterprise Tenant
               </button>
             </div>
 
-            {/* Instant Demonstration Access using Vedant and Dax */}
-            <div className="mt-10 p-4 rounded-2xl bg-slate-50 border border-slate-200/80 max-w-2xl mx-auto text-left shadow-subtle">
-              <div className="flex items-center justify-between mb-3">
-                <div className="text-[11px] font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5">
-                  <UserCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  Instant Demonstration Access
+            {/* HERO INTERACTIVE FIVE GATES PIPELINE SHOWCASE */}
+            <div className="mt-12 max-w-4xl mx-auto bg-slate-950 text-slate-100 rounded-2xl border border-slate-800/90 shadow-2xl p-5 sm:p-7 text-left transition-all">
+              {/* Pipeline Header */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800/80 mb-5">
+                <div className="flex items-center gap-2.5">
+                  <span className="relative flex h-2.5 w-2.5">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
+                  </span>
+                  <span className="text-xs font-bold tracking-wider uppercase text-slate-300 font-display">
+                    Live Execution Pipeline
+                  </span>
+                  <span className="text-slate-600 font-mono">•</span>
+                  <span className="text-[11px] font-mono text-emerald-400 font-medium">
+                    tx_98f12a4b8c91
+                  </span>
+                  <span className="text-slate-600 font-mono">•</span>
+                  <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
+                    agent_treasury_disburser
+                  </span>
                 </div>
-                <span className="text-[10px] text-slate-400 font-mono">1-Click Live Entry</span>
+                <div className="flex items-center gap-2">
+                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold flex items-center gap-1.5">
+                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                    CERTIFIED SUCCESS
+                  </span>
+                </div>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+
+              {/* Pipeline Stepper Nodes */}
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mb-5">
+                {HERO_PIPELINE_GATES.map((gate, idx) => {
+                  const isSelected = heroActiveGate === idx;
+                  const Icon = gate.icon;
+                  return (
+                    <button
+                      key={gate.num}
+                      type="button"
+                      onClick={() => setHeroActiveGate(idx)}
+                      className={`p-3 rounded-xl border text-left transition-all relative group cursor-pointer ${
+                        isSelected 
+                          ? 'bg-slate-900 border-emerald-500/80 shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/40' 
+                          : 'bg-slate-900/60 border-slate-800/80 hover:bg-slate-900 hover:border-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1.5">
+                        <span className="text-[10px] font-mono text-slate-400 font-semibold">
+                          GATE {gate.num}
+                        </span>
+                        <span className="text-[10px] font-mono text-emerald-400 font-medium">
+                          {gate.latency}
+                        </span>
+                      </div>
+                      <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
+                        <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-emerald-400' : 'text-slate-400'}`} />
+                        <span className="truncate">{gate.name.replace(' Assurance', '')}</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400 truncate mt-0.5">
+                        {gate.status}
+                      </div>
+
+                      {/* Active Notch Indicator */}
+                      {isSelected && (
+                        <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-1 bg-emerald-400 rounded-full shadow-sm" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Active Gate Live Invariant Drawer */}
+              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-start sm:items-center gap-2.5">
+                  <div className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-[10px] text-emerald-300 font-bold shrink-0 mt-0.5 sm:mt-0">
+                    GATE {HERO_PIPELINE_GATES[heroActiveGate].num} PROOF
+                  </div>
+                  <div className="text-slate-300 text-[11px] leading-relaxed">
+                    {HERO_PIPELINE_GATES[heroActiveGate].proof}
+                  </div>
+                </div>
+                <div className="text-[10px] text-slate-500 shrink-0 font-mono flex items-center gap-1.5 self-end sm:self-auto">
+                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
+                  <span>Epistemic Ground Truth</span>
+                </div>
+              </div>
+            </div>
+
+            {/* INSTANT DEMONSTRATION ACCESS (Executive Pass Style) */}
+            <div className="mt-8 p-5 rounded-2xl bg-white border border-slate-200/90 max-w-4xl mx-auto text-left shadow-[0_4px_20px_-4px_rgba(0,0,0,0.04)]">
+              <div className="flex items-center justify-between mb-3.5 pb-2.5 border-b border-slate-100">
+                <div className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-emerald-600" />
+                  <span>Authenticated Operator Passes</span>
+                </div>
+                <span className="text-[11px] text-slate-400 font-mono">1-Click Live Entry · Zero Friction</span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Vedant - Operator Pass */}
                 <button
                   type="button"
                   onClick={() => onLaunchDemo('OPERATOR')}
-                  className="p-3 rounded-xl bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 shadow-subtle hover:bg-slate-50 transition text-left group"
+                  className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/90 hover:border-emerald-500/60 hover:bg-white text-xs font-semibold text-slate-700 shadow-2xs hover:shadow-md transition-all text-left group hover:-translate-y-0.5"
                 >
-                  <div className="text-slate-900 font-bold flex items-center justify-between">
-                    <span>Vedant</span>
-                    <span className="text-[10px] font-normal text-slate-500 uppercase tracking-wider">Operator</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-100/80 text-emerald-800 border border-emerald-200 font-bold">
+                      LEVEL 3 AUTONOMY
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-transform" />
                   </div>
-                  <div className="text-[11px] text-slate-500 font-normal mt-0.5">Level 3 Autonomy</div>
+                  <div className="flex items-center gap-2.5 mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                      V
+                    </div>
+                    <div>
+                      <div className="text-slate-900 font-extrabold text-sm leading-tight">Vedant</div>
+                      <div className="text-[10px] text-slate-500 font-medium">Autonomous Operations</div>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-normal">Level 3 Autonomy</div>
+                  <div className="text-[10px] text-slate-400 mt-1 font-mono">Approvals · Tool Fencing</div>
                 </button>
 
+                {/* Vedant - Super Admin Pass */}
                 <button
                   type="button"
                   onClick={() => onLaunchDemo('SUPER_ADMIN')}
-                  className="p-3 rounded-xl bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 shadow-subtle hover:bg-slate-50 transition text-left group"
+                  className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/90 hover:border-indigo-500/60 hover:bg-white text-xs font-semibold text-slate-700 shadow-2xs hover:shadow-md transition-all text-left group hover:-translate-y-0.5"
                 >
-                  <div className="text-slate-900 font-bold flex items-center justify-between">
-                    <span>Vedant</span>
-                    <span className="text-[10px] font-normal text-slate-500 uppercase tracking-wider">Super Admin</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-100/80 text-indigo-800 border border-indigo-200 font-bold">
+                      CONTROL PLANE
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-transform" />
                   </div>
-                  <div className="text-[11px] text-slate-500 font-normal mt-0.5">Control Plane &bull; Admin</div>
+                  <div className="flex items-center gap-2.5 mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-indigo-950 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                      V
+                    </div>
+                    <div>
+                      <div className="text-slate-900 font-extrabold text-sm leading-tight">Vedant</div>
+                      <div className="text-[10px] text-slate-500 font-medium">Platform Architect</div>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-normal">Control Plane &bull; Admin</div>
+                  <div className="text-[10px] text-slate-400 mt-1 font-mono">Postgres RLS · Tenant Root</div>
                 </button>
 
+                {/* Dax - Auditor Pass */}
                 <button
                   type="button"
                   onClick={() => onLaunchDemo('AUDITOR')}
-                  className="p-3 rounded-xl bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 shadow-subtle hover:bg-slate-50 transition text-left group"
+                  className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/90 hover:border-cyan-500/60 hover:bg-white text-xs font-semibold text-slate-700 shadow-2xs hover:shadow-md transition-all text-left group hover:-translate-y-0.5"
                 >
-                  <div className="text-slate-900 font-bold flex items-center justify-between">
-                    <span>Dax</span>
-                    <span className="text-[10px] font-normal text-slate-500 uppercase tracking-wider">Auditor</span>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-100/80 text-cyan-800 border border-cyan-200 font-bold">
+                      AUDITOR &bull; HASH CHAIN
+                    </span>
+                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-cyan-600 group-hover:translate-x-0.5 transition-transform" />
                   </div>
-                  <div className="text-[11px] text-slate-500 font-normal mt-0.5">Hash Chain &bull; Ledger</div>
+                  <div className="flex items-center gap-2.5 mb-1.5">
+                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-white font-bold text-xs flex items-center justify-center shrink-0">
+                      D
+                    </div>
+                    <div>
+                      <div className="text-slate-900 font-extrabold text-sm leading-tight">Dax</div>
+                      <div className="text-[10px] text-slate-500 font-medium">Compliance Officer</div>
+                    </div>
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-normal">Hash Chain &bull; Ledger</div>
+                  <div className="text-[10px] text-slate-400 mt-1 font-mono">Merkle Chain · Non-Repudiation</div>
                 </button>
               </div>
             </div>
 
-            {/* Architectural Trust Metrics Bar */}
-            <div className="mt-12 pt-8 border-t border-slate-200/80 grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-              <div>
-                <div className="text-2xl font-extrabold text-slate-900 font-mono">18.4 ms</div>
-                <div className="text-xs text-slate-500 mt-0.5 font-medium">Mean Gate Latency</div>
+            {/* ARCHITECTURAL TRUST METRICS (4-Column Bento Matrix) */}
+            <div className="mt-14 pt-8 border-t border-slate-200/80 grid grid-cols-2 md:grid-cols-4 gap-4 text-left">
+              <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-2xl font-black text-slate-950 font-mono">18.4 ms</div>
+                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                </div>
+                <div className="text-xs font-bold text-slate-900">Mean Gate Latency</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Across all 5 gates (p99 &lt; 32ms)</div>
               </div>
-              <div>
-                <div className="text-2xl font-extrabold text-slate-900 font-mono">100%</div>
-                <div className="text-xs text-slate-500 mt-0.5 font-medium">Fail-Closed Invariants</div>
+
+              <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-2xl font-black text-slate-950 font-mono">100%</div>
+                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div className="text-xs font-bold text-slate-900">Fail-Closed Invariants</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Abort on missing attribution</div>
               </div>
-              <div>
-                <div className="text-2xl font-extrabold text-slate-900 font-mono">SHA-256</div>
-                <div className="text-xs text-slate-500 mt-0.5 font-medium">Cryptographic Hash Chain</div>
+
+              <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-2xl font-black text-slate-950 font-mono">SHA-256</div>
+                  <Lock className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div className="text-xs font-bold text-slate-900">Cryptographic Hash Chain</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Merkle root audit ledger</div>
               </div>
-              <div>
-                <div className="text-2xl font-extrabold text-slate-900 font-mono">Postgres RLS</div>
-                <div className="text-xs text-slate-500 mt-0.5 font-medium">Isolated Multi-Tenancy</div>
+
+              <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="text-2xl font-black text-slate-950 font-mono">Postgres RLS</div>
+                  <Database className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div className="text-xs font-bold text-slate-900">Isolated Multi-Tenancy</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">Kernel-level data boundaries</div>
               </div>
             </div>
           </div>

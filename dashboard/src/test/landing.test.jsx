@@ -1,37 +1,62 @@
 import React from 'react';
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import App from '../App.jsx';
 
-describe('Landing Page & Public Experience', () => {
-  it('renders hero title with Five Gates promise and architectural tag', () => {
+describe('Enterprise Authentication Portal & Console Access', () => {
+  beforeEach(() => {
+    localStorage.clear();
+  });
+  it('renders enterprise portal with assurance promise and charter tag', () => {
     render(<App />);
-    const controlAiHeadings = screen.getAllByText(/Control AI/i);
+    const controlAiHeadings = screen.getAllByText(/Control AI before it acts/i);
     expect(controlAiHeadings.length).toBeGreaterThan(0);
     const charterBadges = screen.getAllByText(/Charter Specification 3.0/i);
     expect(charterBadges.length).toBeGreaterThan(0);
-    const gateHeadings = screen.getAllByText(/The Five Assurance Gates/i);
-    expect(gateHeadings.length).toBeGreaterThan(0);
+    expect(screen.getByText(/Provision Enterprise Tenant/i)).toBeInTheDocument();
   });
 
-  it('renders interactive simulator with scenario options', () => {
+  it('allows 1-click demonstrator access into Operator Console and Live Assurance Lab', async () => {
     render(<App />);
-    expect(screen.getByText(/Interactive Execution Simulator/i)).toBeInTheDocument();
-    const scenario1 = screen.getAllByText(/1. Safe Treasury Mutation/i);
-    expect(scenario1.length).toBeGreaterThan(0);
-    const scenario2 = screen.getAllByText(/2. Indirect Injection Attack/i);
-    expect(scenario2.length).toBeGreaterThan(0);
-  });
-
-  it('navigates to Operator Console view upon clicking Launch Console', async () => {
-    render(<App />);
-    const launchButtons = screen.getAllByText(/Launch Console/i);
-    expect(launchButtons.length).toBeGreaterThan(0);
-    fireEvent.click(launchButtons[0]);
+    
+    // Click Operator 1-Click Demo Access
+    const operatorButton = screen.getByText('Level 3 Autonomy');
+    fireEvent.click(operatorButton);
 
     await waitFor(() => {
       expect(screen.getByText(/Operator Mission Control/i)).toBeInTheDocument();
       expect(screen.getByText(/Live Transactions/i)).toBeInTheDocument();
+      expect(screen.getByText(/Live Assurance Lab \(Grok\)/i)).toBeInTheDocument();
     });
+
+    // Switch to Live Assurance Lab tab
+    const labTab = screen.getByText(/Live Assurance Lab \(Grok\)/i);
+    fireEvent.click(labTab);
+
+    expect(screen.getByText(/Live Assurance Lab & Grok Evaluation Studio/i)).toBeInTheDocument();
+    expect(screen.getByText(/Generate Answer with Grok/i)).toBeInTheDocument();
+    expect(screen.getByText(/Run MIRAGE Assurance Pipeline/i)).toBeInTheDocument();
+    expect(screen.getByText(/Type \/ Adversarial/i)).toBeInTheDocument();
+  });
+
+  it('supports adversarial injection in Live Assurance Lab', async () => {
+    render(<App />);
+    
+    const operatorButton = screen.getByText('Level 3 Autonomy');
+    fireEvent.click(operatorButton);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Live Assurance Lab \(Grok\)/i)).toBeInTheDocument();
+    });
+
+    const labTab = screen.getByText(/Live Assurance Lab \(Grok\)/i);
+    fireEvent.click(labTab);
+
+    // Click Inject Hallucination
+    const hallucinationBtn = screen.getByText('+ Hallucination');
+    fireEvent.click(hallucinationBtn);
+
+    const textarea = screen.getByDisplayValue(/According to EU AI Act Section 99/i);
+    expect(textarea).toBeInTheDocument();
   });
 });

@@ -21,15 +21,18 @@ import {
   Sliders, 
   Check, 
   Ban,
-  Layers
+  Layers,
+  Sparkles,
+  LogOut
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { SEO } from '../components/common/SEO';
+import { AssuranceLab } from '../components/console/AssuranceLab';
 
 export function OperatorConsole({ setActiveView }) {
-  const { user } = useAuth();
-  const [activeTab, setActiveTab] = useState('transactions'); // 'transactions' | 'approvals' | 'outcomes' | 'audit' | 'agents' | 'health'
+  const { user, logout } = useAuth();
+  const [activeTab, setActiveTab] = useState('transactions'); // 'transactions' | 'lab' | 'approvals' | 'outcomes' | 'audit' | 'agents' | 'health'
   
   // Data states
   const [stats, setStats] = useState(null);
@@ -176,10 +179,12 @@ export function OperatorConsole({ setActiveView }) {
               </button>
 
               <button
-                onClick={() => setActiveView('landing')}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium transition"
+                onClick={logout}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium transition flex items-center gap-1.5 shadow-xs"
+                title="Sign Out of Console"
               >
-                Public Overview
+                <LogOut className="w-3.5 h-3.5 text-slate-500" />
+                <span>Sign Out</span>
               </button>
             </div>
           </div>
@@ -188,6 +193,7 @@ export function OperatorConsole({ setActiveView }) {
           <div className="flex items-center gap-6 overflow-x-auto text-xs font-medium text-slate-600 border-t border-slate-100 pt-1">
             {[
               { id: 'transactions', label: 'Live Transactions', count: transactions.length },
+              { id: 'lab', label: 'Live Assurance Lab (Grok)', highlight: true },
               { id: 'approvals', label: 'L4 Approvals Inbox', count: approvals.length, highlight: approvals.length > 0 },
               { id: 'outcomes', label: 'Gate 5 Reality Probes' },
               { id: 'audit', label: 'Audit Hash Chain' },
@@ -347,6 +353,36 @@ export function OperatorConsole({ setActiveView }) {
               </table>
             </div>
           </div>
+        )}
+
+        {/* TAB: LIVE ASSURANCE LAB (GROK / ADVERSARIAL PLAYGROUND) */}
+        {activeTab === 'lab' && (
+          <AssuranceLab 
+            onTransactionCreated={(newTx) => {
+              const mapped = {
+                id: newTx.transactionId,
+                created_at: newTx.timestamp,
+                agent_id: 'grok_autonomous_agent',
+                tool_name: 'assurance.lab_execution',
+                state: newTx.masterVerdict,
+                risk_score: Math.round((newTx.gates?.g4?.hrs_score || 0) * 100),
+                dollar_cost: 0.0,
+                observability_class: 'OBS_DIRECT',
+                epistemic_confidence: 1.0 - (newTx.gates?.g4?.hrs_score || 0),
+                gate_verdicts: {
+                  gate1_input: newTx.gates?.g1?.status || 'PASSED',
+                  gate2_context: newTx.gates?.g2?.status || 'GROUNDED',
+                  gate3_action: newTx.gates?.g3?.status || 'AUTHORIZED',
+                  gate4_output: newTx.gates?.g4?.status || 'VERIFIED_FACTUAL',
+                  gate5_outcome: newTx.gates?.g5?.status || 'VERIFIED_SUCCESS',
+                },
+                target_resource: 'mirage://assurance_lab',
+                hash: newTx.auditHash,
+              };
+              setTransactions(prev => [mapped, ...prev]);
+              addToast(`Transaction ${newTx.transactionId} evaluated: ${newTx.masterVerdict}`, newTx.masterVerdict.includes('SUCCESS') ? 'success' : 'violation');
+            }}
+          />
         )}
 
         {/* TAB 2: L4 APPROVALS INBOX */}

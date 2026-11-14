@@ -23,14 +23,16 @@ import {
   Ban,
   Layers,
   Sparkles,
-  LogOut
+  LogOut,
+  Copy,
+  CheckCheck
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { SEO } from '../components/common/SEO';
 import { AssuranceLab } from '../components/console/AssuranceLab';
 
-export function OperatorConsole({ setActiveView }) {
+export function OperatorConsole({ setActiveView = () => {} }) {
   const { user, logout } = useAuth();
   const [activeTab, setActiveTab] = useState('transactions'); // 'transactions' | 'lab' | 'approvals' | 'outcomes' | 'audit' | 'agents' | 'health'
   
@@ -43,7 +45,9 @@ export function OperatorConsole({ setActiveView }) {
   const [healthData, setHealthData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [filterState, setFilterState] = useState('ALL');
+  const [searchQuery, setSearchQuery] = useState('');
   const [selectedTx, setSelectedTx] = useState(null);
+  const [copiedTx, setCopiedTx] = useState(false);
   const [auditVerified, setAuditVerified] = useState(false);
   const [toasts, setToasts] = useState([]);
 
@@ -91,7 +95,7 @@ export function OperatorConsole({ setActiveView }) {
 
   const handleGrant = async (approvalId) => {
     try {
-      await api.grantApproval(approvalId, `Granted by ${user.name} via Operator Console`);
+      await api.grantApproval(approvalId, `Granted by ${user?.name || 'Operator'} via Operator Console`);
       setApprovals(prev => prev.filter(a => a.id !== approvalId));
       addToast(`Approval ${approvalId} granted. Action dispatched under monotonic lease.`, 'success');
     } catch (err) {
@@ -101,7 +105,7 @@ export function OperatorConsole({ setActiveView }) {
 
   const handleDeny = async (approvalId) => {
     try {
-      await api.denyApproval(approvalId, `Denied by ${user.name} due to policy / risk override`);
+      await api.denyApproval(approvalId, `Denied by ${user?.name || 'Operator'} due to policy / risk override`);
       setApprovals(prev => prev.filter(a => a.id !== approvalId));
       addToast(`Approval ${approvalId} denied and contract transitioned to BLOCKED.`, 'violation');
     } catch (err) {
@@ -130,10 +134,34 @@ export function OperatorConsole({ setActiveView }) {
     addToast(`Agent '${ag.name}' ${isSuspended ? 'reactivated' : 'suspended'}. Distributed leases synchronized.`, 'info');
   };
 
+  const handleCopyJson = () => {
+    if (selectedTx) {
+      navigator.clipboard.writeText(JSON.stringify(selectedTx, null, 2));
+      setCopiedTx(true);
+      setTimeout(() => setCopiedTx(false), 2000);
+    }
+  };
+
   const filteredTransactions = transactions.filter(tx => {
-    if (filterState === 'ALL') return true;
-    return tx.state === filterState;
+    const matchesVerdict = filterState === 'ALL' || tx.state === filterState;
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch = !q || 
+      tx.id?.toLowerCase().includes(q) ||
+      tx.agent_id?.toLowerCase().includes(q) ||
+      tx.tool_name?.toLowerCase().includes(q) ||
+      tx.target_resource?.toLowerCase().includes(q);
+    return matchesVerdict && matchesSearch;
   });
+
+  const TABS = [
+    { id: 'transactions', label: 'Live Transactions', count: transactions.length, icon: Terminal },
+    { id: 'lab', label: 'Live Assurance Lab (Grok)', highlight: true, icon: Sparkles },
+    { id: 'approvals', label: 'L4 Approvals Inbox', count: approvals.length, highlight: approvals.length > 0, icon: AlertTriangle },
+    { id: 'outcomes', label: 'Gate 5 Reality Probes', icon: Database },
+    { id: 'audit', label: 'Audit Hash Chain', icon: FileCheck },
+    { id: 'agents', label: 'Governed Agents', count: agents.length, icon: UserCheck },
+    { id: 'health', label: 'System Health', icon: Activity },
+  ];
 
   return (
     <div className="min-h-screen bg-slate-50/60 pb-20">
@@ -147,7 +175,7 @@ export function OperatorConsole({ setActiveView }) {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="py-4 flex flex-wrap items-center justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-slate-900 flex items-center justify-center text-white">
+              <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-sm">
                 <Terminal className="w-5 h-5 text-emerald-400" />
               </div>
               <div>
@@ -159,28 +187,31 @@ export function OperatorConsole({ setActiveView }) {
                     {user?.tenant_name || 'Apex Assurance Corp'}
                   </span>
                 </div>
-                <div className="text-xs text-slate-500 flex items-center gap-2">
-                  <span>Logged in as <strong>{user?.name}</strong> ({user?.role})</span>
+                <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
+                  <span>Logged in as <strong>{user?.name || 'Sarah Chen'}</strong> ({user?.role || 'OPERATOR'})</span>
                   <span>&bull;</span>
                   <span className="text-emerald-700 font-medium">PostgreSQL RLS Active</span>
                 </div>
               </div>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5">
               <button
                 onClick={loadData}
                 disabled={loading}
-                className="p-2 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 transition flex items-center gap-1.5 text-xs font-medium"
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 transition flex items-center gap-1.5 text-xs font-semibold shadow-xs"
                 title="Refresh Live Data"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-                <span className="hidden sm:inline">Refresh</span>
+                <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-emerald-600' : 'text-slate-500'}`} />
+                <span>Refresh</span>
               </button>
 
               <button
-                onClick={logout}
-                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-medium transition flex items-center gap-1.5 shadow-xs"
+                onClick={() => {
+                  logout();
+                  setActiveView('landing');
+                }}
+                className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition flex items-center gap-1.5 shadow-xs"
                 title="Sign Out of Console"
               >
                 <LogOut className="w-3.5 h-3.5 text-slate-500" />
@@ -190,44 +221,42 @@ export function OperatorConsole({ setActiveView }) {
           </div>
 
           {/* Sub-Tabs Navigation */}
-          <div className="flex items-center gap-6 overflow-x-auto text-xs font-medium text-slate-600 border-t border-slate-100 pt-1">
-            {[
-              { id: 'transactions', label: 'Live Transactions', count: transactions.length },
-              { id: 'lab', label: 'Live Assurance Lab (Grok)', highlight: true },
-              { id: 'approvals', label: 'L4 Approvals Inbox', count: approvals.length, highlight: approvals.length > 0 },
-              { id: 'outcomes', label: 'Gate 5 Reality Probes' },
-              { id: 'audit', label: 'Audit Hash Chain' },
-              { id: 'agents', label: 'Governed Agents', count: agents.length },
-              { id: 'health', label: 'System Health' },
-            ].map(tab => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`py-3 border-b-2 flex items-center gap-1.5 whitespace-nowrap transition-colors ${
-                  activeTab === tab.id
-                    ? 'border-slate-900 text-slate-900 font-bold'
-                    : 'border-transparent hover:text-slate-900'
-                }`}
-              >
-                <span>{tab.label}</span>
-                {tab.count !== undefined && (
-                  <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full ${
-                    tab.highlight 
-                      ? 'bg-amber-100 text-amber-800 font-bold' 
-                      : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            ))}
+          <div className="flex items-center gap-2 overflow-x-auto text-xs font-medium text-slate-600 border-t border-slate-100 pt-1 pb-1">
+            {TABS.map(tab => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`py-2 px-3 rounded-lg flex items-center gap-2 whitespace-nowrap transition-all ${
+                    isActive
+                      ? 'bg-slate-900 text-white font-bold shadow-xs'
+                      : 'hover:bg-slate-100 text-slate-700 font-semibold'
+                  }`}
+                >
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-emerald-400' : 'text-slate-500'}`} />
+                  <span>{tab.label}</span>
+                  {tab.count !== undefined && (
+                    <span className={`text-[10px] font-mono px-1.5 py-0.2 rounded-full font-bold ${
+                      isActive
+                        ? 'bg-slate-800 text-emerald-400'
+                        : tab.highlight
+                        ? 'bg-amber-100 text-amber-800'
+                        : 'bg-slate-200/80 text-slate-700'
+                    }`}>
+                      {tab.count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
         </div>
       </div>
 
       {/* Main Content Area */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
-
 
         {/* Global Key Metrics Row */}
         {stats && (
@@ -262,28 +291,41 @@ export function OperatorConsole({ setActiveView }) {
 
         {/* TAB 1: LIVE TRANSACTIONS */}
         {activeTab === 'transactions' && (
-          <div className="rounded-xl border border-slate-200 bg-white shadow-card overflow-hidden">
-            {/* Filter Bar */}
+          <div className="rounded-2xl border border-slate-200 bg-white shadow-card overflow-hidden">
+            {/* Filter & Search Bar */}
             <div className="p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-4 bg-slate-50/50">
-              <div className="flex items-center gap-2">
-                <span className="text-xs font-semibold text-slate-700">Filter Verdict:</span>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-700">Filter Verdict:</span>
                 {['ALL', 'VERIFIED_SUCCESS', 'AWAITING_APPROVAL', 'BLOCKED', 'ACKNOWLEDGED_UNVERIFIED'].map(st => (
                   <button
                     key={st}
                     onClick={() => setFilterState(st)}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition ${
                       filterState === st
-                        ? 'bg-slate-900 text-white font-semibold'
+                        ? 'bg-slate-900 text-white shadow-xs'
                         : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
                     }`}
                   >
-                    {st.replace('_', ' ')}
+                    {st.replace(/_/g, ' ')}
                   </button>
                 ))}
               </div>
 
-              <div className="text-xs text-slate-500 font-mono">
-                Showing {filteredTransactions.length} of {transactions.length} records
+              {/* Search Box */}
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    placeholder="Search by ID, agent, tool..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="pl-8 pr-3 py-1.5 rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900 text-xs text-slate-900 w-48 sm:w-64 bg-white"
+                  />
+                </div>
+                <div className="text-xs text-slate-500 font-mono shrink-0">
+                  {filteredTransactions.length} records
+                </div>
               </div>
             </div>
 
@@ -292,63 +334,71 @@ export function OperatorConsole({ setActiveView }) {
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase tracking-wider text-[10px]">
                   <tr>
-                    <th className="py-3 px-4">Transaction ID</th>
-                    <th className="py-3 px-4">Agent &amp; Tool</th>
-                    <th className="py-3 px-4">Target Resource</th>
-                    <th className="py-3 px-4">Risk &amp; Cost</th>
-                    <th className="py-3 px-4">Five Gates Verdict</th>
-                    <th className="py-3 px-4">Timestamp</th>
-                    <th className="py-3 px-4 text-right">Inspection</th>
+                    <th className="py-3 px-4 min-w-[130px]">Transaction ID</th>
+                    <th className="py-3 px-4 min-w-[170px]">Agent &amp; Tool</th>
+                    <th className="py-3 px-4 min-w-[200px]">Target Resource</th>
+                    <th className="py-3 px-4 min-w-[110px]">Risk &amp; Cost</th>
+                    <th className="py-3 px-4 min-w-[160px]">Five Gates Verdict</th>
+                    <th className="py-3 px-4 min-w-[100px]">Timestamp</th>
+                    <th className="py-3 px-4 min-w-[110px] text-right">Inspection</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-sans">
-                  {filteredTransactions.map(tx => (
-                    <tr key={tx.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="py-3.5 px-4 font-mono font-semibold text-slate-900">
-                        {tx.id}
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <div className="font-semibold text-slate-900">{tx.agent_id}</div>
-                        <div className="text-[11px] font-mono text-emerald-700">{tx.tool_name}</div>
-                      </td>
-                      <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600 max-w-[200px] truncate" title={tx.target_resource}>
-                        {tx.target_resource}
-                      </td>
-                      <td className="py-3.5 px-4 font-mono">
-                        <span className={`font-semibold ${tx.risk_score > 70 ? 'text-rose-600' : tx.risk_score > 40 ? 'text-amber-600' : 'text-slate-700'}`}>
-                          Risk {tx.risk_score}
-                        </span>
-                        <div className="text-[11px] text-slate-500">${tx.dollar_cost.toFixed(2)}</div>
-                      </td>
-                      <td className="py-3.5 px-4">
-                        <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${
-                          tx.state === 'VERIFIED_SUCCESS'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                            : tx.state === 'AWAITING_APPROVAL'
-                            ? 'bg-amber-50 text-amber-700 border-amber-200'
-                            : tx.state === 'BLOCKED'
-                            ? 'bg-rose-50 text-rose-700 border-rose-200'
-                            : 'bg-slate-50 text-slate-700 border-slate-200'
-                        }`}>
-                          {tx.state === 'VERIFIED_SUCCESS' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
-                          {tx.state === 'AWAITING_APPROVAL' && <AlertTriangle className="w-3 h-3 text-amber-600" />}
-                          {tx.state === 'BLOCKED' && <XCircle className="w-3 h-3 text-rose-600" />}
-                          {tx.state}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-500 text-[11px]">
-                        {new Date(tx.created_at).toLocaleTimeString()}
-                      </td>
-                      <td className="py-3.5 px-4 text-right">
-                        <button
-                          onClick={() => setSelectedTx(tx)}
-                          className="px-2.5 py-1 rounded bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 text-[11px] font-medium"
-                        >
-                          Inspect JSON
-                        </button>
+                  {filteredTransactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-8 text-center text-xs text-slate-500">
+                        No transactions found matching the selected filters.
                       </td>
                     </tr>
-                  ))}
+                  ) : (
+                    filteredTransactions.map(tx => (
+                      <tr key={tx.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-3.5 px-4 font-mono font-semibold text-slate-900">
+                          {tx.id}
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-slate-900">{tx.agent_id}</div>
+                          <div className="text-[11px] font-mono text-emerald-700">{tx.tool_name}</div>
+                        </td>
+                        <td className="py-3.5 px-4 font-mono text-[11px] text-slate-600 max-w-[220px] truncate" title={tx.target_resource}>
+                          {tx.target_resource}
+                        </td>
+                        <td className="py-3.5 px-4 font-mono">
+                          <span className={`font-semibold ${tx.risk_score > 70 ? 'text-rose-600' : tx.risk_score > 40 ? 'text-amber-600' : 'text-slate-700'}`}>
+                            Risk {tx.risk_score}
+                          </span>
+                          <div className="text-[11px] text-slate-500">${(tx.dollar_cost || 0).toFixed(2)}</div>
+                        </td>
+                        <td className="py-3.5 px-4">
+                          <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold border ${
+                            tx.state === 'VERIFIED_SUCCESS'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : tx.state === 'AWAITING_APPROVAL'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
+                              : tx.state === 'BLOCKED'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : 'bg-slate-50 text-slate-700 border-slate-200'
+                          }`}>
+                            {tx.state === 'VERIFIED_SUCCESS' && <CheckCircle2 className="w-3 h-3 text-emerald-600" />}
+                            {tx.state === 'AWAITING_APPROVAL' && <AlertTriangle className="w-3 h-3 text-amber-600" />}
+                            {tx.state === 'BLOCKED' && <XCircle className="w-3 h-3 text-rose-600" />}
+                            <span>{tx.state}</span>
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-slate-500 text-[11px] whitespace-nowrap">
+                          {new Date(tx.created_at).toLocaleTimeString()}
+                        </td>
+                        <td className="py-3.5 px-4 text-right">
+                          <button
+                            onClick={() => setSelectedTx(tx)}
+                            className="px-2.5 py-1 rounded-lg bg-white border border-slate-200 text-slate-700 hover:bg-slate-100 text-[11px] font-semibold transition shadow-2xs"
+                          >
+                            Inspect JSON
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -398,7 +448,7 @@ export function OperatorConsole({ setActiveView }) {
             </div>
 
             {approvals.length === 0 ? (
-              <div className="p-12 text-center rounded-xl border border-slate-200 bg-white">
+              <div className="p-12 text-center rounded-2xl border border-slate-200 bg-white">
                 <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto mb-2" />
                 <div className="font-bold text-slate-900 text-sm">Inbox Zero: No Actions Awaiting Sign-Off</div>
                 <div className="text-xs text-slate-500 mt-1">All proposed autonomous actions are either verified or within standard policy limits.</div>
@@ -406,7 +456,7 @@ export function OperatorConsole({ setActiveView }) {
             ) : (
               <div className="grid grid-cols-1 gap-4">
                 {approvals.map(app => (
-                  <div key={app.id} className="p-5 rounded-xl border border-slate-200 bg-white shadow-subtle">
+                  <div key={app.id} className="p-5 rounded-2xl border border-slate-200 bg-white shadow-subtle">
                     <div className="flex flex-wrap items-start justify-between gap-4 mb-4 pb-4 border-b border-slate-100">
                       <div>
                         <div className="flex items-center gap-2">
@@ -428,29 +478,29 @@ export function OperatorConsole({ setActiveView }) {
                           className="px-3.5 py-1.5 rounded-lg border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 font-semibold text-xs transition flex items-center gap-1.5"
                         >
                           <Ban className="w-3.5 h-3.5" />
-                          Deny Action
+                          <span>Deny Action</span>
                         </button>
                         <button
                           onClick={() => handleGrant(app.id)}
                           className="px-4 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-sm"
                         >
                           <Check className="w-3.5 h-3.5" />
-                          Grant Approval
+                          <span>Grant Approval</span>
                         </button>
                       </div>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs font-mono">
-                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
+                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                         <div className="text-slate-500 text-[10px] uppercase font-bold mb-1">Proposed Execution Parameters</div>
                         <pre className="text-slate-800 text-[11px] overflow-x-auto whitespace-pre-wrap">
                           {JSON.stringify(app.parameters, null, 2)}
                         </pre>
                       </div>
 
-                      <div className="bg-slate-50 p-3 rounded-lg border border-slate-200 space-y-2 text-[11px]">
+                      <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2 text-[11px]">
                         <div>
-                          <span className="text-slate-500">Estimated Dollar Cost:</span> <span className="font-bold text-slate-900">${app.estimated_dollar_cost.toFixed(2)}</span>
+                          <span className="text-slate-500">Estimated Dollar Cost:</span> <span className="font-bold text-slate-900">${(app.estimated_dollar_cost || 0).toFixed(2)}</span>
                         </div>
                         <div>
                           <span className="text-slate-500">Parameter Hash Binding:</span><br />
@@ -470,8 +520,8 @@ export function OperatorConsole({ setActiveView }) {
 
         {/* TAB 3: GATE 5 REALITY PROBES */}
         {activeTab === 'outcomes' && (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-card">
-            <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
               <div>
                 <h3 className="text-base font-bold text-slate-900 font-display">Gate 5 Epistemic Outcome Verification</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
@@ -480,36 +530,36 @@ export function OperatorConsole({ setActiveView }) {
               </div>
 
               <div className="flex items-center gap-2 text-xs">
-                <span className="px-2 py-1 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 font-medium">OBS_DIRECT</span>
-                <span className="px-2 py-1 rounded bg-blue-50 text-blue-700 border border-blue-200 font-medium">OBS_INFERRED</span>
-                <span className="px-2 py-1 rounded bg-slate-50 text-slate-700 border border-slate-200 font-medium">OBS_BLIND</span>
+                <span className="px-2.5 py-1 rounded-lg bg-emerald-50 text-emerald-700 border border-emerald-200 font-semibold text-[11px]">OBS_DIRECT</span>
+                <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 border border-blue-200 font-semibold text-[11px]">OBS_INFERRED</span>
+                <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 font-semibold text-[11px]">OBS_BLIND</span>
               </div>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3 font-mono text-xs">
               {transactions.map(tx => (
-                <div key={tx.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4 text-xs">
+                <div key={tx.id} className="p-4 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-wrap items-center justify-between gap-4">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="font-bold text-slate-900 font-mono">{tx.id}</span>
-                      <span className="font-mono text-emerald-700 font-semibold">{tx.tool_name}</span>
-                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600">
+                      <span className="font-bold text-slate-900">{tx.id}</span>
+                      <span className="text-emerald-700 font-semibold">{tx.tool_name}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-white border border-slate-200 text-slate-600">
                         {tx.observability_class}
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-500 font-mono mt-1">
+                    <div className="text-[11px] text-slate-500 mt-1">
                       Target: {tx.target_resource}
                     </div>
                   </div>
 
                   <div className="flex items-center gap-4 text-right">
                     <div>
-                      <div className="text-[11px] text-slate-500">Epistemic Confidence</div>
-                      <div className="font-mono font-bold text-slate-900">{(tx.epistemic_confidence * 100).toFixed(0)}%</div>
+                      <div className="text-[10px] text-slate-500 font-sans">Epistemic Confidence</div>
+                      <div className="font-bold text-slate-900">{Math.round((tx.epistemic_confidence || 0.95) * 100)}%</div>
                     </div>
 
-                    <div className="w-32">
-                      <span className={`inline-block w-full py-1 text-center rounded text-[11px] font-bold border ${
+                    <div className="w-36">
+                      <span className={`inline-block w-full py-1 text-center rounded-lg text-[11px] font-bold border ${
                         tx.state === 'VERIFIED_SUCCESS' 
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           : tx.state === 'BLOCKED'
@@ -528,7 +578,7 @@ export function OperatorConsole({ setActiveView }) {
 
         {/* TAB 4: AUDIT HASH CHAIN */}
         {activeTab === 'audit' && (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-card">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
             <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
               <div>
                 <h3 className="text-base font-bold text-slate-900 font-display">Cryptographic Audit Ledger Trail</h3>
@@ -540,7 +590,7 @@ export function OperatorConsole({ setActiveView }) {
               <div className="flex items-center gap-3">
                 <button
                   onClick={verifyAuditChain}
-                  className="px-3.5 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-sm"
+                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition flex items-center gap-1.5 shadow-sm"
                 >
                   <FileCheck className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Verify Full Hash Chain</span>
@@ -549,8 +599,8 @@ export function OperatorConsole({ setActiveView }) {
             </div>
 
             {auditVerified && (
-              <div className="mb-4 p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <div className="mb-4 p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
                 <span><strong>Verification Complete:</strong> All {auditRecords.length} blocks traversed back to Genesis Root. Zero hash inversions or node tampering detected.</span>
               </div>
             )}
@@ -564,7 +614,7 @@ export function OperatorConsole({ setActiveView }) {
                   </div>
                   <div className="font-sans font-bold text-slate-900 text-sm mb-2">{rec.event_type}</div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10px] bg-white p-2.5 rounded border border-slate-200">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 text-[10px] bg-white p-2.5 rounded-lg border border-slate-200">
                     <div>
                       <span className="text-slate-400">prev_hash:</span><br />
                       <span className="text-slate-600 break-all">{rec.prev_hash}</span>
@@ -582,7 +632,7 @@ export function OperatorConsole({ setActiveView }) {
 
         {/* TAB 5: GOVERNED AGENTS */}
         {activeTab === 'agents' && (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-card">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
               <div>
                 <h3 className="text-base font-bold text-slate-900 font-display">Autonomous Agent Roster &amp; Fencing</h3>
@@ -594,7 +644,7 @@ export function OperatorConsole({ setActiveView }) {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {agents.map(ag => (
-                <div key={ag.id} className="p-5 rounded-xl border border-slate-200 bg-slate-50/50 shadow-subtle flex flex-col justify-between">
+                <div key={ag.id} className="p-5 rounded-2xl border border-slate-200 bg-slate-50/50 shadow-subtle flex flex-col justify-between">
                   <div>
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-bold text-slate-900 text-sm font-display">{ag.name}</span>
@@ -638,7 +688,7 @@ export function OperatorConsole({ setActiveView }) {
 
         {/* TAB 6: SYSTEM HEALTH */}
         {activeTab === 'health' && healthData && (
-          <div className="rounded-xl border border-slate-200 bg-white p-6 shadow-card">
+          <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-card">
             <div className="flex items-center justify-between mb-6 pb-4 border-b border-slate-100">
               <div>
                 <h3 className="text-base font-bold text-slate-900 font-display">Infrastructure Probes &amp; Telemetry</h3>
@@ -681,8 +731,6 @@ export function OperatorConsole({ setActiveView }) {
                 ? 'bg-rose-900 text-white border-rose-800'
                 : toast.type === 'uncertain'
                 ? 'bg-amber-900 text-white border-amber-800'
-                : toast.type === 'info'
-                ? 'bg-slate-900 text-white border-slate-800'
                 : 'bg-slate-900 text-white border-slate-800'
             }`}
           >
@@ -706,22 +754,46 @@ export function OperatorConsole({ setActiveView }) {
 
       {/* JSON Inspection Drawer Modal */}
       {selectedTx && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
-          <div className="w-full max-w-2xl bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-h-[85vh] overflow-y-auto">
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm animate-in fade-in"
+          onClick={() => setSelectedTx(null)}
+        >
+          <div 
+            className="w-full max-w-2xl bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-h-[85vh] overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
             <div className="flex items-center justify-between pb-4 border-b border-slate-200 mb-4">
               <div>
                 <div className="text-xs text-slate-400 font-mono">TRANSACTION PAYLOAD INSPECTOR</div>
                 <h3 className="text-base font-bold text-slate-900 font-mono">{selectedTx.id}</h3>
               </div>
-              <button 
-                onClick={() => setSelectedTx(null)}
-                className="text-slate-400 hover:text-slate-600 font-bold text-lg"
-              >
-                &times;
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleCopyJson}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs"
+                >
+                  {copiedTx ? (
+                    <>
+                      <CheckCheck className="w-3.5 h-3.5 text-emerald-600" />
+                      <span className="text-emerald-700 font-bold">Copied!</span>
+                    </>
+                  ) : (
+                    <>
+                      <Copy className="w-3.5 h-3.5 text-slate-500" />
+                      <span>Copy JSON</span>
+                    </>
+                  )}
+                </button>
+                <button 
+                  onClick={() => setSelectedTx(null)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition"
+                >
+                  &times;
+                </button>
+              </div>
             </div>
 
-            <div className="bg-slate-900 text-slate-200 p-4 rounded-xl font-mono text-xs overflow-x-auto">
+            <div className="bg-slate-900 text-slate-200 p-4 rounded-xl font-mono text-xs overflow-x-auto shadow-inner">
               <pre>{JSON.stringify(selectedTx, null, 2)}</pre>
             </div>
           </div>

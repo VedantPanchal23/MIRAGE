@@ -1,26 +1,99 @@
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@300;400;500;600&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --bg-primary: #ffffff;
-    --text-primary: #09090b;
-    --border-hairline: #e2e8f0;
+    --font-family-primary: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-family-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, monospace;
+    --color-text-primary: #19171b;
+    --color-text-secondary: #0c152a;
+    --color-text-tertiary: #6b6c71;
+    --color-surface-muted: #ffffff;
+    --color-surface-base: #000000;
+    --color-surface-raised: #f8f8fa;
+    --color-surface-strong: #121113;
+    --color-border-subtle: #ededed;
+    --shadow-microdose-1: rgba(14, 15, 43, 0.08) 0px 1px 2px 0px, rgba(66, 39, 92, 0.02) 0px 43px 80px 0px;
+    --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  html {
+    font-family: var(--font-family-primary);
+    background-color: #ffffff;
+    color: var(--color-text-primary);
+    scroll-behavior: smooth;
   }
 
   body {
+    font-family: var(--font-family-primary);
     background-color: #ffffff;
-    color: #0f172a;
-    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    color: #19171b;
+    font-size: 16px;
+    font-weight: 400;
+    line-height: 1.5;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
   }
 
-  code, pre {
-    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  code, pre, .font-mono {
+    font-family: var(--font-family-mono);
   }
+
+  /* Microdose Studio Focus Visible Rules (WCAG 2.2 AA) */
+  :focus-visible {
+    outline: 2px solid #0c152a;
+    outline-offset: 2px;
+  }
+}
+
+/* Microdose Studio Interactive Card Hover & Transition */
+.microdose-card {
+  background-color: #ffffff;
+  border: 1px solid #ededed;
+  transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.microdose-card:hover {
+  border-color: #dcdce0;
+  box-shadow: rgba(14, 15, 43, 0.06) 0px 8px 30px 0px;
+  transform: translateY(-1px);
+}
+
+.microdose-button-dark {
+  background-color: #0c152a;
+  color: #ffffff;
+  border-radius: 100px;
+  transition: all 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.microdose-button-dark:hover {
+  background-color: #19171b;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 14px rgba(12, 21, 42, 0.15);
+}
+
+.microdose-button-dark:active {
+  transform: translateY(0);
+}
+
+.microdose-button-light {
+  background-color: #ededed;
+  color: #0c152a;
+  border-radius: 100px;
+  transition: all 220ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.microdose-button-light:hover {
+  background-color: #e2e2e6;
+  transform: translateY(-1px);
+}
+
+.microdose-button-light:active {
+  transform: translateY(0);
 }
 
 /* Subtle architectural dot and grid patterns for white background */

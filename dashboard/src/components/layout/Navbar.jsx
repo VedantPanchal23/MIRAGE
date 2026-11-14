@@ -46,10 +46,10 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80 shadow-[0_1px_3px_rgba(0,0,0,0.02)] transition-all">
+    <header className="sticky top-0 z-50 bg-[#ffffff]/90 backdrop-blur-md border-b border-[#ededed] transition-all">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
-        {/* Left: Custom High-Craft Logo Lockup */}
+        {/* Left: Microdose-Style Editorial Logo */}
         <div 
           onClick={() => setActiveView('landing')} 
           className="cursor-pointer group flex items-center select-none"
@@ -58,38 +58,43 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
           <MirageLogo size="md" showText={true} />
         </div>
 
-        {/* Center: Clean Editorial Navigation Links */}
+        {/* Center: Microdose-Style Floating Nav Pill with Numeric Identifiers */}
         {activeView === 'landing' && (
-          <nav className="hidden md:flex items-center gap-1 text-[13px] font-medium text-slate-600">
+          <nav className="hidden lg:flex items-center gap-1 bg-[#ffffff] border border-[#ededed] shadow-[0px_2px_8px_rgba(14,15,43,0.04)] rounded-full px-2 py-1.5 text-xs text-[#0c152a]">
             <button 
               onClick={() => handleNavClick('hero')}
-              className="px-3 py-1.5 rounded-md hover:text-slate-900 hover:bg-slate-100/70 transition-colors whitespace-nowrap"
+              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors flex items-center gap-1.5 font-normal whitespace-nowrap"
             >
-              Overview
+              <span>Overview</span>
+              <span className="text-[10px] text-[#6b6c71] font-mono">01</span>
             </button>
             <button 
               onClick={() => handleNavClick('five-gates')}
-              className="px-3 py-1.5 rounded-md hover:text-slate-900 hover:bg-slate-100/70 transition-colors whitespace-nowrap"
+              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors flex items-center gap-1.5 font-normal whitespace-nowrap"
             >
-              The Five Gates
+              <span>The Five Gates</span>
+              <span className="text-[10px] text-[#6b6c71] font-mono">02</span>
             </button>
             <button 
               onClick={() => handleNavClick('simulator')}
-              className="px-3 py-1.5 rounded-md hover:text-slate-900 hover:bg-slate-100/70 transition-colors whitespace-nowrap"
+              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors flex items-center gap-1.5 font-normal whitespace-nowrap"
             >
-              Live Simulator
+              <span>Live Simulator</span>
+              <span className="text-[10px] text-[#6b6c71] font-mono">03</span>
             </button>
             <button 
               onClick={() => handleNavClick('architecture')}
-              className="px-3 py-1.5 rounded-md hover:text-slate-900 hover:bg-slate-100/70 transition-colors whitespace-nowrap"
+              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors flex items-center gap-1.5 font-normal whitespace-nowrap"
             >
-              Architecture
+              <span>Architecture</span>
+              <span className="text-[10px] text-[#6b6c71] font-mono">04</span>
             </button>
             <button 
               onClick={() => handleNavClick('sdk-docs')}
-              className="px-3 py-1.5 rounded-md hover:text-slate-900 hover:bg-slate-100/70 transition-colors whitespace-nowrap"
+              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors flex items-center gap-1.5 font-normal whitespace-nowrap"
             >
-              SDK &amp; API
+              <span>SDK &amp; API</span>
+              <span className="text-[10px] text-[#6b6c71] font-mono">05</span>
             </button>
           </nav>
         )}
@@ -102,7 +107,7 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
               {activeView !== 'console' ? (
                 <button
                   onClick={() => setActiveView('console')}
-                  className="h-8 px-3 rounded-lg bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 transition flex items-center gap-1.5 shadow-xs"
+                  className="h-9 px-4 rounded-full bg-[#0c152a] text-white text-xs font-normal hover:bg-[#19171b] transition flex items-center gap-1.5 shadow-2xs"
                 >
                   <Terminal className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Operator Console</span>
@@ -110,55 +115,55 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
               ) : (
                 <button
                   onClick={() => setActiveView('landing')}
-                  className="h-8 px-3 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-medium transition"
+                  className="h-9 px-4 rounded-full bg-[#f4f4f6] text-[#0c152a] hover:bg-[#ededed] text-xs font-normal transition border border-[#ededed]"
                 >
                   Public Overview
                 </button>
               )}
 
-              {/* Single Unified Workspace & Account Menu */}
+              {/* Single Unified Workspace & Account Menu (Microdose Pill) */}
               <div className="relative" ref={menuRef}>
                 <button
                   onClick={() => setShowUserMenu(!showUserMenu)}
-                  className="h-8 pl-2 pr-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 flex items-center gap-2 transition shadow-2xs"
+                  className="h-9 pl-2 pr-3 rounded-full border border-[#ededed] bg-[#ffffff] hover:bg-[#f4f4f6] text-xs font-normal text-[#0c152a] flex items-center gap-2 transition shadow-2xs"
                   title="Workspace & Account Menu"
                 >
                   {/* Avatar Chip */}
-                  <div className="w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center">
+                  <div className="w-5 h-5 rounded-full bg-[#0c152a] text-white text-[10px] font-medium flex items-center justify-center">
                     {getInitials(user?.name)}
                   </div>
-                  <span className="font-semibold text-slate-800 hidden sm:inline">
+                  <span className="font-medium text-[#0c152a] hidden sm:inline">
                     {user?.name || 'Vedant'}
                   </span>
-                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 font-medium">
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#f4f4f6] text-[#6b6c71] border border-[#ededed]">
                     {user?.role || 'OPERATOR'}
                   </span>
-                  <ChevronDown className="w-3 h-3 text-slate-400" />
+                  <ChevronDown className="w-3 h-3 text-[#6b6c71]" />
                 </button>
 
-                {/* Polished Enterprise Dropdown */}
+                {/* Dropdown Menu in Microdose Clean Style */}
                 {showUserMenu && (
-                  <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 z-50 text-xs animate-in fade-in duration-150">
+                  <div className="absolute right-0 mt-2 w-64 bg-[#ffffff] border border-[#ededed] rounded-[20px] shadow-[0px_10px_30px_rgba(14,15,43,0.08)] py-2 z-50 text-xs animate-in fade-in duration-150">
                     {/* User Identity Header */}
-                    <div className="px-3.5 py-2.5 border-b border-slate-100 bg-slate-50/50">
-                      <div className="font-semibold text-slate-900 text-xs">
+                    <div className="px-4 py-2.5 border-b border-[#ededed] bg-[#f9f9fb]">
+                      <div className="font-medium text-[#0c152a] text-xs">
                         {user?.name || 'Vedant'}
                       </div>
-                      <div className="text-[11px] text-slate-500 font-mono">
+                      <div className="text-[11px] text-[#6b6c71] font-mono">
                         {user?.email || 'vedant@mirage.ai'}
                       </div>
-                      <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-emerald-700 font-medium">
+                      <div className="mt-1 flex items-center gap-1.5 text-[10px] text-emerald-700 font-normal">
                         <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
                         <span>{user?.tenant_name || 'Apex Assurance Corp'}</span>
                       </div>
                     </div>
 
                     {/* Persona Switcher Section */}
-                    <div className="px-3.5 py-2 border-b border-slate-100">
-                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
-                        Switch Active User
+                    <div className="px-3 py-2 border-b border-[#ededed]">
+                      <div className="text-[10px] font-mono text-[#6b6c71] uppercase tracking-wider mb-1.5 px-1">
+                        Active Profile
                       </div>
-                      <div className="space-y-0.5">
+                      <div className="space-y-1">
                         {[
                           { role: 'OPERATOR', name: 'Vedant', sub: 'Operator · Level 3 Autonomy' },
                           { role: 'SUPER_ADMIN', name: 'Vedant', sub: 'Super Admin · Control Plane' },
@@ -172,15 +177,15 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
                                 switchRole(p.role);
                                 setShowUserMenu(false);
                               }}
-                              className={`w-full text-left px-2 py-1.5 rounded-lg flex items-center justify-between transition-colors ${
+                              className={`w-full text-left px-3 py-1.5 rounded-full flex items-center justify-between transition-colors ${
                                 isSelected 
-                                  ? 'bg-slate-100 text-slate-900 font-bold' 
-                                  : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                                  ? 'bg-[#ededed] text-[#0c152a] font-medium' 
+                                  : 'text-[#6b6c71] hover:bg-[#f4f4f6] hover:text-[#0c152a]'
                               }`}
                             >
                               <div>
-                                <div className="text-xs font-semibold">{p.name} ({p.role})</div>
-                                <div className="text-[10px] text-slate-400 font-normal">{p.sub}</div>
+                                <div className="text-xs">{p.name} ({p.role})</div>
+                                <div className="text-[10px] text-[#6b6c71]">{p.sub}</div>
                               </div>
                               {isSelected && (
                                 <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
@@ -192,14 +197,14 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
                     </div>
 
                     {/* Sign Out Action */}
-                    <div className="p-1">
+                    <div className="p-1.5">
                       <button
                         onClick={() => {
                           logout();
                           setActiveView('landing');
                           setShowUserMenu(false);
                         }}
-                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 flex items-center gap-2 text-xs font-medium transition"
+                        className="w-full text-left px-3 py-1.5 rounded-full text-rose-600 hover:bg-rose-50 flex items-center gap-2 text-xs font-normal transition"
                       >
                         <LogOut className="w-3.5 h-3.5" />
                         <span>Sign Out</span>
@@ -213,7 +218,7 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
             <div className="flex items-center gap-2">
               <button
                 onClick={() => onOpenAuth('login')}
-                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
+                className="px-4 py-2 text-xs font-normal text-[#6b6c71] hover:text-[#0c152a] transition"
               >
                 Sign In
               </button>
@@ -222,10 +227,10 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
                   loginAsDemo('OPERATOR');
                   setActiveView('console');
                 }}
-                className="h-8 px-3 rounded-lg bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 transition shadow-xs flex items-center gap-1"
+                className="h-9 px-4 rounded-full bg-[#0c152a] text-white text-xs font-normal hover:bg-[#19171b] transition shadow-2xs flex items-center gap-1.5"
               >
                 <span>Launch Console</span>
-                <ChevronRight className="w-3.5 h-3.5 text-slate-400" />
+                <ChevronRight className="w-3.5 h-3.5 text-emerald-400" />
               </button>
             </div>
           )}

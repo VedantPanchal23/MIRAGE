@@ -1,138 +1,70 @@
 import React from 'react';
 
 /**
- * World-Class Bespoke Brandmark for MIRAGE
+ * Microdose Studio-Inspired Brandmark for MIRAGE
  * 
- * Concept: 
- * "Refracting AI Uncertainty into Verified Reality"
- * 
- * Visual Architecture:
- * - Isometric 3D Refractive Prisms forming a stylized geometric "M"
- * - Deep Obsidian Titanium Monoliths (#090D16 & #1E293B)
- * - Translucent Optical Laser Spine in Emerald (#10B981) cutting through the prism
- * - Precision Diamond Apex representing Ground Truth Verification (Gate 5)
- * - Bespoke High-Craft Typography with geometric letterspacing
+ * Aesthetic:
+ * - Ultra-refined, quiet luxury, editorial precision
+ * - Monochromatic depth (#0c152a & #6b6c71) with emerald focal point
+ * - Typography: "mirage" (font-medium #0c152a) + ".assurance" (font-light #6b6c71)
+ * - Micro geometric glyph: Minimalist optical refraction prism aperture
  */
 export function MirageLogo({ size = 'md', showText = true, className = '' }) {
   const sizeMap = {
-    sm: { icon: 26, text: 'text-[15px]', sub: 'text-[8px]' },
-    md: { icon: 34, text: 'text-[17px]', sub: 'text-[9px]' },
-    lg: { icon: 44, text: 'text-[22px]', sub: 'text-[11px]' },
+    sm: { icon: 20, text: 'text-[15px]', sub: 'text-[15px]' },
+    md: { icon: 24, text: 'text-[18px]', sub: 'text-[18px]' },
+    lg: { icon: 30, text: 'text-[22px]', sub: 'text-[22px]' },
   };
 
   const current = sizeMap[size] || sizeMap.md;
 
   return (
-    <div className={`flex items-center gap-3 select-none group ${className}`}>
-      {/* Precision Geometric Brandmark */}
+    <div className={`inline-flex items-center gap-2.5 select-none group cursor-pointer ${className}`}>
+      {/* Minimalist Microdose-Style Geometric Optical Glyph */}
       <div 
-        className="relative flex items-center justify-center shrink-0"
+        className="relative flex items-center justify-center shrink-0 transition-transform duration-300 group-hover:scale-105"
         style={{ width: current.icon, height: current.icon }}
       >
         <svg 
-          viewBox="0 0 48 48" 
+          viewBox="0 0 32 32" 
           fill="none" 
           xmlns="http://www.w3.org/2000/svg"
-          className="w-full h-full transition-transform duration-300 group-hover:scale-105"
+          className="w-full h-full"
         >
-          <defs>
-            {/* Obsidian Monolith Gradient */}
-            <linearGradient id="mirage-obsidian-left" x1="6" y1="6" x2="22" y2="42" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#1E293B" />
-              <stop offset="100%" stopColor="#090D16" />
-            </linearGradient>
-
-            <linearGradient id="mirage-obsidian-right" x1="26" y1="6" x2="42" y2="42" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#0F172A" />
-              <stop offset="100%" stopColor="#020617" />
-            </linearGradient>
-
-            {/* Laser Refraction Emerald Core */}
-            <linearGradient id="mirage-laser-emerald" x1="16" y1="8" x2="32" y2="40" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#34D399" />
-              <stop offset="50%" stopColor="#10B981" />
-              <stop offset="100%" stopColor="#059669" />
-            </linearGradient>
-
-            {/* Micro Edge Highlight */}
-            <linearGradient id="mirage-edge-glow" x1="0" y1="0" x2="48" y2="0" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#38BDF8" stopOpacity="0.8" />
-              <stop offset="50%" stopColor="#34D399" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="#10B981" stopOpacity="0.4" />
-            </linearGradient>
-
-            <filter id="mirage-core-glow" x="12" y="10" width="24" height="28" filterUnits="userSpaceOnUse">
-              <feGaussianBlur stdDeviation="1.5" result="blur" />
-              <feComposite in="SourceGraphic" in2="blur" operator="over" />
-            </filter>
-          </defs>
-
-          {/* Left Pillar Chevron (Facet of 'M') */}
+          {/* Outer Minimalist Precision Hexagon Ring */}
           <path 
-            d="M8 38V14L18 8V32L8 38Z" 
-            fill="url(#mirage-obsidian-left)" 
+            d="M16 3L27.5 9.5V22.5L16 29L4.5 22.5V9.5L16 3Z" 
+            stroke="#0c152a" 
+            strokeWidth="1.75" 
+            strokeLinejoin="round"
           />
-          {/* Left Top Chiseled Edge */}
+          {/* Inner Optical Refraction Blade */}
           <path 
-            d="M8 14L18 8L22 11L12 17L8 14Z" 
-            fill="#334155" 
-            opacity="0.9"
+            d="M16 8L23 16L16 24L9 16L16 8Z" 
+            fill="#f4f4f6"
+            stroke="#6b6c71" 
+            strokeWidth="1.2" 
+            strokeLinejoin="round"
           />
-
-          {/* Right Pillar Chevron (Facet of 'M') */}
-          <path 
-            d="M40 38V14L30 8V32L40 38Z" 
-            fill="url(#mirage-obsidian-right)" 
-          />
-          {/* Right Top Chiseled Edge */}
-          <path 
-            d="M40 14L30 8L26 11L36 17L40 14Z" 
-            fill="#1E293B" 
-            opacity="0.9"
-          />
-
-          {/* Central Converging Refractive Prisms (The Core Optical Diamond 'M') */}
-          <path 
-            d="M24 12L32 24L24 38L16 24L24 12Z" 
-            fill="url(#mirage-laser-emerald)" 
-            filter="url(#mirage-core-glow)"
-          />
-
-          {/* Precision Light Refraction Core (Diagonal Beam) */}
-          <path 
-            d="M19 24L24 16L29 24L24 33L19 24Z" 
-            fill="#A7F3D0" 
-            opacity="0.85"
-          />
-
-          {/* Verification Apex Focal Dot */}
+          {/* Active Emerald Reality Focal Core */}
           <circle 
-            cx="24" 
-            cy="24" 
-            r="2" 
-            fill="#FFFFFF" 
+            cx="16" 
+            cy="16" 
+            r="2.5" 
+            fill="#10b981" 
           />
-
-          {/* Razor-sharp Optical Axis Stems */}
-          <line x1="24" y1="4" x2="24" y2="10" stroke="#10B981" strokeWidth="1.5" strokeLinecap="round" />
-          <line x1="24" y1="40" x2="24" y2="44" stroke="#059669" strokeWidth="1.5" strokeLinecap="round" />
         </svg>
       </div>
 
-      {/* Crafted Brand Typography */}
+      {/* Microdose-Style Wordmark: Bold/Medium Brand + Light Extension */}
       {showText && (
-        <div className="flex flex-col justify-center leading-none">
-          <div className="flex items-center gap-1.5">
-            <span className={`font-black ${current.text} tracking-[0.18em] text-slate-950 font-display transition-colors group-hover:text-black`}>
-              MIRAGE
-            </span>
-          </div>
-          <div className="flex items-center gap-1.5 mt-0.5">
-            <span className={`font-mono ${current.sub} tracking-[0.24em] text-emerald-700 font-bold uppercase`}>
-              Assurance
-            </span>
-            <span className="w-1 h-1 rounded-full bg-emerald-500 animate-pulse" />
-          </div>
+        <div className="flex items-baseline leading-none font-sans">
+          <span className={`font-semibold tracking-[-0.03em] text-[#0c152a] ${current.text}`}>
+            mirage
+          </span>
+          <span className={`font-light tracking-[-0.03em] text-[#6b6c71] ${current.sub}`}>
+            .assurance
+          </span>
         </div>
       )}
     </div>

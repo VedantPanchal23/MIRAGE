@@ -137,7 +137,7 @@ const FIVE_GATES_DETAILS = [
   {
     id: 4,
     name: 'Gate 4 — Output Assurance',
-    badge: 'HRS & Factual Entailment',
+    badge: 'HRS & Factual Bounds',
     color: 'purple',
     description: 'Evaluates model output before it is returned or dispatched. Calculates Hallucination Risk Score (HRS), Natural Language Inference (NLI) entailment, and syntactical schema safety.',
     invariants: [
@@ -237,307 +237,291 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
   };
 
   return (
-    <div className="bg-[#FAFBFD] text-slate-900 selection:bg-slate-950 selection:text-white relative">
+    <div className="bg-[#ffffff] text-[#0c152a] selection:bg-[#0c152a] selection:text-white relative font-sans antialiased">
       <SEO 
-        title="MIRAGE — The AI Execution Assurance Platform"
+        title="MIRAGE — Execution Assurance Platform"
         description="Control AI before it acts. Verify AI after it acts. MIRAGE governs identity, capabilities, distributed leases, and Gate 5 physical reality verification for autonomous agents."
       />
 
-      {/* HERO SECTION */}
-      <section id="hero" className="relative pt-12 pb-20 sm:pt-20 sm:pb-28 overflow-hidden border-b border-slate-200/80">
-        {/* Atmospheric Luminous Aura (Soft Emerald & Azure Bloom) */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-full max-w-7xl h-[650px] overflow-hidden pointer-events-none -z-10">
-          <div className="absolute -top-[280px] left-1/2 -translate-x-1/2 w-[900px] h-[550px] bg-gradient-to-b from-emerald-500/10 via-teal-500/5 to-transparent rounded-full blur-3xl opacity-80" />
-          <div className="absolute -top-[200px] left-1/4 w-[500px] h-[400px] bg-gradient-to-br from-cyan-500/8 to-transparent rounded-full blur-3xl opacity-60" />
-          <div className="absolute -top-[200px] right-1/4 w-[500px] h-[400px] bg-gradient-to-bl from-slate-500/5 to-transparent rounded-full blur-3xl opacity-50" />
-        </div>
+      {/* HERO SECTION — MICRODOSE STUDIO EDITORIAL ARCHITECTURE */}
+      <section id="hero" className="relative pt-24 pb-20 sm:pt-32 sm:pb-28 border-b border-[#ededed]">
+        <div className="max-w-6xl mx-auto px-6 sm:px-12 relative z-10 text-center">
+          
+          {/* Microdose-Style Hero Badge */}
+          <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-[#f4f4f6] border border-[#ededed] mb-8 hover:bg-[#ededed] transition-colors cursor-default">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span className="text-xs text-[#0c152a] font-normal tracking-wide">
+              Charter Specification 3.0 Active
+            </span>
+            <span className="text-[#6b6c71] font-mono text-[10px]">·</span>
+            <span className="text-[10px] font-mono text-[#6b6c71]">
+              Epistemic Reality
+            </span>
+          </div>
 
-        {/* Delicate Blueprint Micro-Grid */}
-        <div className="absolute inset-0 bg-[radial-gradient(#cbd5e1_1px,transparent_1px)] [background-size:24px_24px] opacity-40 mask-radial-fade pointer-events-none -z-10" />
+          {/* Microdose-Style Hero Subtitle */}
+          <p className="text-sm font-normal text-[#6b6c71] tracking-wide mb-3">
+            Your Autonomous AI Governance Partner.
+          </p>
 
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 relative z-10">
-          <div className="text-center max-w-4xl mx-auto">
-            
-            {/* Dynamic Authority Eyebrow Badge (Contains Charter Specification 3.0 for test compatibility) */}
-            <div className="inline-flex items-center gap-2.5 px-4 py-1.5 rounded-full bg-white/90 border border-slate-200/90 shadow-2xs backdrop-blur-md mb-8 hover:border-slate-300 transition-all cursor-default">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-[11px] font-semibold tracking-wider uppercase text-slate-800">
-                Autonomous AI Governance
-              </span>
-              <span className="text-slate-300">|</span>
-              <span className="text-[11px] font-mono text-emerald-700 font-bold">
-                Charter Specification 3.0 Active
+          {/* Microdose-Style Hero Display Heading (Geist 52px, Weight 400, Clean Line Heights) */}
+          <h1 className="text-4xl sm:text-5xl lg:text-[56px] font-normal text-[#0c152a] tracking-tight leading-[1.14] max-w-4xl mx-auto">
+            Control AI before it acts.<br />
+            <span className="text-[#6b6c71]">Verify AI after it acts.</span>
+          </h1>
+
+          {/* Microdose-Style Dual-Tone Hero Body Copy */}
+          <p className="mt-8 max-w-2xl mx-auto text-base sm:text-lg leading-[1.65]">
+            <span className="text-[#6b6c71]">MIRAGE governs identity, capabilities, distributed leases, and Gate 5 physical reality verification. </span><br className="hidden sm:inline" />
+            <span className="text-[#0c152a] font-normal">We bring clarity and mathematical certainty to autonomous agent execution.</span>
+          </p>
+
+          {/* Microdose-Style Pill Action Buttons (Radius 100px) */}
+          <div className="mt-8 flex flex-wrap items-center justify-center gap-3">
+            <button
+              onClick={() => onLaunchDemo('OPERATOR')}
+              className="px-7 py-3.5 rounded-full bg-[#0c152a] text-white font-normal text-sm hover:bg-[#19171b] transition shadow-xs flex items-center gap-2"
+            >
+              <span>Launch Mission Control</span>
+              <ChevronRight className="w-4 h-4 text-emerald-400" />
+            </button>
+
+            <button
+              onClick={() => onOpenAuth('register')}
+              className="px-6 py-3.5 rounded-full bg-[#ededed] text-[#0c152a] font-normal text-sm hover:bg-[#e2e2e4] transition"
+            >
+              Provision Enterprise Tenant
+            </button>
+          </div>
+
+          {/* Microdose-Style Technology & Runtime Proof Strip */}
+          <div className="mt-14 pt-8 border-t border-[#ededed] max-w-4xl mx-auto">
+            <div className="text-[11px] font-mono uppercase text-[#6b6c71] tracking-widest text-center mb-6">
+              Enforced Across Modern Agent Stacks &amp; Production Infrastructure
+            </div>
+            <div className="flex flex-wrap items-center justify-center gap-6 sm:gap-10 text-xs font-mono text-[#6b6c71]">
+              <span className="hover:text-[#0c152a] transition-colors">Grok / xAI</span>
+              <span className="hover:text-[#0c152a] transition-colors">Anthropic Claude</span>
+              <span className="hover:text-[#0c152a] transition-colors">OpenAI GPT-4o</span>
+              <span className="hover:text-[#0c152a] transition-colors">Qdrant Vector DB</span>
+              <span className="hover:text-[#0c152a] transition-colors">PostgreSQL RLS</span>
+              <span className="hover:text-[#0c152a] transition-colors">Redis Leases</span>
+            </div>
+          </div>
+
+          {/* LIVE FIVE GATES EXECUTION PIPELINE (Microdose Studio Container Style) */}
+          <div className="mt-14 max-w-4xl mx-auto bg-[#f9f9fb] rounded-[32px] border border-[#ededed] p-6 sm:p-8 text-left shadow-[0px_4px_24px_rgba(14,15,43,0.02)]">
+            {/* Header */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-[#ededed] mb-6">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                <span className="text-xs font-mono uppercase tracking-wider text-[#6b6c71]">
+                  01 / LIVE ASSURANCE PIPELINE
+                </span>
+                <span className="text-[#ededed] font-mono">•</span>
+                <span className="text-xs font-mono text-[#0c152a]">
+                  tx_98f12a4b8c91
+                </span>
+                <span className="text-[#ededed] font-mono">•</span>
+                <span className="text-xs font-mono text-[#6b6c71] hidden sm:inline">
+                  agent_treasury_disburser
+                </span>
+              </div>
+              <span className="px-3 py-1 rounded-full bg-[#ededed] text-[#0c152a] text-[11px] font-mono font-normal">
+                CERTIFIED SUCCESS
               </span>
             </div>
 
-            {/* Monumental Headline */}
-            <h1 className="text-4xl sm:text-6xl lg:text-7xl font-black tracking-[-0.035em] text-slate-950 font-display leading-[1.08]">
-              Control AI before it acts.<br />
-              <span className="bg-gradient-to-r from-emerald-600 via-teal-600 to-cyan-600 bg-clip-text text-transparent">
-                Verify AI after it acts.
+            {/* Gate Pills */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mb-6">
+              {HERO_PIPELINE_GATES.map((gate, idx) => {
+                const isSelected = heroActiveGate === idx;
+                const Icon = gate.icon;
+                return (
+                  <button
+                    key={gate.num}
+                    type="button"
+                    onClick={() => setHeroActiveGate(idx)}
+                    className={`p-3.5 rounded-[20px] border text-left transition-all ${
+                      isSelected
+                        ? 'bg-[#ffffff] border-[#0c152a] shadow-sm'
+                        : 'bg-[#ffffff]/60 border-[#ededed] hover:bg-[#ffffff] hover:border-[#d4d4d8]'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between mb-1.5 text-[10px] font-mono text-[#6b6c71]">
+                      <span>{gate.num}</span>
+                      <span className="text-emerald-700">{gate.latency}</span>
+                    </div>
+                    <div className="text-xs font-medium text-[#0c152a] flex items-center gap-1.5 truncate">
+                      <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-[#0c152a]' : 'text-[#6b6c71]'}`} />
+                      <span className="truncate">{gate.name.replace(' Assurance', '')}</span>
+                    </div>
+                    <div className="text-[10px] text-[#6b6c71] mt-1 font-mono">
+                      {gate.status}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Dynamic Proof Drawer */}
+            <div className="p-4 rounded-[20px] bg-[#ffffff] border border-[#ededed] font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-3">
+                <span className="px-2 py-0.5 rounded-full bg-[#f4f4f6] text-[#0c152a] text-[10px] font-mono shrink-0">
+                  PROOF 0{heroActiveGate + 1}
+                </span>
+                <span className="text-xs text-[#6b6c71] leading-relaxed">
+                  {HERO_PIPELINE_GATES[heroActiveGate].proof}
+                </span>
+              </div>
+              <span className="text-[10px] text-[#6b6c71] shrink-0 font-mono">
+                Epistemic Independence
               </span>
-            </h1>
+            </div>
+          </div>
 
-            {/* Subtitle */}
-            <p className="text-base sm:text-xl text-slate-600 mt-6 max-w-2xl mx-auto leading-relaxed font-normal">
-              The enterprise execution assurance platform sitting between autonomous agents and critical infrastructure. 
-              Enforcing capability tokens, monotonic concurrency leases, and Gate 5 epistemic reality verification.
-            </p>
+          {/* INSTANT DEMONSTRATION ACCESS (Microdose Studio Pass Style) */}
+          <div className="mt-8 p-6 sm:p-8 rounded-[32px] bg-[#ffffff] border border-[#ededed] max-w-4xl mx-auto text-left shadow-[0px_2px_12px_rgba(14,15,43,0.03)]">
+            <div className="flex items-center justify-between mb-5 pb-3 border-b border-[#ededed]">
+              <div className="text-xs font-mono uppercase text-[#6b6c71] tracking-widest flex items-center gap-2">
+                <UserCheck className="w-4 h-4 text-[#0c152a]" />
+                <span>02 / DEMONSTRATION ACCESS PASSES</span>
+              </div>
+              <span className="text-[11px] text-[#6b6c71] font-mono">1-Click Live Entry</span>
+            </div>
 
-            {/* Action Buttons */}
-            <div className="mt-8 flex flex-wrap items-center justify-center gap-3.5 sm:gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Vedant - Operator Pass */}
               <button
+                type="button"
                 onClick={() => onLaunchDemo('OPERATOR')}
-                className="px-7 py-3.5 rounded-xl bg-slate-950 text-white font-semibold text-sm hover:bg-slate-900 transition-all flex items-center gap-2.5 shadow-md hover:shadow-lg hover:-translate-y-0.5 border border-slate-800 group"
+                className="p-5 rounded-[24px] bg-[#f9f9fb] border border-[#ededed] hover:border-[#0c152a] hover:bg-[#ffffff] text-left transition-all group"
               >
-                <span>Launch Mission Control</span>
-                <ChevronRight className="w-4 h-4 text-emerald-400 group-hover:translate-x-0.5 transition-transform" />
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-[#ededed] text-[#0c152a]">
+                    ROLE 01
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-[#6b6c71] group-hover:translate-x-0.5 transition-transform" />
+                </div>
+                <div className="text-base font-normal text-[#0c152a]">Vedant</div>
+                <div className="text-xs text-[#6b6c71] mt-0.5 font-normal">Autonomous Operations</div>
+                <div className="mt-3 text-xs text-[#0c152a] font-normal">Level 3 Autonomy</div>
+                <div className="text-[11px] text-[#6b6c71] font-mono mt-1">Approvals · Tool Fencing</div>
               </button>
 
+              {/* Vedant - Super Admin Pass */}
               <button
-                onClick={() => onOpenAuth('register')}
-                className="px-6 py-3.5 rounded-xl border border-slate-300/90 bg-white/90 hover:bg-white text-slate-800 font-semibold text-sm transition-all shadow-2xs hover:border-slate-400 hover:-translate-y-0.5"
+                type="button"
+                onClick={() => onLaunchDemo('SUPER_ADMIN')}
+                className="p-5 rounded-[24px] bg-[#f9f9fb] border border-[#ededed] hover:border-[#0c152a] hover:bg-[#ffffff] text-left transition-all group"
               >
-                Provision Enterprise Tenant
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-[#ededed] text-[#0c152a]">
+                    ROLE 02
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-[#6b6c71] group-hover:translate-x-0.5 transition-transform" />
+                </div>
+                <div className="text-base font-normal text-[#0c152a]">Vedant</div>
+                <div className="text-xs text-[#6b6c71] mt-0.5 font-normal">Platform Architect</div>
+                <div className="mt-3 text-xs text-[#0c152a] font-normal">Control Plane &bull; Admin</div>
+                <div className="text-[11px] text-[#6b6c71] font-mono mt-1">Postgres RLS · Tenant Root</div>
+              </button>
+
+              {/* Dax - Auditor Pass */}
+              <button
+                type="button"
+                onClick={() => onLaunchDemo('AUDITOR')}
+                className="p-5 rounded-[24px] bg-[#f9f9fb] border border-[#ededed] hover:border-[#0c152a] hover:bg-[#ffffff] text-left transition-all group"
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-[#ededed] text-[#0c152a]">
+                    ROLE 03
+                  </span>
+                  <ChevronRight className="w-4 h-4 text-[#6b6c71] group-hover:translate-x-0.5 transition-transform" />
+                </div>
+                <div className="text-base font-normal text-[#0c152a]">Dax</div>
+                <div className="text-xs text-[#6b6c71] mt-0.5 font-normal">Compliance Officer</div>
+                <div className="mt-3 text-xs text-[#0c152a] font-normal">Hash Chain &bull; Ledger</div>
+                <div className="text-[11px] text-[#6b6c71] font-mono mt-1">Merkle Chain · Non-Repudiation</div>
               </button>
             </div>
+          </div>
 
-            {/* HERO INTERACTIVE FIVE GATES PIPELINE SHOWCASE */}
-            <div className="mt-12 max-w-4xl mx-auto bg-slate-950 text-slate-100 rounded-2xl border border-slate-800/90 shadow-2xl p-5 sm:p-7 text-left transition-all">
-              {/* Pipeline Header */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-800/80 mb-5">
-                <div className="flex items-center gap-2.5">
-                  <span className="relative flex h-2.5 w-2.5">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
-                  </span>
-                  <span className="text-xs font-bold tracking-wider uppercase text-slate-300 font-display">
-                    Live Execution Pipeline
-                  </span>
-                  <span className="text-slate-600 font-mono">•</span>
-                  <span className="text-[11px] font-mono text-emerald-400 font-medium">
-                    tx_98f12a4b8c91
-                  </span>
-                  <span className="text-slate-600 font-mono">•</span>
-                  <span className="text-[11px] font-mono text-slate-400 hidden sm:inline">
-                    agent_treasury_disburser
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 text-[10px] font-mono font-bold flex items-center gap-1.5">
-                    <CheckCircle2 className="w-3 h-3 text-emerald-400" />
-                    CERTIFIED SUCCESS
-                  </span>
-                </div>
-              </div>
-
-              {/* Pipeline Stepper Nodes */}
-              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2.5 mb-5">
-                {HERO_PIPELINE_GATES.map((gate, idx) => {
-                  const isSelected = heroActiveGate === idx;
-                  const Icon = gate.icon;
-                  return (
-                    <button
-                      key={gate.num}
-                      type="button"
-                      onClick={() => setHeroActiveGate(idx)}
-                      className={`p-3 rounded-xl border text-left transition-all relative group cursor-pointer ${
-                        isSelected 
-                          ? 'bg-slate-900 border-emerald-500/80 shadow-[0_0_15px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/40' 
-                          : 'bg-slate-900/60 border-slate-800/80 hover:bg-slate-900 hover:border-slate-700'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1.5">
-                        <span className="text-[10px] font-mono text-slate-400 font-semibold">
-                          GATE {gate.num}
-                        </span>
-                        <span className="text-[10px] font-mono text-emerald-400 font-medium">
-                          {gate.latency}
-                        </span>
-                      </div>
-                      <div className="text-xs font-bold text-white flex items-center gap-1.5 truncate">
-                        <Icon className={`w-3.5 h-3.5 shrink-0 ${isSelected ? 'text-emerald-400' : 'text-slate-400'}`} />
-                        <span className="truncate">{gate.name.replace(' Assurance', '')}</span>
-                      </div>
-                      <div className="text-[10px] text-slate-400 truncate mt-0.5">
-                        {gate.status}
-                      </div>
-
-                      {/* Active Notch Indicator */}
-                      {isSelected && (
-                        <span className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-1 bg-emerald-400 rounded-full shadow-sm" />
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Active Gate Live Invariant Drawer */}
-              <div className="p-3.5 rounded-xl bg-slate-900/90 border border-slate-800 font-mono text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div className="flex items-start sm:items-center gap-2.5">
-                  <div className="px-2 py-0.5 rounded bg-emerald-950/80 border border-emerald-500/40 text-[10px] text-emerald-300 font-bold shrink-0 mt-0.5 sm:mt-0">
-                    GATE {HERO_PIPELINE_GATES[heroActiveGate].num} PROOF
-                  </div>
-                  <div className="text-slate-300 text-[11px] leading-relaxed">
-                    {HERO_PIPELINE_GATES[heroActiveGate].proof}
-                  </div>
-                </div>
-                <div className="text-[10px] text-slate-500 shrink-0 font-mono flex items-center gap-1.5 self-end sm:self-auto">
-                  <ShieldCheck className="w-3 h-3 text-emerald-400" />
-                  <span>Epistemic Ground Truth</span>
-                </div>
-              </div>
+          {/* ARCHITECTURAL TRUST METRICS (Microdose Studio Bento Grid) */}
+          <div className="mt-14 pt-8 border-t border-[#ededed] grid grid-cols-2 md:grid-cols-4 gap-4 text-left">
+            <div className="p-5 rounded-[24px] bg-[#f9f9fb] border border-[#ededed]">
+              <div className="text-3xl font-normal text-[#0c152a] font-sans">18.4 ms</div>
+              <div className="text-xs font-normal text-[#0c152a] mt-2">Mean Gate Latency</div>
+              <div className="text-[11px] text-[#6b6c71] mt-0.5">Across all 5 gates (p99 &lt; 32ms)</div>
             </div>
 
-            {/* INSTANT DEMONSTRATION ACCESS (Executive Pass Style) */}
-            <div className="mt-8 p-5 rounded-2xl bg-white border border-slate-200/90 max-w-4xl mx-auto text-left shadow-[0_4px_20px_-4px_rgba(0,0,0,0.04)]">
-              <div className="flex items-center justify-between mb-3.5 pb-2.5 border-b border-slate-100">
-                <div className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                  <UserCheck className="w-4 h-4 text-emerald-600" />
-                  <span>Authenticated Operator Passes</span>
-                </div>
-                <span className="text-[11px] text-slate-400 font-mono">1-Click Live Entry · Zero Friction</span>
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                {/* Vedant - Operator Pass */}
-                <button
-                  type="button"
-                  onClick={() => onLaunchDemo('OPERATOR')}
-                  className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/90 hover:border-emerald-500/60 hover:bg-white text-xs font-semibold text-slate-700 shadow-2xs hover:shadow-md transition-all text-left group hover:-translate-y-0.5"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-100/80 text-emerald-800 border border-emerald-200 font-bold">
-                      LEVEL 3 AUTONOMY
-                    </span>
-                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-emerald-600 group-hover:translate-x-0.5 transition-transform" />
-                  </div>
-                  <div className="flex items-center gap-2.5 mb-1.5">
-                    <div className="w-7 h-7 rounded-lg bg-slate-900 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                      V
-                    </div>
-                    <div>
-                      <div className="text-slate-900 font-extrabold text-sm leading-tight">Vedant</div>
-                      <div className="text-[10px] text-slate-500 font-medium">Autonomous Operations</div>
-                    </div>
-                  </div>
-                  <div className="text-[11px] text-slate-500 font-normal">Level 3 Autonomy</div>
-                  <div className="text-[10px] text-slate-400 mt-1 font-mono">Approvals · Tool Fencing</div>
-                </button>
-
-                {/* Vedant - Super Admin Pass */}
-                <button
-                  type="button"
-                  onClick={() => onLaunchDemo('SUPER_ADMIN')}
-                  className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/90 hover:border-indigo-500/60 hover:bg-white text-xs font-semibold text-slate-700 shadow-2xs hover:shadow-md transition-all text-left group hover:-translate-y-0.5"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-100/80 text-indigo-800 border border-indigo-200 font-bold">
-                      CONTROL PLANE
-                    </span>
-                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-indigo-600 group-hover:translate-x-0.5 transition-transform" />
-                  </div>
-                  <div className="flex items-center gap-2.5 mb-1.5">
-                    <div className="w-7 h-7 rounded-lg bg-indigo-950 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                      V
-                    </div>
-                    <div>
-                      <div className="text-slate-900 font-extrabold text-sm leading-tight">Vedant</div>
-                      <div className="text-[10px] text-slate-500 font-medium">Platform Architect</div>
-                    </div>
-                  </div>
-                  <div className="text-[11px] text-slate-500 font-normal">Control Plane &bull; Admin</div>
-                  <div className="text-[10px] text-slate-400 mt-1 font-mono">Postgres RLS · Tenant Root</div>
-                </button>
-
-                {/* Dax - Auditor Pass */}
-                <button
-                  type="button"
-                  onClick={() => onLaunchDemo('AUDITOR')}
-                  className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/90 hover:border-cyan-500/60 hover:bg-white text-xs font-semibold text-slate-700 shadow-2xs hover:shadow-md transition-all text-left group hover:-translate-y-0.5"
-                >
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-cyan-100/80 text-cyan-800 border border-cyan-200 font-bold">
-                      AUDITOR &bull; HASH CHAIN
-                    </span>
-                    <ChevronRight className="w-4 h-4 text-slate-400 group-hover:text-cyan-600 group-hover:translate-x-0.5 transition-transform" />
-                  </div>
-                  <div className="flex items-center gap-2.5 mb-1.5">
-                    <div className="w-7 h-7 rounded-lg bg-slate-800 text-white font-bold text-xs flex items-center justify-center shrink-0">
-                      D
-                    </div>
-                    <div>
-                      <div className="text-slate-900 font-extrabold text-sm leading-tight">Dax</div>
-                      <div className="text-[10px] text-slate-500 font-medium">Compliance Officer</div>
-                    </div>
-                  </div>
-                  <div className="text-[11px] text-slate-500 font-normal">Hash Chain &bull; Ledger</div>
-                  <div className="text-[10px] text-slate-400 mt-1 font-mono">Merkle Chain · Non-Repudiation</div>
-                </button>
-              </div>
+            <div className="p-5 rounded-[24px] bg-[#f9f9fb] border border-[#ededed]">
+              <div className="text-3xl font-normal text-[#0c152a] font-sans">100%</div>
+              <div className="text-xs font-normal text-[#0c152a] mt-2">Fail-Closed Invariants</div>
+              <div className="text-[11px] text-[#6b6c71] mt-0.5">Abort on missing attribution</div>
             </div>
 
-            {/* ARCHITECTURAL TRUST METRICS (4-Column Bento Matrix) */}
-            <div className="mt-14 pt-8 border-t border-slate-200/80 grid grid-cols-2 md:grid-cols-4 gap-4 text-left">
-              <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-2xl font-black text-slate-950 font-mono">18.4 ms</div>
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-                </div>
-                <div className="text-xs font-bold text-slate-900">Mean Gate Latency</div>
-                <div className="text-[11px] text-slate-500 mt-0.5">Across all 5 gates (p99 &lt; 32ms)</div>
-              </div>
+            <div className="p-5 rounded-[24px] bg-[#f9f9fb] border border-[#ededed]">
+              <div className="text-3xl font-normal text-[#0c152a] font-sans">SHA-256</div>
+              <div className="text-xs font-normal text-[#0c152a] mt-2">Cryptographic Hash Chain</div>
+              <div className="text-[11px] text-[#6b6c71] mt-0.5">Merkle root audit ledger</div>
+            </div>
 
-              <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-2xl font-black text-slate-950 font-mono">100%</div>
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                </div>
-                <div className="text-xs font-bold text-slate-900">Fail-Closed Invariants</div>
-                <div className="text-[11px] text-slate-500 mt-0.5">Abort on missing attribution</div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-2xl font-black text-slate-950 font-mono">SHA-256</div>
-                  <Lock className="w-4 h-4 text-emerald-600" />
-                </div>
-                <div className="text-xs font-bold text-slate-900">Cryptographic Hash Chain</div>
-                <div className="text-[11px] text-slate-500 mt-0.5">Merkle root audit ledger</div>
-              </div>
-
-              <div className="p-4 rounded-xl bg-white border border-slate-200/80 shadow-2xs hover:shadow-xs transition-shadow">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-2xl font-black text-slate-950 font-mono">Postgres RLS</div>
-                  <Database className="w-4 h-4 text-emerald-600" />
-                </div>
-                <div className="text-xs font-bold text-slate-900">Isolated Multi-Tenancy</div>
-                <div className="text-[11px] text-slate-500 mt-0.5">Kernel-level data boundaries</div>
-              </div>
+            <div className="p-5 rounded-[24px] bg-[#f9f9fb] border border-[#ededed]">
+              <div className="text-3xl font-normal text-[#0c152a] font-sans">Postgres RLS</div>
+              <div className="text-xs font-normal text-[#0c152a] mt-2">Isolated Multi-Tenancy</div>
+              <div className="text-[11px] text-[#6b6c71] mt-0.5">Kernel-level data boundaries</div>
             </div>
           </div>
         </div>
       </section>
 
-      {/* THE FIVE ASSURANCE GATES SECTION */}
-      <section id="five-gates" className="py-20 bg-slate-50/60 border-b border-slate-200/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-3xl mx-auto mb-14">
-            <div className="text-xs font-mono text-slate-400 uppercase tracking-wider mb-2">
-              Charter Specification 3.0 &bull; Epistemic Reality Verification
+      {/* THE ASSURANCE MANIFESTO (Microdose Studio Narrative Section) */}
+      <section className="py-24 px-6 sm:px-12 max-w-4xl mx-auto text-left border-b border-[#ededed]">
+        <div className="text-[11px] font-mono uppercase text-[#6b6c71] tracking-widest mb-6">
+          03 / The Assurance Manifesto
+        </div>
+        <p className="text-2xl sm:text-3xl lg:text-[34px] text-[#0c152a] font-normal leading-[1.35] tracking-tight">
+          We blend cryptographic proofs, model containment, and reality probes. Layer after layer, our five gates guarantee that no autonomous action touches production infrastructure without verified identity, grounded context, leased capabilities, safe output, and observed real-world state transitions.
+        </p>
+        <p className="text-lg sm:text-xl text-[#6b6c71] font-normal mt-6 leading-relaxed">
+          Every execution matters. Every mutation must be proven. Never trust unverified tool assertions.
+        </p>
+        
+        {/* Founders / Architect Seal */}
+        <div className="mt-12 pt-8 border-t border-[#ededed] flex flex-wrap items-center justify-between gap-6">
+          <div className="flex items-center gap-8">
+            <div>
+              <div className="text-sm font-normal text-[#0c152a]">Vedant</div>
+              <div className="text-xs text-[#6b6c71]">Co-founder &amp; Platform Architect</div>
             </div>
-            <h2 className="text-3xl font-extrabold text-slate-900 font-display">
+            <div>
+              <div className="text-sm font-normal text-[#0c152a]">Dax</div>
+              <div className="text-xs text-[#6b6c71]">Lead Cryptographic Auditor</div>
+            </div>
+          </div>
+          <div className="text-xs font-mono text-[#6b6c71]">
+            MIRAGE 3.0 Platform
+          </div>
+        </div>
+      </section>
+
+      {/* THE FIVE ASSURANCE GATES SECTION */}
+      <section id="five-gates" className="py-24 px-6 sm:px-12 border-b border-[#ededed]">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-left max-w-3xl mb-14">
+            <div className="text-[11px] font-mono uppercase text-[#6b6c71] tracking-widest mb-2">
+              04 / Architecture
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-normal text-[#0c152a] tracking-tight">
               The Five Assurance Gates
             </h2>
-            <p className="text-sm text-slate-600 mt-3 leading-relaxed">
+            <p className="text-base text-[#6b6c71] mt-3 leading-relaxed">
               Every consequential AI interaction traverses five sequential gates. Failure or uncertainty at any gate halts or fences execution immediately.
             </p>
           </div>
 
-          {/* Interactive Gate Stepper / Cards */}
+          {/* Gate Stepper Grid */}
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
             {/* Gate Navigation List */}
             <div className="lg:col-span-5 space-y-2.5">
@@ -545,27 +529,27 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
                 <button
                   key={gate.id}
                   onClick={() => setActiveGateIndex(idx)}
-                  className={`w-full p-4 rounded-xl border text-left transition-all flex items-start gap-3.5 ${
+                  className={`w-full p-4 rounded-[20px] border text-left transition-all flex items-start gap-3.5 ${
                     activeGateIndex === idx
-                      ? 'bg-white border-slate-900 shadow-md ring-1 ring-slate-900'
-                      : 'bg-white/80 border-slate-200 hover:bg-white hover:border-slate-300'
+                      ? 'bg-[#ffffff] border-[#0c152a] shadow-sm'
+                      : 'bg-[#f9f9fb] border-[#ededed] hover:bg-[#ffffff] hover:border-[#d4d4d8]'
                   }`}
                 >
-                  <div className={`w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold shrink-0 ${
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-mono font-normal shrink-0 ${
                     activeGateIndex === idx
-                      ? 'bg-slate-900 text-white'
-                      : 'bg-slate-100 text-slate-600'
+                      ? 'bg-[#0c152a] text-white'
+                      : 'bg-[#ededed] text-[#6b6c71]'
                   }`}>
                     0{gate.id}
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center justify-between">
-                      <span className="font-bold text-sm text-slate-900">{gate.name}</span>
-                      <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                      <span className="text-sm font-normal text-[#0c152a]">{gate.name}</span>
+                      <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-[#ededed] text-[#6b6c71]">
                         {gate.badge}
                       </span>
                     </div>
-                    <p className="text-xs text-slate-500 mt-1 line-clamp-2">
+                    <p className="text-xs text-[#6b6c71] mt-1 line-clamp-2">
                       {gate.description}
                     </p>
                   </div>
@@ -574,37 +558,37 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
             </div>
 
             {/* Active Gate Deep-Dive Panel */}
-            <div className="lg:col-span-7 bg-white rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-card">
+            <div className="lg:col-span-7 bg-[#f9f9fb] rounded-[32px] border border-[#ededed] p-6 sm:p-8">
               {(() => {
                 const current = FIVE_GATES_DETAILS[activeGateIndex];
                 return (
                   <div>
-                    <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
+                    <div className="flex items-center justify-between pb-4 border-b border-[#ededed] mb-6">
                       <div>
-                        <span className="text-[11px] font-bold text-slate-700 uppercase tracking-wider">
-                          Architectural Inspection
+                        <span className="text-[10px] font-mono text-[#6b6c71] uppercase tracking-widest">
+                          INSPECTION
                         </span>
-                        <h3 className="text-xl font-extrabold text-slate-900 font-display mt-0.5">
+                        <h3 className="text-2xl font-normal text-[#0c152a] mt-0.5">
                           {current.name}
                         </h3>
                       </div>
-                      <span className="px-3 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-semibold">
-                        Fail-Closed Enforcement
+                      <span className="px-3 py-1 rounded-full bg-[#ffffff] text-[#0c152a] border border-[#ededed] text-xs font-mono">
+                        Fail-Closed
                       </span>
                     </div>
 
-                    <p className="text-sm text-slate-600 leading-relaxed mb-6">
+                    <p className="text-sm text-[#6b6c71] leading-relaxed mb-6">
                       {current.description}
                     </p>
 
                     <div className="mb-6">
-                      <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3">
+                      <h4 className="text-[11px] font-mono uppercase text-[#6b6c71] tracking-widest mb-3">
                         Enforced Invariants
                       </h4>
-                      <ul className="space-y-2 text-xs text-slate-600">
+                      <ul className="space-y-2 text-xs text-[#0c152a]">
                         {current.invariants.map((inv, i) => (
                           <li key={i} className="flex items-start gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 mt-1.5" />
                             <span>{inv}</span>
                           </li>
                         ))}
@@ -612,11 +596,11 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between text-xs font-semibold text-slate-500 mb-2">
+                      <div className="flex items-center justify-between text-xs font-mono text-[#6b6c71] mb-2">
                         <span>Python SDK Verification Primitive</span>
-                        <span className="font-mono text-[11px]">Strict Type Hints</span>
+                        <span>Strict Types</span>
                       </div>
-                      <div className="bg-slate-900 text-slate-200 p-4 rounded-xl font-mono text-xs overflow-x-auto shadow-inner">
+                      <div className="bg-[#0c152a] text-[#ffffff] p-5 rounded-[20px] font-mono text-xs overflow-x-auto shadow-inner">
                         <pre>{current.code}</pre>
                       </div>
                     </div>
@@ -629,22 +613,25 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
       </section>
 
       {/* LIVE INTERACTIVE SIMULATOR SECTION */}
-      <section id="simulator" className="py-20 bg-white border-b border-slate-200/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-3xl mx-auto mb-12">
-            <h2 className="text-3xl font-extrabold text-slate-900 font-display">
+      <section id="simulator" className="py-24 px-6 sm:px-12 border-b border-[#ededed]">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-left max-w-3xl mb-12">
+            <div className="text-[11px] font-mono uppercase text-[#6b6c71] tracking-widest mb-2">
+              05 / Interactive Testing
+            </div>
+            <h2 className="text-3xl sm:text-4xl font-normal text-[#0c152a] tracking-tight">
               Test Assurance Verification Live
             </h2>
-            <p className="text-sm text-slate-600 mt-2">
+            <p className="text-base text-[#6b6c71] mt-2">
               Simulate autonomous agent execution against the Five Assurance Gates without leaving the landing page.
             </p>
           </div>
 
-          <div className="max-w-4xl mx-auto bg-slate-50 rounded-2xl border border-slate-200 p-6 sm:p-8 shadow-card">
+          <div className="max-w-4xl bg-[#f9f9fb] rounded-[32px] border border-[#ededed] p-6 sm:p-8">
             {/* Scenario Picker */}
-            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-slate-200">
+            <div className="flex flex-wrap items-center justify-between gap-4 mb-6 pb-6 border-b border-[#ededed]">
               <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
+                <label className="block text-[11px] font-mono uppercase text-[#6b6c71] tracking-widest mb-2.5">
                   Select Execution Scenario
                 </label>
                 <div className="flex flex-wrap gap-2">
@@ -652,10 +639,10 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
                     <button
                       key={sc.id}
                       onClick={() => { setSimScenario(sc); setSimResult(null); }}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                      className={`px-4 py-2 rounded-full text-xs font-normal transition ${
                         simScenario.id === sc.id
-                          ? 'bg-slate-900 text-white shadow-sm'
-                          : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          ? 'bg-[#0c152a] text-white shadow-xs'
+                          : 'bg-[#ffffff] border border-[#ededed] text-[#0c152a] hover:bg-[#ededed]'
                       }`}
                     >
                       {sc.title}
@@ -667,7 +654,7 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
               <button
                 onClick={runSimulation}
                 disabled={simRunning}
-                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-semibold text-xs transition flex items-center gap-2 shadow-sm disabled:opacity-50"
+                className="px-6 py-2.5 rounded-full bg-[#0c152a] hover:bg-[#19171b] text-white font-normal text-xs transition flex items-center gap-2 shadow-xs disabled:opacity-50"
               >
                 {simRunning ? (
                   <>
@@ -685,13 +672,13 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
 
             {/* Instruction & Tool Action Card */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-              <div className="bg-white p-4 rounded-xl border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Simulated Prompt</span>
-                <p className="text-xs text-slate-800 font-medium mt-1">"{simScenario.prompt}"</p>
+              <div className="bg-[#ffffff] p-5 rounded-[20px] border border-[#ededed]">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-[#6b6c71]">Simulated Prompt</span>
+                <p className="text-xs text-[#0c152a] font-normal mt-1.5">"{simScenario.prompt}"</p>
               </div>
-              <div className="bg-white p-4 rounded-xl border border-slate-200">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Proposed Tool Call</span>
-                <p className="text-xs font-mono text-emerald-700 font-semibold mt-1">{simScenario.action}</p>
+              <div className="bg-[#ffffff] p-5 rounded-[20px] border border-[#ededed]">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-[#6b6c71]">Proposed Tool Call</span>
+                <p className="text-xs font-mono text-emerald-700 mt-1.5">{simScenario.action}</p>
               </div>
             </div>
 
@@ -699,7 +686,7 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
             {simResult && (
               <div className="space-y-4 animate-in fade-in duration-300">
                 {/* Master Verdict Banner */}
-                <div className={`p-4 rounded-xl border flex items-center justify-between ${
+                <div className={`p-4 rounded-[20px] border flex items-center justify-between ${
                   simResult.expectedVerdict === 'CERTIFIED_SUCCESS'
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
                     : simResult.expectedVerdict === 'ESCALATED_L4_APPROVAL'
@@ -715,29 +702,29 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
                       <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
                     )}
                     <div>
-                      <div className="text-xs font-bold uppercase tracking-wider">Five Gates Verdict</div>
-                      <div className="text-base font-extrabold">{simResult.expectedVerdict}</div>
+                      <div className="text-[10px] font-mono uppercase tracking-wider">Five Gates Verdict</div>
+                      <div className="text-sm font-medium">{simResult.expectedVerdict}</div>
                     </div>
                   </div>
                   <button
                     onClick={() => onLaunchDemo('OPERATOR')}
-                    className="px-3.5 py-1.5 rounded-lg bg-white border text-xs font-bold hover:bg-slate-50 transition shadow-subtle"
+                    className="px-4 py-1.5 rounded-full bg-[#ffffff] border text-xs font-normal hover:bg-[#ededed] transition"
                   >
-                    Open in Operator Console &rarr;
+                    Open in Console &rarr;
                   </button>
                 </div>
 
                 {/* 5-Gate Grid */}
                 <div className="grid grid-cols-1 sm:grid-cols-5 gap-2.5 text-xs">
                   {Object.entries(simResult.gates).map(([gateKey, data], i) => (
-                    <div key={gateKey} className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col justify-between">
+                    <div key={gateKey} className="bg-[#ffffff] p-4 rounded-[20px] border border-[#ededed] flex flex-col justify-between">
                       <div>
-                        <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold mb-1">
-                          <span>GATE 0{i + 1}</span>
-                          <span className="font-mono">{data.latency}</span>
+                        <div className="flex items-center justify-between text-[10px] text-[#6b6c71] font-mono mb-1">
+                          <span>0{i + 1}</span>
+                          <span>{data.latency}</span>
                         </div>
-                        <div className="font-bold text-slate-900 text-xs mb-1">{data.status}</div>
-                        <p className="text-[11px] text-slate-500 leading-snug">{data.note}</p>
+                        <div className="font-medium text-[#0c152a] text-xs mb-1">{data.status}</div>
+                        <p className="text-[11px] text-[#6b6c71] leading-snug">{data.note}</p>
                       </div>
                     </div>
                   ))}
@@ -749,49 +736,49 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
       </section>
 
       {/* ARCHITECTURE & INVARIANTS SECTION */}
-      <section id="architecture" className="py-20 bg-slate-50/60 border-b border-slate-200/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-3xl mx-auto mb-14">
-            <div className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-              System Engineering
+      <section id="architecture" className="py-24 px-6 sm:px-12 border-b border-[#ededed]">
+        <div className="max-w-6xl mx-auto">
+          <div className="text-left max-w-3xl mb-14">
+            <div className="text-[11px] font-mono uppercase text-[#6b6c71] tracking-widest mb-2">
+              06 / Trust Boundaries
             </div>
-            <h2 className="text-3xl font-extrabold text-slate-900 font-display">
+            <h2 className="text-3xl sm:text-4xl font-normal text-[#0c152a] tracking-tight">
               Core Architectural Invariants
             </h2>
-            <p className="text-sm text-slate-600 mt-2">
+            <p className="text-base text-[#6b6c71] mt-2">
               Rigorous isolation, fail-closed boundaries, and cryptographic verification that cannot be bypassed.
             </p>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-card">
-              <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white mb-4">
+            <div className="p-8 rounded-[32px] bg-[#f9f9fb] border border-[#ededed]">
+              <div className="w-10 h-10 rounded-full bg-[#0c152a] flex items-center justify-center text-white mb-5">
                 <Database className="w-5 h-5 text-emerald-400" />
               </div>
-              <h3 className="font-bold text-base text-slate-900 mb-2">Epistemic Outcome Independence</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
+              <h3 className="font-normal text-lg text-[#0c152a] mb-2">Epistemic Outcome Independence</h3>
+              <p className="text-xs text-[#6b6c71] leading-relaxed">
                 A tool’s internal execution return value or an agent’s assertion is never accepted as proof of a real-world outcome. 
                 Gate 5 independently queries real database and destination systems.
               </p>
             </div>
 
-            <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-card">
-              <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white mb-4">
+            <div className="p-8 rounded-[32px] bg-[#f9f9fb] border border-[#ededed]">
+              <div className="w-10 h-10 rounded-full bg-[#0c152a] flex items-center justify-center text-white mb-5">
                 <Lock className="w-5 h-5 text-emerald-400" />
               </div>
-              <h3 className="font-bold text-base text-slate-900 mb-2">PostgreSQL Row-Level Security</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
+              <h3 className="font-normal text-lg text-[#0c152a] mb-2">PostgreSQL Row-Level Security</h3>
+              <p className="text-xs text-[#6b6c71] leading-relaxed">
                 Multi-tenant isolation enforced directly at the database engine level. Tenant boundaries cannot leak across sessions, 
                 even if an agent attempts cross-tenant query manipulation.
               </p>
             </div>
 
-            <div className="p-6 rounded-2xl bg-white border border-slate-200 shadow-card">
-              <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white mb-4">
+            <div className="p-8 rounded-[32px] bg-[#f9f9fb] border border-[#ededed]">
+              <div className="w-10 h-10 rounded-full bg-[#0c152a] flex items-center justify-center text-white mb-5">
                 <FileCheck className="w-5 h-5 text-emerald-400" />
               </div>
-              <h3 className="font-bold text-base text-slate-900 mb-2">Cryptographic Audit Hash Chain</h3>
-              <p className="text-xs text-slate-600 leading-relaxed">
+              <h3 className="font-normal text-lg text-[#0c152a] mb-2">Cryptographic Audit Hash Chain</h3>
+              <p className="text-xs text-[#6b6c71] leading-relaxed">
                 Append-only SHA-256 Merkle chain linking every proposal, authorization, and outcome back to the Genesis Root block. 
                 Zero tampering can occur without invalidating the cryptographic chain.
               </p>
@@ -801,42 +788,42 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
       </section>
 
       {/* DEVELOPER SDK & API SECTION */}
-      <section id="sdk-docs" className="py-20 bg-white border-b border-slate-200/80">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+      <section id="sdk-docs" className="py-24 px-6 sm:px-12 border-b border-[#ededed]">
+        <div className="max-w-6xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-center">
             <div className="lg:col-span-5">
-              <div className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">
-                Developer Integration
+              <div className="text-[11px] font-mono uppercase text-[#6b6c71] tracking-widest mb-2">
+                07 / Integration
               </div>
-              <h2 className="text-3xl font-extrabold text-slate-900 font-display">
-                Drop-in Governance for Any Agent Framework
+              <h2 className="text-3xl sm:text-4xl font-normal text-[#0c152a] tracking-tight">
+                Drop-in Governance for Any Agent
               </h2>
-              <p className="text-sm text-slate-600 mt-3 leading-relaxed">
+              <p className="text-base text-[#6b6c71] mt-3 leading-relaxed">
                 Compatible with LangChain, LangGraph, AutoGen, CrewAI, and direct LLM calls. Wrap any tool or agent in 2 lines of code.
               </p>
 
-              <div className="mt-6 space-y-3 text-xs text-slate-600">
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+              <div className="mt-6 space-y-3 text-xs text-[#6b6c71]">
+                <div className="flex items-center gap-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   <span>Strict Python 3.12+ type hints with mypy compliance</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <div className="flex items-center gap-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   <span>Automatic distributed lease fencing &amp; token rotation</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <div className="flex items-center gap-2.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                   <span>Zero-overhead async client with connection pooling</span>
                 </div>
               </div>
             </div>
 
-            <div className="lg:col-span-7 bg-slate-900 text-slate-200 rounded-2xl p-6 shadow-2xl font-mono text-xs">
+            <div className="lg:col-span-7 bg-[#0c152a] text-[#ffffff] rounded-[28px] p-6 shadow-xl font-mono text-xs">
               <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
                 <div className="flex items-center gap-2">
-                  <span className="w-3 h-3 rounded-full bg-rose-500/80 inline-block" />
-                  <span className="w-3 h-3 rounded-full bg-amber-500/80 inline-block" />
-                  <span className="w-3 h-3 rounded-full bg-emerald-500/80 inline-block" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-700 inline-block" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-700 inline-block" />
+                  <span className="w-2.5 h-2.5 rounded-full bg-slate-700 inline-block" />
                   <span className="text-[11px] text-slate-400 font-sans ml-2">agent_governance.py</span>
                 </div>
                 <span className="text-[10px] text-slate-500 uppercase">Python SDK</span>
@@ -863,17 +850,17 @@ async def disburse_vendor_payment(account_id: str, amount: float):
       </section>
 
       {/* FOOTER */}
-      <footer className="py-12 bg-white">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-8 border-b border-slate-200/80">
+      <footer className="py-16 px-6 sm:px-12 bg-[#ffffff]">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pb-8 border-b border-[#ededed]">
             <div className="flex items-center gap-2.5">
               <MirageLogo size="sm" showText={true} />
-              <span className="text-xs text-slate-400 ml-2 border-l border-slate-200 pl-2">
+              <span className="text-xs text-[#6b6c71] ml-3 border-l border-[#ededed] pl-3">
                 Execution Assurance Platform
               </span>
             </div>
 
-            <div className="text-xs text-slate-500 flex items-center gap-4">
+            <div className="text-xs font-mono text-[#6b6c71] flex items-center gap-4">
               <span>PostgreSQL RLS</span>
               <span>&bull;</span>
               <span>Distributed Leases</span>
@@ -882,7 +869,7 @@ async def disburse_vendor_payment(account_id: str, amount: float):
             </div>
           </div>
 
-          <div className="pt-8 text-center text-xs text-slate-400">
+          <div className="pt-8 text-center text-xs text-[#6b6c71]">
             &copy; {new Date().getFullYear()} MIRAGE Systems Inc. All rights reserved. Authoritative AI Execution Assurance.
           </div>
         </div>

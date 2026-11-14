@@ -157,7 +157,7 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
                   <div className="w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center">
                     {getInitials(user?.name)}
                   </div>
-                  <span className="font-semibold text-slate-800 max-w-[100px] truncate hidden sm:inline">
+                  <span className="font-semibold text-slate-800 max-w-[150px] truncate hidden sm:inline">
                     {user?.name || 'Sarah Chen'}
                   </span>
                   <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 font-medium">

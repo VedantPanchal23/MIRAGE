@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { 
   Shield, 
   ChevronRight, 
@@ -9,13 +9,28 @@ import {
   ChevronDown,
   Layers,
   Sparkles,
-  ExternalLink
+  ExternalLink,
+  Activity,
+  SlidersHorizontal,
+  Key
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 
 export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpenAuth = () => {} }) {
   const { user, isAuthenticated, logout, switchRole, loginAsDemo } = useAuth();
-  const [showRoleMenu, setShowRoleMenu] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const menuRef = useRef(null);
+
+  // Close menu when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event) {
+      if (menuRef.current && !menuRef.current.contains(event.target)) {
+        setShowUserMenu(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   const handleNavClick = (anchorId) => {
     if (activeView !== 'landing') {
@@ -30,92 +45,94 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
     }
   };
 
+  const getInitials = (name) => {
+    if (!name) return 'OP';
+    const parts = name.split(' ');
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return name.slice(0, 2).toUpperCase();
+  };
+
   return (
-    <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        {/* Brand Logo & Context Breadcrumb */}
-        <div className="flex items-center gap-3">
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-slate-200/80">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-14 flex items-center justify-between">
+        
+        {/* Left: Brand Identity & Subsystem Context */}
+        <div className="flex items-center gap-4">
           <div 
             onClick={() => setActiveView('landing')} 
-            className="flex items-center gap-2.5 cursor-pointer group"
-            title="Return to Home / Overview"
+            className="flex items-center gap-2.5 cursor-pointer group select-none"
+            title="MIRAGE 3.0 Platform Overview"
           >
-            <div className="w-8 h-8 rounded-lg bg-slate-900 flex items-center justify-center text-white shadow-sm group-hover:scale-105 transition-transform duration-200">
+            {/* Minimalist Engineered Logo Mark */}
+            <div className="w-7 h-7 rounded-lg bg-slate-900 flex items-center justify-center text-white shadow-xs group-hover:bg-slate-800 transition-colors">
               <Shield className="w-4 h-4 text-emerald-400" />
             </div>
-            <div className="flex items-baseline gap-1.5">
-              <span className="font-extrabold text-lg tracking-tight text-slate-900 font-display">
+            
+            <div className="flex items-center gap-2">
+              <span className="font-extrabold text-[15px] tracking-tight text-slate-900 font-display">
                 MIRAGE
               </span>
-              <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-100 text-slate-700 border border-slate-200">
-                3.0
+              <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200/80">
+                v3.0
               </span>
             </div>
           </div>
 
-          {activeView === 'console' && (
-            <div className="hidden sm:flex items-center gap-2 pl-3 border-l border-slate-200 text-xs">
-              <span className="text-slate-400">/</span>
-              <span className="font-semibold text-slate-800">Operator Console</span>
-            </div>
-          )}
-        </div>
-
-        {/* Public Navigation Links (Visible on Landing Page or Desktop) */}
-        {activeView === 'landing' && (
-          <nav className="hidden md:flex items-center gap-4 lg:gap-6 text-xs font-semibold text-slate-600">
-            <button 
-              onClick={() => handleNavClick('hero')}
-              className="hover:text-slate-900 transition-colors py-1 whitespace-nowrap"
-            >
-              Overview
-            </button>
-            <button 
-              onClick={() => handleNavClick('five-gates')}
-              className="hover:text-slate-900 transition-colors py-1 whitespace-nowrap"
-            >
-              The Five Gates
-            </button>
-            <button 
-              onClick={() => handleNavClick('simulator')}
-              className="hover:text-slate-900 transition-colors py-1 flex items-center gap-1 text-slate-900 whitespace-nowrap"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Live Simulator</span>
-            </button>
-            <button 
-              onClick={() => handleNavClick('architecture')}
-              className="hover:text-slate-900 transition-colors py-1 whitespace-nowrap"
-            >
-              Architecture
-            </button>
-            <button 
-              onClick={() => handleNavClick('sdk-docs')}
-              className="hover:text-slate-900 transition-colors py-1 whitespace-nowrap"
-            >
-              SDK &amp; API
-            </button>
-          </nav>
-        )}
-
-        {/* Right Action Cluster */}
-        <div className="flex items-center gap-2.5">
-          {/* Live System Status Pill */}
-          <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-50 border border-slate-200 text-[11px] font-medium text-slate-600">
+          {/* Discreet Telemetry Indicator next to brand */}
+          <div className="hidden sm:flex items-center gap-1.5 pl-3 border-l border-slate-200 text-[11px] font-mono text-slate-500">
             <span className="relative flex h-2 w-2">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
               <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
             </span>
             <span>Gateway 99.98%</span>
           </div>
+        </div>
 
+        {/* Center: Editorial Navigation Links (Typographically Uniform, No Gimmick Icons) */}
+        {activeView === 'landing' && (
+          <nav className="hidden md:flex items-center gap-1 text-[13px] font-medium text-slate-600">
+            <button 
+              onClick={() => handleNavClick('hero')}
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 hover:bg-slate-100/70 transition-colors whitespace-nowrap"
+            >
+              Overview
+            </button>
+            <button 
+              onClick={() => handleNavClick('five-gates')}
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 hover:bg-slate-100/70 transition-colors whitespace-nowrap"
+            >
+              The Five Gates
+            </button>
+            <button 
+              onClick={() => handleNavClick('simulator')}
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 hover:bg-slate-100/70 transition-colors whitespace-nowrap"
+            >
+              Live Simulator
+            </button>
+            <button 
+              onClick={() => handleNavClick('architecture')}
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 hover:bg-slate-100/70 transition-colors whitespace-nowrap"
+            >
+              Architecture
+            </button>
+            <button 
+              onClick={() => handleNavClick('sdk-docs')}
+              className="px-3 py-1.5 rounded-md hover:text-slate-900 hover:bg-slate-100/70 transition-colors whitespace-nowrap"
+            >
+              SDK &amp; API
+            </button>
+          </nav>
+        )}
+
+        {/* Right: Unified Action & Profile Cluster */}
+        <div className="flex items-center gap-3">
           {isAuthenticated ? (
-            <div className="flex items-center gap-2">
-              {/* Switch View Toggle */}
+            <div className="flex items-center gap-2.5">
+              {/* Primary View Toggle */}
               {activeView !== 'console' ? (
                 <button
                   onClick={() => setActiveView('console')}
-                  className="px-3 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition shadow-sm flex items-center gap-1.5"
+                  className="h-8 px-3 rounded-lg bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 transition flex items-center gap-1.5 shadow-xs"
                 >
                   <Terminal className="w-3.5 h-3.5 text-emerald-400" />
                   <span>Operator Console</span>
@@ -123,65 +140,107 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
               ) : (
                 <button
                   onClick={() => setActiveView('landing')}
-                  className="px-3 py-1.5 rounded-lg border border-slate-200 text-slate-700 text-xs font-semibold hover:bg-slate-50 transition"
+                  className="h-8 px-3 rounded-lg border border-slate-200 text-slate-600 hover:text-slate-900 hover:bg-slate-50 text-xs font-medium transition"
                 >
                   Public Overview
                 </button>
               )}
 
-              {/* Persona Switcher Dropdown */}
-              <div className="relative">
+              {/* Single Unified Workspace & Account Menu (Replaces clunky separate pills) */}
+              <div className="relative" ref={menuRef}>
                 <button
-                  onClick={() => setShowRoleMenu(!showRoleMenu)}
-                  className="px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-semibold text-slate-700 flex items-center gap-1.5 shadow-xs"
-                  title="Switch Active Persona"
+                  onClick={() => setShowUserMenu(!showUserMenu)}
+                  className="h-8 pl-2 pr-2.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-xs font-medium text-slate-700 flex items-center gap-2 transition shadow-2xs"
+                  title="Workspace & Account Menu"
                 >
-                  <UserCheck className="w-3.5 h-3.5 text-slate-500" />
-                  <span>{user?.role || 'OPERATOR'}</span>
-                  <ChevronDown className="w-3 h-3 text-slate-400" />
+                  {/* Avatar Chip */}
+                  <div className="w-5 h-5 rounded-full bg-slate-900 text-white text-[10px] font-bold flex items-center justify-center">
+                    {getInitials(user?.name)}
+                  </div>
+                  <span className="font-semibold text-slate-800 max-w-[100px] truncate hidden sm:inline">
+                    {user?.name || 'Sarah Chen'}
+                  </span>
+                  <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-slate-100 text-slate-600 border border-slate-200 font-medium">
+                    {user?.role || 'OPERATOR'}
+                  </span>
+                  <ChevronDown className="w-3 h-3 text-slate-400 ml-0.5" />
                 </button>
 
-                {showRoleMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl py-1 z-50 text-xs animate-in fade-in">
-                    <div className="px-3 py-1.5 font-bold text-slate-400 uppercase tracking-wider text-[10px]">
-                      Simulate Persona
+                {/* Polished Enterprise Dropdown */}
+                {showUserMenu && (
+                  <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-xl shadow-xl py-1.5 z-50 text-xs animate-in fade-in duration-150">
+                    {/* User Identity Header */}
+                    <div className="px-3.5 py-2.5 border-b border-slate-100 bg-slate-50/50">
+                      <div className="font-semibold text-slate-900 text-xs truncate">
+                        {user?.name || 'Sarah Chen'}
+                      </div>
+                      <div className="text-[11px] text-slate-500 font-mono truncate">
+                        {user?.email || 'sarah@apexassurance.com'}
+                      </div>
+                      <div className="mt-1.5 flex items-center gap-1.5 text-[10px] text-emerald-700 font-medium">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                        <span className="truncate">{user?.tenant_name || 'Apex Assurance Corp'}</span>
+                      </div>
                     </div>
-                    {['OPERATOR', 'SUPER_ADMIN', 'AUDITOR'].map((role) => (
+
+                    {/* Persona Switcher Section */}
+                    <div className="px-3.5 py-2 border-b border-slate-100">
+                      <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">
+                        Simulate Role Persona
+                      </div>
+                      <div className="space-y-0.5">
+                        {[
+                          { role: 'OPERATOR', label: 'Operator', sub: 'Level 3 Autonomy' },
+                          { role: 'SUPER_ADMIN', label: 'Super Admin', sub: 'Control Plane' },
+                          { role: 'AUDITOR', label: 'Auditor', sub: 'Hash Chain & Ledger' }
+                        ].map((p) => (
+                          <button
+                            key={p.role}
+                            onClick={() => {
+                              switchRole(p.role);
+                              setShowUserMenu(false);
+                            }}
+                            className={`w-full text-left px-2 py-1.5 rounded-lg flex items-center justify-between transition-colors ${
+                              user?.role === p.role 
+                                ? 'bg-slate-100 text-slate-900 font-bold' 
+                                : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                            }`}
+                          >
+                            <div>
+                              <div className="text-xs">{p.label}</div>
+                              <div className="text-[10px] text-slate-400 font-normal">{p.sub}</div>
+                            </div>
+                            {user?.role === p.role && (
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Sign Out Action */}
+                    <div className="p-1">
                       <button
-                        key={role}
                         onClick={() => {
-                          switchRole(role);
-                          setShowRoleMenu(false);
+                          logout();
+                          setActiveView('landing');
+                          setShowUserMenu(false);
                         }}
-                        className={`w-full text-left px-3 py-1.5 hover:bg-slate-50 flex items-center justify-between ${
-                          user?.role === role ? 'font-bold text-slate-900 bg-slate-50' : 'text-slate-600'
-                        }`}
+                        className="w-full text-left px-2.5 py-1.5 rounded-lg text-rose-600 hover:bg-rose-50 flex items-center gap-2 text-xs font-medium transition"
                       >
-                        <span>{role}</span>
-                        {user?.role === role && <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />}
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>Sign Out of Console</span>
                       </button>
-                    ))}
+                    </div>
                   </div>
                 )}
               </div>
-
-              {/* Sign Out Button */}
-              <button
-                onClick={() => {
-                  logout();
-                  setActiveView('landing');
-                }}
-                className="p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition"
-                title="Sign out of console"
-              >
-                <LogOut className="w-4 h-4" />
-              </button>
             </div>
           ) : (
             <div className="flex items-center gap-2">
               <button
                 onClick={() => onOpenAuth('login')}
-                className="px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-slate-900 transition"
+                className="px-3 py-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 transition"
               >
                 Sign In
               </button>
@@ -190,7 +249,7 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
                   loginAsDemo('OPERATOR');
                   setActiveView('console');
                 }}
-                className="px-3.5 py-1.5 rounded-lg bg-slate-900 text-white text-xs font-semibold hover:bg-slate-800 transition shadow-sm flex items-center gap-1.5"
+                className="h-8 px-3 rounded-lg bg-slate-900 text-white text-xs font-medium hover:bg-slate-800 transition shadow-xs flex items-center gap-1"
               >
                 <span>Launch Console</span>
                 <ChevronRight className="w-3.5 h-3.5 text-slate-400" />

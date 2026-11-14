@@ -16,7 +16,16 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
     try {
       const saved = localStorage.getItem('mirage_auth_user');
-      return saved ? JSON.parse(saved) : null;
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed?.name && (parsed.name.toLowerCase().includes('sarah') || parsed.name.toLowerCase().includes('chen'))) {
+          parsed.name = 'Vedant';
+          parsed.email = 'vedant@mirage.ai';
+          localStorage.setItem('mirage_auth_user', JSON.stringify(parsed));
+        }
+        return parsed;
+      }
+      return null;
     } catch {
       return null;
     }

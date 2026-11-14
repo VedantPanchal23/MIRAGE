@@ -188,7 +188,7 @@ export function OperatorConsole({ setActiveView = () => {} }) {
                   </span>
                 </div>
                 <div className="text-xs text-slate-500 flex items-center gap-2 mt-0.5">
-                  <span>Logged in as <strong>{user?.name || 'Sarah Chen'}</strong> ({user?.role || 'OPERATOR'})</span>
+                  <span>Logged in as <strong>{user?.name || 'Vedant'}</strong> ({user?.role || 'OPERATOR'})</span>
                   <span>&bull;</span>
                   <span className="text-emerald-700 font-medium">PostgreSQL RLS Active</span>
                 </div>

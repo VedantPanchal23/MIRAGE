@@ -3,9 +3,9 @@ import React, { createContext, useContext, useState, useEffect } from 'react';
 const AuthContext = createContext(null);
 
 const DEFAULT_DEMO_USER = {
-  identity_id: 'usr_sarah_chen',
-  name: 'Sarah Chen',
-  email: 's.chen@apex-assurance.io',
+  identity_id: 'usr_vedant',
+  name: 'Vedant',
+  email: 'vedant@mirage.ai',
   role: 'OPERATOR', // SUPER_ADMIN | OPERATOR | AUDITOR | TENANT_ADMIN
   tenant_id: 'tenant_apex_assurance_corp',
   tenant_name: 'Apex Assurance Corp',
@@ -42,7 +42,12 @@ export function AuthProvider({ children }) {
     const demo = {
       ...DEFAULT_DEMO_USER,
       role,
-      name: role === 'SUPER_ADMIN' ? 'Marcus Vance (SecOps)' : role === 'AUDITOR' ? 'Elena Rostova (Compliance)' : 'Sarah Chen (Operator)',
+      name: role === 'SUPER_ADMIN' 
+        ? 'Vedant' 
+        : role === 'AUDITOR' 
+        ? 'Dax' 
+        : 'Vedant',
+      email: role === 'AUDITOR' ? 'dax@mirage.ai' : 'vedant@mirage.ai',
     };
     setUser(demo);
     setDemoMode(true);
@@ -58,6 +63,8 @@ export function AuthProvider({ children }) {
     setUser((prev) => ({
       ...prev,
       role: newRole,
+      name: newRole === 'AUDITOR' ? 'Dax' : 'Vedant',
+      email: newRole === 'AUDITOR' ? 'dax@mirage.ai' : 'vedant@mirage.ai',
     }));
   };
 

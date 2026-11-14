@@ -1,6 +1,5 @@
 import React, { useState } from 'react';
 import { 
-  Shield, 
   Lock, 
   ArrowRight, 
   UserCheck, 
@@ -14,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../api/client';
+import { MirageLogo } from '../common/MirageLogo';
 
 export function AuthModal({ isOpen, onClose, initialMode = 'login', onSuccessfulLogin }) {
   const { login, loginAsDemo } = useAuth();
@@ -36,8 +36,8 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login', onSuccessful
 
     login({
       identity_id: `usr_${Date.now()}`,
-      name: email ? email.split('@')[0] : 'Enterprise Operator',
-      email: email.trim() || 'operator@enterprise.com',
+      name: email ? email.split('@')[0] : 'Vedant',
+      email: email.trim() || 'vedant@mirage.ai',
       role: 'OPERATOR',
       tenant_id: tenantName.trim() ? `tenant_${tenantName.toLowerCase().replace(/\s+/g, '_')}` : 'tenant_apex_assurance_corp',
       tenant_name: tenantName.trim() || 'Apex Assurance Corp',
@@ -107,24 +107,12 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login', onSuccessful
           <X className="w-5 h-5" />
         </button>
 
-        {/* Modal Header */}
+        {/* Modal Header with Custom Mirage Logo */}
         <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-xl bg-slate-900 flex items-center justify-center text-white shadow-sm">
-            <Shield className="w-5 h-5 text-emerald-400" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-extrabold text-lg text-slate-900 font-display">
-                MIRAGE 3.0
-              </span>
-              <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60">
-                Enterprise Access
-              </span>
-            </div>
-            <p className="text-xs text-slate-500">
-              Epistemic Execution Assurance &amp; Reality Verification
-            </p>
-          </div>
+          <MirageLogo size="md" showText={true} />
+          <span className="text-[10px] font-semibold px-2 py-0.5 rounded bg-emerald-50 text-emerald-700 border border-emerald-200/60 ml-auto">
+            Enterprise Console
+          </span>
         </div>
 
         {/* Mode Switcher Tabs */}
@@ -168,7 +156,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login', onSuccessful
               onClick={() => handleDemoSelect('OPERATOR')}
               className="py-2 px-2 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 shadow-subtle hover:bg-slate-50 transition text-center"
             >
-              <div className="text-slate-900 font-bold">Operator</div>
+              <div className="text-slate-900 font-bold">Vedant</div>
               <div className="text-[10px] text-slate-400 font-normal">Level 3 Autonomy</div>
             </button>
             <button
@@ -176,16 +164,16 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login', onSuccessful
               onClick={() => handleDemoSelect('SUPER_ADMIN')}
               className="py-2 px-2 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 shadow-subtle hover:bg-slate-50 transition text-center"
             >
-              <div className="text-slate-900 font-bold">Super Admin</div>
-              <div className="text-[10px] text-slate-400 font-normal">Control Plane</div>
+              <div className="text-slate-900 font-bold">Vedant</div>
+              <div className="text-[10px] text-slate-400 font-normal">Super Admin</div>
             </button>
             <button
               type="button"
               onClick={() => handleDemoSelect('AUDITOR')}
               className="py-2 px-2 rounded-lg bg-white border border-slate-200 hover:border-slate-300 text-xs font-semibold text-slate-700 shadow-subtle hover:bg-slate-50 transition text-center"
             >
-              <div className="text-slate-900 font-bold">Auditor</div>
-              <div className="text-[10px] text-slate-400 font-normal">Hash Chain</div>
+              <div className="text-slate-900 font-bold">Dax</div>
+              <div className="text-[10px] text-slate-400 font-normal">Auditor</div>
             </button>
           </div>
         </div>
@@ -217,7 +205,7 @@ export function AuthModal({ isOpen, onClose, initialMode = 'login', onSuccessful
               </label>
               <input
                 type="email"
-                placeholder="operator@enterprise.com"
+                placeholder="vedant@mirage.ai"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-slate-900 text-slate-900"

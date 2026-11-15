@@ -48,6 +48,10 @@ Thumbs.db
 .pytest_cache/
 .coverage
 .coverage.*
+
+# Tunnel binaries
+cloudflared.exe
+*.exe
 htmlcov/
 .tox/
 .nox/

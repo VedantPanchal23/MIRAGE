@@ -12,9 +12,9 @@ Generates reports/MIRAGE_3_0_Final_Project_Report.tex conforming strictly to:
 
 import os
 
-OUTPUT_TEX = os.path.join(os.path.dirname(__file__), '..', 'reports', 'MIRAGE_3_0_Final_Project_Report.tex')
+OUTPUT_TEX = os.path.join(os.path.dirname(__file__), "MIRAGE_3_0_Final_Project_Report.tex")
 
-LATEX_CONTENT = r'''\documentclass[12pt,a4paper]{report}
+LATEX_CONTENT = r"""\documentclass[12pt,a4paper]{report}
 
 % Page Geometry (Left: 1.25in, Right: 1.0in, Top: 1.0in, Bottom: 1.0in)
 \usepackage[left=1.25in,right=1.0in,top=1.0in,bottom=1.0in]{geometry}
@@ -594,12 +594,14 @@ Future research and engineering extensions planned for subsequent iterations of 
 \end{enumerate}
 
 \end{document}
-'''
+"""
+
 
 def generate_tex():
-    with open(OUTPUT_TEX, 'w', encoding='utf-8') as f:
+    with open(OUTPUT_TEX, "w", encoding="utf-8") as f:
         f.write(LATEX_CONTENT)
     print(f"LaTeX report generated successfully at: {OUTPUT_TEX}")
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     generate_tex()

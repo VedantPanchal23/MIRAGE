@@ -9,17 +9,17 @@ from services.agent_governance import agent_governance_service
 from services.concurrency_service import concurrency_service
 
 from .audit import _record_action_audit_event
-from .proxy import (
-    GovernedToolProxy,
-    ToolProxyBypassError,
-    _safe_eval_math,
-)
 from .budget import (
     MAX_WINDOW_ACTION_COUNT,
     MAX_WINDOW_CUMULATIVE_COST,
     MAX_WINDOW_CUMULATIVE_RISK,
     MAX_WINDOW_HOURS,
     evaluate_risk_and_salami_budget,
+)
+from .proxy import (
+    GovernedToolProxy,
+    ToolProxyBypassError,
+    _safe_eval_math,
 )
 from .service import (
     ActionGovernorService,
@@ -38,4 +38,5 @@ __all__ = [
     "agent_governance_service",
     "concurrency_service",
     "db_session",
+    "evaluate_risk_and_salami_budget",
 ]

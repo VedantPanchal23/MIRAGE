@@ -12,7 +12,7 @@ import re
 import time
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, cast
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection, AsyncIOMotorDatabase
 from pymongo.errors import DuplicateKeyError
@@ -255,13 +255,14 @@ class MongoTraceService:
             if doc and "_id" in doc:
                 doc["_id"] = str(doc["_id"])
             if doc:
-                return doc
+                return cast(dict[str, Any], doc)
         except Exception as exc:
             logger.warning("MongoDB trace retrieval failed; attempting PostgreSQL JSONB fallback", error=str(exc))
 
         # Direct PostgreSQL fallback from native JSONB column
         try:
             from sqlalchemy import select
+
             from db.models import VerificationSession
             from db.session import get_tenant_session
 
@@ -271,8 +272,8 @@ class MongoTraceService:
                     VerificationSession.session_id == valid_session,
                 )
                 pg_trace = (await pg_session.execute(stmt)).scalar_one_or_none()
-                if pg_trace is not None:
-                    return pg_trace
+                if pg_trace is not None and isinstance(pg_trace, dict):
+                    return cast(dict[str, Any], pg_trace)
         except Exception as pg_exc:
             logger.debug("PostgreSQL fallback trace query failed", error=str(pg_exc))
 
@@ -345,6 +346,7 @@ class MongoTraceService:
             # Fallback: check PostgreSQL connection. If PostgreSQL is healthy, traces are preserved in PostgreSQL JSONB
             try:
                 from db.session import check_database_connection
+
                 pg_ok = await check_database_connection()
                 if pg_ok:
                     latency_ms = round((time.time() - t0) * 1000, 2)

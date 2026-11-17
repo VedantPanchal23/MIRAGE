@@ -90,7 +90,7 @@ def validate_chain_record_fields_and_hash(
     if not verified_at or not isinstance(verified_at, str) or not verified_at.strip():
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Audit chain record '{entry_id}' missing or empty payload verified_at field.",
+            detail=f"Audit chain record '{entry_id}' missing or empty verified_at field in payload.",
         )
 
     # ISO 8601 parsing validation
@@ -99,7 +99,7 @@ def validate_chain_record_fields_and_hash(
     except (ValueError, TypeError) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail=f"Audit chain record '{entry_id}' has unparseable ISO 8601 verified_at '{verified_at}': {exc}",
+            detail=f"Audit chain record '{entry_id}' has invalid ISO-8601 verified_at timestamp '{verified_at}': {exc}",
         ) from exc
 
     decision = audit_record.decision
@@ -115,7 +115,7 @@ def validate_chain_record_fields_and_hash(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=(
-                f"Audit chain cryptographic tampering detected: {role_label} chain_hash mismatch. "
+                f"Audit chain corruption detected at {role_label}: chain_hash mismatch. "
                 f"Stored: '{chain_hash}', Recomputed: '{expected_chain_hash}'"
             ),
         )
@@ -126,6 +126,14 @@ def validate_chain_record_fields_and_hash(
 def validate_audit_correlation(record: OutcomeVerificationRecord, matching_audit: AuditLogRecord) -> None:
     """Enforce unambiguous 4-way correlation check between OutcomeVerificationRecord and AuditLogRecord."""
     payload = matching_audit.event_payload or {}
+    if payload.get("decision") and payload.get("decision") != matching_audit.decision:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"Audit chain divergence: AuditLogRecord column decision '{matching_audit.decision}' "
+                f"does not match payload decision '{payload.get('decision')}'."
+            ),
+        )
     if payload.get("outcome_id") != record.id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,

@@ -8,8 +8,6 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
-    ports:
-      - "5432:5432"
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-mirage_dev_secret}
@@ -55,8 +53,6 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
-    ports:
-      - "27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-root}
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:-mirage_mongo_secret}
@@ -103,8 +99,6 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
-    ports:
-      - "6333:6333"
     environment:
       QDRANT__SERVICE__API_KEY: ${QDRANT_API_KEY:-mirage_qdrant_secret}
     volumes:
@@ -141,8 +135,6 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
-    ports:
-      - "6379:6379"
     command: ["redis-server", "/usr/local/etc/redis/redis.conf"]
     volumes:
       - ./docker/redis.conf:/usr/local/etc/redis/redis.conf:ro
@@ -182,9 +174,6 @@ services:
     restart: unless-stopped
     networks:
       - backend_net
-    ports:
-      - "5672:5672"
-      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-mirage}
       RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-mirage_rabbit_secret}
@@ -224,7 +213,6 @@ services:
   # Distributed Tracing Backend: Grafana Tempo
   # ============================================================================
   tempo:
-    profiles: ["observability", "full"]
     image: grafana/tempo:2.6.0
     container_name: mirage-tempo
     restart: unless-stopped
@@ -253,7 +241,6 @@ services:
   # OpenTelemetry Collector: Telemetry Buffer & Router (TAD §10.1, Security §17.1)
   # ============================================================================
   otel-collector:
-    profiles: ["observability", "full"]
     image: otel/opentelemetry-collector-contrib:0.108.0
     container_name: mirage-otel-collector
     restart: unless-stopped
@@ -283,14 +270,11 @@ services:
   # Metrics Scraper: Prometheus
   # ============================================================================
   prometheus:
-    profiles: ["observability", "full"]
     image: prom/prometheus:v2.54.1
     container_name: mirage-prometheus
     restart: unless-stopped
     networks:
       - observability_net
-    ports:
-      - "9090:9090"
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheusdata:/prometheus
@@ -313,7 +297,6 @@ services:
   # Operational Monitoring Dashboard: Grafana
   # ============================================================================
   grafana:
-    profiles: ["observability", "full"]
     image: grafana/grafana:11.2.0
     container_name: mirage-grafana
     restart: unless-stopped

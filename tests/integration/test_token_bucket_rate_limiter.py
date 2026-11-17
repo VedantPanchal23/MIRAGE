@@ -48,12 +48,12 @@ class TestTokenBucketRateLimiter:
         assert res_pro.limit == 300
         assert res_pro.remaining == 299
 
-        # Enterprise tier: capacity 1000
+        # Enterprise tier: capacity 2000
         tenant_ent = f"tenant_cap_ent_{uuid.uuid4().hex[:8]}"
         res_ent = await limiter.consume(tenant_ent, tier="enterprise", cost=1)
         assert res_ent.allowed is True
-        assert res_ent.limit == 1000
-        assert res_ent.remaining == 999
+        assert res_ent.limit == 2000
+        assert res_ent.remaining == 1999
 
     @pytest.mark.asyncio
     async def test_bucket_exhaustion_and_retry_after(self, live_redis_database: Any) -> None:

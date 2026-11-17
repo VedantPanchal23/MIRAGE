@@ -19,7 +19,6 @@ from db.models import (
     ActionContract,
     AuditLogRecord,
     OutcomeVerificationRecord,
-    TenantAuditLedger,
 )
 from shared.config import get_settings
 from shared.logging import get_logger
@@ -140,14 +139,7 @@ class RealityVerifierService:
             reconciliation_notes=reconciliation_notes,
         )
 
-    @staticmethod
-    async def _acquire_audit_chain_state(
-        session: Any,
-        tenant_id: str,
-        verified_at_dt: datetime,
-    ) -> tuple[str, int, TenantAuditLedger | None]:
-        """Acquire serialized tenant audit chain state and compute monotonically increasing sequence number."""
-        return await acquire_audit_chain_state(session, tenant_id, verified_at_dt)
+    _acquire_audit_chain_state = staticmethod(acquire_audit_chain_state)
 
     async def _append_audit_trail_entry(
         self,

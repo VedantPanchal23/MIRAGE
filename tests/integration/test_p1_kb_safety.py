@@ -26,6 +26,7 @@ from qdrant_client import QdrantClient
 from qdrant_client.http import models as qmodels
 from starlette.testclient import TestClient
 
+from db import session as db_session
 from db.persistence import default_persistence_service
 from gateway.main import create_app
 from gateway.routes.knowledge_base import _kb_service
@@ -468,6 +469,14 @@ class TestP1KnowledgeBaseSafety:
         """Verify concurrent uploads with identical content succeed without race conditions or duplicate rows."""
         tenant_id = f"t_conc_same_{uuid.uuid4().hex[:8]}"
         headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.TENANT_ADMIN)
+
+        # Pre-provision the test tenant to avoid concurrent insert races on tenants table
+        try:
+            async with db_session.get_tenant_session(tenant_id) as session:
+                await default_persistence_service.ensure_tenant_exists(session, tenant_id)
+        except Exception:
+            pass
+
         payload = {
             "filename": "concurrent_same.txt",
             "content": "Concurrent identical document payload for race condition testing.",
@@ -493,6 +502,13 @@ class TestP1KnowledgeBaseSafety:
         """Verify concurrent uploads with differing content update atomically via ON CONFLICT without error."""
         tenant_id = f"t_conc_diff_{uuid.uuid4().hex[:8]}"
         headers = AuthTestFactory.auth_headers(tenant_id=tenant_id, role=Role.TENANT_ADMIN)
+
+        # Pre-provision the test tenant to avoid concurrent insert races on tenants table
+        try:
+            async with db_session.get_tenant_session(tenant_id) as session:
+                await default_persistence_service.ensure_tenant_exists(session, tenant_id)
+        except Exception:
+            pass
 
         async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test") as ac:
             tasks = [

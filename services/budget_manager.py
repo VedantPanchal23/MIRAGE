@@ -181,7 +181,7 @@ class BudgetManagerService:
                     "VALUES (:tid, :tid, :h, 'free', NOW()) "
                     "ON CONFLICT (id) DO NOTHING"
                 ),
-                {"tid": tenant_id, "h": f"key_{tenant_id}"[:32]},
+                {"tid": tenant_id, "h": f"key_{uuid.uuid4().hex[:28]}"},
             )
             now = datetime.now(UTC)
             record = TenantBudgetRecord(

@@ -88,7 +88,7 @@ class PostgresPersistenceService:
                     .values(
                         id=tenant_id,
                         name=f"Test Dynamic Tenant {tenant_id}",
-                        api_key_hash=hashlib.sha256(tenant_id.encode()).hexdigest()[:32],
+                        api_key_hash=uuid.uuid4().hex,
                         created_at=datetime.now(UTC),
                     )
                     .on_conflict_do_nothing(index_elements=["id"])

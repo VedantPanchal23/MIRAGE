@@ -376,7 +376,7 @@ MIRAGE/
 ├── db/                    # SQLAlchemy 2.0 async models (core/governance/assurance/finance/audit), RLS sessions, Redis, Mongo, 26 migrations
 ├── shared/                # Settings validation, Pydantic schemas, structlog, Prometheus metrics, OTel tracing
 ├── dashboard/             # React 18 + Vite + Tailwind + JSX frontend console (strictly zero TypeScript)
-├── sdk/                   # Official Python SDK (mirage_sdk + LangChain integration + examples) & JS SDK (sdk/js/)
+├── sdk/                   # Official Python SDK (mirage_sdk + LangChain/AutoGen/CrewAI + examples) & JS SDK (sdk/js/)
 ├── cli/                   # Developer CLI entrypoint (mirage)
 ├── benchmarks/            # Offline/Tier-1/Tier-2 datasets, certification guard & evaluator CLI
 ├── scripts/               # Preflight, secrets serializer, backup/restore, smoke tests, public tunnel & benchmark runners

@@ -1,0 +1,29 @@
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mirage.fullname" . }}-gateway-pdb
+  labels:
+    {{- include "mirage.labels" . | nindent 4 }}
+    app.kubernetes.io/component: gateway
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.gatewayMinAvailable }}
+  selector:
+    matchLabels:
+      {{- include "mirage.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: gateway
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "mirage.fullname" . }}-worker-pdb
+  labels:
+    {{- include "mirage.labels" . | nindent 4 }}
+    app.kubernetes.io/component: worker
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.workerMinAvailable }}
+  selector:
+    matchLabels:
+      {{- include "mirage.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: worker
+{{- end }}

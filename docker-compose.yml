@@ -277,6 +277,7 @@ services:
       - observability_net
     volumes:
       - ./docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./docker/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
       - prometheusdata:/prometheus
     cap_drop:
       - ALL

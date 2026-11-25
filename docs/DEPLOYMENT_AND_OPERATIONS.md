@@ -44,7 +44,7 @@ python scripts/verify_full_customer_journey.py
 1. **AWS Private Staging (Terraform + SSM):**
    See [`deployment/aws-private-staging.md`](deployment/aws-private-staging.md) for the zero-public-ingress `t3.large` architecture (`infra/terraform/`, `docker-compose.staging.yml`, `scripts/fetch_secrets.py`, and `scripts/verify_staging_release.py`). Note: Staging resources remain unprovisioned unless explicitly applied (`$0.00` idle cost).
 2. **Kubernetes (Helm Chart — `k8s/helm/mirage/`):**
-   Provides hardening-ready Deployments (`gateway`, `worker`, `dashboard` on container port `8080`), Services, Ingress, Secrets template, and NetworkPolicy (egress scoped to PostgreSQL `5432`, Redis `6379`, RabbitMQ `5672`, Qdrant `6333`, MongoDB `27017`, OTel `4317`, DNS `53`, HTTP/HTTPS).
+   Provides hardening-ready Deployments (`gateway`, `worker`, `dashboard` on container port `8080`), Services, Ingress, Secrets template, NetworkPolicy (egress scoped to PostgreSQL `5432`, Redis `6379`, RabbitMQ `5672`, Qdrant `6333`, MongoDB `27017`, OTel `4317`, DNS `53`, HTTP/HTTPS), `HorizontalPodAutoscaler` (`hpa.yaml`), `PodDisruptionBudget` (`pdb.yaml`), pre-upgrade Alembic migration hook Job (`migration-job.yaml`), and Prometheus alert rules (`prometheus-alerts.yaml` + [`docker/prometheus/alerts.yml`](../docker/prometheus/alerts.yml) & [`docker/alertmanager/alertmanager.yml`](../docker/alertmanager/alertmanager.yml)).
    ```bash
    helm upgrade --install mirage ./k8s/helm/mirage --namespace mirage --create-namespace
    ```

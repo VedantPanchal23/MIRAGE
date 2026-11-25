@@ -1,0 +1,36 @@
+{{- if .Values.monitoring.alertsEnabled }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "mirage.fullname" . }}-prometheus-alerts
+  labels:
+    {{- include "mirage.labels" . | nindent 4 }}
+    app.kubernetes.io/component: observability
+data:
+  alerts.yml: |
+    groups:
+      - name: mirage-execution-assurance
+        rules:
+          - alert: MirageAuditChainIntegrityFailure
+            expr: increase(mirage_audit_integrity_failures_total[5m]) > 0
+            for: 0m
+            labels:
+              severity: critical
+            annotations:
+              summary: "Cryptographic audit chain integrity violation detected"
+              description: "Do not regenerate anchors. Snapshot PostgreSQL and anchor storage for forensics."
+          - alert: MirageGatewayUnhealthy
+            expr: up{job="mirage-gateway"} == 0
+            for: 1m
+            labels:
+              severity: critical
+            annotations:
+              summary: "MIRAGE Gateway target is unreachable"
+          - alert: MirageHighServerErrorRate
+            expr: sum(rate(mirage_http_requests_total{status=~"5.."}[5m])) / clamp_min(sum(rate(mirage_http_requests_total[5m])), 0.001) > 0.05
+            for: 2m
+            labels:
+              severity: warning
+            annotations:
+              summary: "MIRAGE Gateway 5xx ratio exceeds 5%"
+{{- end }}

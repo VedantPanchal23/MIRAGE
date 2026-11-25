@@ -18,10 +18,11 @@ MIRAGE treats prompts, retrieved context, model responses, and external tool/MCP
 | **SSRF & Cloud Metadata Theft** | Redirecting HTTP tools or MCP clients to `127.0.0.1` / `169.254.169.254` | `SSRFSafeMCPHttpClient` & `ssrf_validator.py`: socket IP validation, DNS pinning, decimal/hex/octal IP blocking, redirect inspection, per-tenant egress allowlists |
 | **Command Injection & Traversal** | Escaping filesystem/shell boundaries (`..`, `%00`, `shell=True`) | `SafeSubprocessMCPClient` (`create_subprocess_exec`, credential-scrubbed env) + NFKC recursive traversal neutralization |
 | **Cross-Tenant Leakage & Spoofing** | Header forgery or reading another tenant's rows/vectors | ASGI header sanitization, `mirage_app` `NOBYPASSRLS` PostgreSQL Row-Level Security, per-tenant MongoDB collections, Qdrant tenant metadata filters |
-| **Privilege Escalation & Replay** | API key abuse, agent self-approval, parameter tampering | Scope attenuation (`Role Ceiling ∩ Key Scopes`), `requested_by != identity_id`, `contract_binding_hash`, single-use `CONSUMED` approval tokens |
+| **Privilege Escalation & Billing Bypass** | API key abuse, agent self-approval, parameter tampering, unsigned billing webhooks | Scope attenuation (`Role Ceiling ∩ Key Scopes`), `requested_by != identity_id`, `contract_binding_hash`, single-use `CONSUMED` approval tokens, HMAC `Stripe-Signature`/`X-Razorpay-Signature` verification & Stripe settlement checks |
 | **Salami-Slicing Blast Radius Attacks** | Splitting forbidden `$5,000` action into many `$10` steps | 1-hour rolling window quotas (`$1,000` spend, `250` risk pts, `50` ops) + hidden payload financial key extraction |
 | **Epistemic Overclaiming** | Agent asserts success on unverified/write-only sinks | Gate 4 postcondition honesty checks + Gate 5 independent reality verification (`OBS_DIRECT`..`OBS_BLIND`) |
-| **Audit Log Tampering / Truncation** | Altering or deleting historical execution evidence | Canonical 14-field SHA-256 hash chaining serialized via `pg_advisory_xact_lock` + external HMAC-SHA256 `FileAuditAnchorBackend` proofs |
+| **Audit Log Tampering / Truncation** | Altering or deleting historical execution evidence | Canonical 14-field SHA-256 hash chaining serialized via `pg_advisory_xact_lock` + external `FileAuditAnchorBackend` or AWS `S3ObjectLockAuditAnchorBackend` (`COMPLIANCE` WORM) |
+| **GDPR Portability & Privacy Governance** | Unaudited data exports or unclear retention boundaries | Authenticated `GET /v1/privacy/export` (compliance ZIP dossier / JSON summary) & `GET /v1/privacy/retention` backed by PostgreSQL RLS |
 
 ---
 
@@ -29,7 +30,7 @@ MIRAGE treats prompts, retrieved context, model responses, and external tool/MCP
 
 1. **Canonical Record Hashing (`compute_canonical_audit_hash`):** All 14 canonical audit attributes (`seq`, `entry_id`, `tenant_id`, `transaction_id`, `action_id`, `decision`, `prev_hash`, timestamps, digests) are serialized as deterministic compact JSON prior to SHA-256 hashing.
 2. **Concurrency Serialization:** Appends acquire PostgreSQL transaction-scoped advisory locks (`pg_advisory_xact_lock`) and row-level locks (`SELECT ... FOR UPDATE` on `tenant_audit_ledgers`) ensuring gap-free monotonic sequences ($N+1$).
-3. **External Anchoring & Truncation Detection:** `POST /v1/audit/anchor` commits the ledger head to append-only per-tenant JSONL proof chains (`{tenant_id}.anchors.jsonl`) with HMAC-SHA256 notary signatures and `prev_anchor_digest` chaining outside mutable database tables. `GET /v1/audit/integrity` cross-checks database heads against anchors and raises `INTEGRITY_FAILURE (TRUNCATION_DETECTED)` if rows are missing.
+3. **External Anchoring & Truncation Detection:** `POST /v1/audit/anchor` commits the ledger head outside mutable PostgreSQL tables via configurable `AUDIT_ANCHOR_BACKEND`: local append-only per-tenant JSONL proof chains (`FileAuditAnchorBackend` with `fsync`) or WORM-locked Amazon S3 objects (`S3ObjectLockAuditAnchorBackend` with `ObjectLockMode="COMPLIANCE"`). `GET /v1/audit/integrity` cross-checks database heads against anchors and raises `INTEGRITY_FAILURE (TRUNCATION_DETECTED)` if rows are missing.
 
 ---
 

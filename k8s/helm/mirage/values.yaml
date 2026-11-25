@@ -164,8 +164,20 @@ config:
   corsOrigins: "https://app.mirage.example.com"
 
 secrets:
-  existingSecretName: "" # If set, use existing k8s secret
+  existingSecretName: "" # Strongly recommended in production (ExternalSecrets / AWS Secrets Manager)
   jwtSecret: "change-me-in-production-mirage-jwt-secret-min-32-bytes"
   postgresPassword: "mirage_secure_production_password"
   rabbitmqPassword: "mirage_rabbitmq_password"
   adminApiKey: "mirage-prod-admin-root-key"
+
+podDisruptionBudget:
+  enabled: true
+  gatewayMinAvailable: 2
+  workerMinAvailable: 1
+
+migrationJob:
+  enabled: true
+  activeDeadlineSeconds: 300
+
+monitoring:
+  alertsEnabled: true

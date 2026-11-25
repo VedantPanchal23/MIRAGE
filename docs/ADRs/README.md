@@ -28,7 +28,7 @@ All new ADRs must include the following sections:
 MIRAGE 3.0 continues the numbering scheme established in MIRAGE 2.x.
 New ADRs start at `0007`.
 
-## 4. Authoritative Architecture Decision Records (0001-0008)
+## 4. Authoritative Architecture Decision Records (0001-0009)
 
 All ratified ADRs reside in this directory:
 
@@ -40,7 +40,8 @@ All ratified ADRs reside in this directory:
 - **ADR-0005:** [REST API Contracts and Storage Architecture](0005-rest-api-contracts-and-storage-architecture.md) — Authoritative PostgreSQL storage and OpenAPI schemas.
 - **ADR-0006:** [Phase P4 Comprehensive Benchmark Evaluation](0006-phase-p4-comprehensive-benchmark-evaluation.md) — Empirical benchmarking methodologies and datasets.
 
-### MIRAGE 3.0 Ratified ADRs (0007-0008)
+### MIRAGE 3.0 Ratified ADRs (0007-0009)
 - **ADR-0007:** [MIRAGE 3.0 Architectural Reset](0007-mirage-3.0-architectural-reset.md) — Pivot to AI Execution Assurance Platform and 5-Gate lifecycle.
 - **ADR-0008:** [Agentic ReAct Turn Loops, Epistemic Reality Verification, and Information Flow Control](0008-react-turn-loop-and-epistemic-verification.md) — Hardening against dangerous triad, salami attacks, and epistemic overclaiming.
+- **ADR-0009:** [Enterprise Hardening for Billing, Identity, WORM Anchoring, Shadow Mode, and Privacy](0009-enterprise-hardening-billing-auth-and-worm-anchoring.md) — Fail-closed payment verification, team IAM, S3 Object Lock anchoring, SDK epistemic fixes, shadow mode, and DSAR export.
 

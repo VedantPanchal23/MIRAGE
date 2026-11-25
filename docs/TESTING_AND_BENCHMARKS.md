@@ -51,8 +51,8 @@ Every push and PR to `main` / `develop` executes 7 jobs:
 2. **`type-check`:** `mypy --strict` across all core backend packages, `benchmarks`, `scripts`, and `tests/unit`
 3. **`test-suite`:** Full `pytest tests/` coverage run + offline benchmark sanity check (`python -m benchmarks.runner --benchmark mmhal --limit 2`)
 4. **`security-scan`:** `bandit -r gateway hrs_engine correction_agent shared workers -ll -ii`
-5. **`frontend-test`:** `npm ci` + `npm test -- --run` in `dashboard/`
-6. **`infra-validate`:** `terraform fmt -check`, `terraform init -backend=false`, `terraform validate`, and `docker compose config --quiet` (base + staging override)
+5. **`frontend-test`:** `npm ci`, `npm test -- --run`, and `npm run build` in `dashboard/`, plus `npm test` in `sdk/js/`
+6. **`infra-validate`:** `terraform fmt -check`, `terraform init -backend=false`, `terraform validate`, `helm lint`, `helm template`, and `docker compose config --quiet` (base + staging override)
 7. **`docker-build`:** Multi-stage image build verification for `Dockerfile.gateway`, `Dockerfile.worker`, and `Dockerfile.dashboard`
 
 ---

@@ -1,0 +1,23 @@
+# Alertmanager routing template for MIRAGE 3.0 SRE notifications.
+# Inject real Slack / PagerDuty / Webhook secrets via environment substitution before deploying.
+route:
+  group_by: ["alertname", "severity"]
+  group_wait: 15s
+  group_interval: 5m
+  repeat_interval: 2h
+  receiver: mirage-ops-webhook
+  routes:
+    - matchers:
+        - severity="critical"
+      receiver: mirage-critical-oncall
+
+receivers:
+  - name: mirage-ops-webhook
+    webhook_configs:
+      - url: "${ALERT_WEBHOOK_URL}"
+        send_resolved: true
+
+  - name: mirage-critical-oncall
+    webhook_configs:
+      - url: "${PAGERDUTY_OR_SLACK_CRITICAL_WEBHOOK_URL}"
+        send_resolved: true

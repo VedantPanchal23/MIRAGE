@@ -15,6 +15,7 @@ export interface VerificationRequestOptions {
   modelId?: string;
   autoCorrect?: boolean;
   knowledgeBaseId?: string;
+  enforcementMode?: "enforce" | "shadow";
 }
 
 export interface ConformalInterval {
@@ -110,4 +111,25 @@ export class MirageClient {
     offset?: number;
   }): Promise<Array<any>>;
   releaseResourceLease(leaseId: string, fencingToken: number): Promise<any>;
+
+  listStrandedActions(olderThanSeconds?: number): Promise<Array<any>>;
+  reconcileAction(
+    actionId: string,
+    payload: { resolution: "MARK_FAILED" | "MARK_COMPLETED" | "MARK_UNCERTAIN"; notes: string; observedEvidence?: Record<string, any> | null }
+  ): Promise<any>;
+  listMcpServers(): Promise<any>;
+  registerMcpServer(payload: Record<string, any>): Promise<any>;
+  updateMcpServerTrust(serverId: string, trustStatus: "PENDING_APPROVAL" | "TRUSTED" | "SUSPENDED" | "REVOKED", reason?: string): Promise<any>;
+  discoverMcpTools(serverId: string): Promise<any>;
+  verifyAuditChain(): Promise<any>;
+  listAuditEvents(limit?: number): Promise<any>;
+  listApiKeys(): Promise<any>;
+  createApiKey(payload: { name: string; scopes?: string[]; expiresInDays?: number | null }): Promise<any>;
+  revokeApiKey(keyId: string): Promise<any>;
+  getBillingPlans(): Promise<Array<any>>;
+  getSubscription(): Promise<any>;
+  createInquiry(payload: Record<string, any>): Promise<any>;
+  registerTenant(payload: Record<string, any>): Promise<any>;
+  getStatus(): Promise<Record<string, any>>;
+  exportPrivacyDossier(): Promise<Record<string, any>>;
 }

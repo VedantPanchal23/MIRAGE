@@ -5,7 +5,7 @@ Official client library for the MIRAGE 3.0 AI Execution Assurance Platform.
 """
 
 from mirage_sdk.client import AsyncMirageClient, MirageClient
-from mirage_sdk.decorators import MirageApprovalPendingError, govern_action
+from mirage_sdk.decorators import MirageApprovalPendingError, govern_action, governed_action
 from mirage_sdk.exceptions import (
     MirageAuthenticationError,
     MirageAuthorizationError,
@@ -118,4 +118,5 @@ __all__ = [
     "VerificationResponse",
     "VerificationStatus",
     "govern_action",
+    "governed_action",
 ]

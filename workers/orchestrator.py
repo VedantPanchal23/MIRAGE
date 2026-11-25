@@ -207,7 +207,8 @@ class VerificationOrchestrator:
 
             # 6. Trigger agentic correction loop if risk is High or Critical (> 0.60)
             has_contradiction = any(c.status == VerificationStatus.CONTRADICTED for c in verified_claims)
-            if hrs_result.hrs > 0.60 or has_contradiction:
+            shadow_would_block = bool(hrs_result.hrs > 0.60 or has_contradiction)
+            if request.enforcement_mode != "shadow" and request.auto_correct and shadow_would_block:
                 with trace_span("mirage.agentic_correction"), time_module("correction"):
                     (
                         corrected_text,
@@ -454,6 +455,8 @@ class VerificationOrchestrator:
                 cached_scs_hit=cached_scs_hit,
                 correction_applied=correction_applied,
                 correction_iterations=correction_iters,
+                enforcement_mode=request.enforcement_mode,
+                shadow_would_block=shadow_would_block if request.enforcement_mode == "shadow" else False,
             )
 
             return VerificationResponse(

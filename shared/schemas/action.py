@@ -6,7 +6,7 @@ import json
 import re
 import unicodedata
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
 
 from pydantic import BaseModel, Field
@@ -319,6 +319,10 @@ class ActionProposal(BaseModel):
         default=None,
         description="Explicit outcome assurance contract defining postconditions, evidence sources, and deadline",
     )
+    enforcement_mode: Literal["enforce", "shadow"] = Field(
+        default="enforce",
+        description="Execution mode: 'enforce' blocks/pauses high-risk actions, 'shadow' records telemetry only",
+    )
 
 
 class ActionBatchProposal(BaseModel):
@@ -347,6 +351,8 @@ class ActionAuthorizationDecision(BaseModel):
         default=None,
         description="Active lease monotonic fencing token bound to target resource",
     )
+    enforcement_mode: Literal["enforce", "shadow"] = "enforce"
+    shadow_would_block: bool = False
 
 
 class BatchAuthorizationDecision(BaseModel):

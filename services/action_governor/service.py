@@ -1293,7 +1293,10 @@ class ActionGovernorService:
                 taint_flags=list(active_taints),
             )
 
-            if requires_human_approval:
+            is_shadow_mode = getattr(req, "enforcement_mode", "enforce") == "shadow"
+            shadow_would_block = bool(requires_human_approval)
+
+            if requires_human_approval and not is_shadow_mode:
                 final_decision = Decision.REQUIRE_APPROVAL
                 final_state = ActionState.AWAITING_APPROVAL
                 approval_id = f"appr_{uuid.uuid4().hex[:16]}"
@@ -1302,6 +1305,13 @@ class ActionGovernorService:
                     "human approval required."
                     if is_salami_violation
                     else "High-risk action (L4 autonomy); explicit human sign-off required."
+                )
+            elif requires_human_approval and is_shadow_mode:
+                final_decision = Decision.ALLOW
+                final_state = ActionState.AUTHORIZED
+                decision_reason = (
+                    "[SHADOW MODE] Action would require human approval under enforced policy; "
+                    "authorized non-blocking for policy telemetry."
                 )
             else:
                 final_decision = Decision.ALLOW
@@ -1350,8 +1360,8 @@ class ActionGovernorService:
             session.add(action_contract)
             await session.flush()
 
-            # If approval required, create approval ticket referencing existing action_contract
-            if requires_human_approval and approval_id:
+            # If approval required in enforced mode, create approval ticket referencing existing action_contract
+            if requires_human_approval and not is_shadow_mode and approval_id:
                 approval_record = ActionApproval(
                     id=approval_id,
                     tenant_id=auth.tenant_id,
@@ -1384,11 +1394,13 @@ class ActionGovernorService:
                     "autonomy_level": autonomy_level,
                     "is_salami_violation": is_salami_violation,
                     "approval_id": approval_id,
+                    "enforcement_mode": "shadow" if is_shadow_mode else "enforce",
+                    "shadow_would_block": shadow_would_block if is_shadow_mode else False,
                 },
             )
             await session.flush()
 
-            if requires_human_approval:
+            if requires_human_approval and not is_shadow_mode:
                 await webhook_service.dispatch_event(
                     tenant_id=auth.tenant_id,
                     event_type="ACTION_AWAITING_APPROVAL",
@@ -1428,6 +1440,8 @@ class ActionGovernorService:
                 cumulative_window_cost=window_cost,
                 is_salami_slice_violation=is_salami_violation,
                 fencing_token=active_fencing_token,
+                enforcement_mode="shadow" if is_shadow_mode else "enforce",
+                shadow_would_block=shadow_would_block if is_shadow_mode else False,
             )
 
     # -------------------------------------------------------------------------

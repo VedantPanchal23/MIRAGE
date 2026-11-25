@@ -142,6 +142,7 @@ export class MirageClient {
     modelId = "allam-2-7b",
     autoCorrect = true,
     knowledgeBaseId = "default_kb",
+    enforcementMode = "enforce",
   }) {
     return this._request("/v1/verify", {
       method: "POST",
@@ -153,6 +154,7 @@ export class MirageClient {
         auto_correct: autoCorrect,
         knowledge_base_id: knowledgeBaseId,
         tenant_id: this.tenantId,
+        enforcement_mode: enforcementMode,
       },
     });
   }
@@ -358,5 +360,119 @@ export class MirageClient {
       body: { fencing_token: fencingToken },
       isMutating: true,
     });
+  }
+
+  // --------------------------------------------------------------------------
+  // Stranded Action Reconciliation, MCP Governance, API Keys & Compliance
+  // --------------------------------------------------------------------------
+
+  async listStrandedActions(olderThanSeconds = 60) {
+    return this._request(`/v1/actions/stranded?older_than_seconds=${Number(olderThanSeconds)}`);
+  }
+
+  async reconcileAction(actionId, { resolution, notes, observedEvidence = null }) {
+    return this._request(`/v1/actions/${actionId}/reconcile`, {
+      method: "POST",
+      body: {
+        action_id: actionId,
+        resolution,
+        notes,
+        observed_evidence: observedEvidence,
+      },
+      isMutating: true,
+    });
+  }
+
+  async listMcpServers() {
+    return this._request("/v1/mcp/servers");
+  }
+
+  async registerMcpServer(payload) {
+    return this._request("/v1/mcp/servers", {
+      method: "POST",
+      body: payload,
+      isMutating: true,
+    });
+  }
+
+  async updateMcpServerTrust(serverId, trustStatus, reason = "Updated via JS SDK") {
+    return this._request(`/v1/mcp/servers/${serverId}/trust`, {
+      method: "PUT",
+      body: { trust_status: trustStatus, reason },
+      isMutating: true,
+    });
+  }
+
+  async discoverMcpTools(serverId) {
+    return this._request(`/v1/mcp/servers/${serverId}/discover`, {
+      method: "POST",
+      isMutating: true,
+    });
+  }
+
+  async verifyAuditChain() {
+    return this._request("/v1/audit/verify-chain", {
+      method: "POST",
+      isMutating: false,
+    });
+  }
+
+  async listAuditEvents(limit = 50) {
+    return this._request(`/v1/audit/events?limit=${Number(limit)}`);
+  }
+
+  async listApiKeys() {
+    return this._request("/v1/auth/api-keys");
+  }
+
+  async createApiKey({ name, scopes = ["*"], expiresInDays = null }) {
+    return this._request("/v1/auth/api-keys", {
+      method: "POST",
+      body: {
+        name,
+        scopes,
+        expires_in_days: expiresInDays,
+      },
+      isMutating: true,
+    });
+  }
+
+  async revokeApiKey(keyId) {
+    return this._request(`/v1/auth/api-keys/${keyId}/revoke`, {
+      method: "POST",
+      isMutating: true,
+    });
+  }
+
+  async getBillingPlans() {
+    return this._request("/v1/billing/plans");
+  }
+
+  async getSubscription() {
+    return this._request("/v1/billing/subscription");
+  }
+
+  async createInquiry(payload) {
+    return this._request("/v1/inquiries", {
+      method: "POST",
+      body: payload,
+      isMutating: true,
+    });
+  }
+
+  async registerTenant(payload) {
+    return this._request("/v1/auth/register-tenant", {
+      method: "POST",
+      body: payload,
+      isMutating: true,
+    });
+  }
+
+  async getStatus() {
+    return this._request("/v1/status");
+  }
+
+  async exportPrivacyDossier() {
+    return this._request("/v1/privacy/export");
   }
 }

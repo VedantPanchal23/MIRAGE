@@ -1,7 +1,7 @@
 """Pydantic schemas for the Verification API requests, responses, and execution metadata."""
 
 import uuid
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -39,6 +39,10 @@ class VerificationRequest(BaseModel):
         default=True,
         description="Whether to run the LangGraph agentic correction loop if HRS exceeds threshold",
     )
+    enforcement_mode: Literal["enforce", "shadow"] = Field(
+        default="enforce",
+        description="Execution mode: 'enforce' applies blocking/corrections, 'shadow' logs risk without rewriting",
+    )
 
     @property
     def all_images(self) -> list[str]:
@@ -60,6 +64,8 @@ class VerificationMetadata(BaseModel):
     correction_applied: bool = False
     correction_iterations: int = Field(default=0, ge=0)
     circuit_breakers_tripped: list[str] = Field(default_factory=list)
+    enforcement_mode: Literal["enforce", "shadow"] = "enforce"
+    shadow_would_block: bool = False
 
 
 class VerificationResponse(BaseModel):

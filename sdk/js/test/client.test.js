@@ -121,3 +121,41 @@ test('MirageClient verifyStream parses SSE events correctly', async (t) => {
   assert.equal(events[3].event, 'verification_complete');
   assert.equal(events[3].data.hrs_score, 0.05);
 });
+
+test('MirageClient supports shadow mode, MCP governance, stranded reconciliation, and public status', async (t) => {
+  const originalFetch = globalThis.fetch;
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+
+  const calls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    calls.push({ url, method: options.method || 'GET', body: options.body ? JSON.parse(options.body) : null });
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ status: 'operational', items: [], servers: [] }),
+    };
+  };
+
+  const client = new MirageClient({ apiKey: 'test_key', baseUrl: 'http://localhost:8000', tenantId: 't_js' });
+
+  await client.verify({ prompt: 'p', response: 'r', enforcementMode: 'shadow' });
+  await client.listStrandedActions(30);
+  await client.reconcileAction('act_1', { resolution: 'MARK_FAILED', notes: 'Timed out' });
+  await client.listMcpServers();
+  await client.updateMcpServerTrust('mcp_1', 'REVOKED', 'Incident response');
+  await client.verifyAuditChain();
+  await client.createApiKey({ name: 'ci-key' });
+  await client.getBillingPlans();
+  await client.getStatus();
+  await client.exportPrivacyDossier();
+
+  assert.equal(calls[0].body.enforcement_mode, 'shadow');
+  assert.equal(calls[1].url, 'http://localhost:8000/v1/actions/stranded?older_than_seconds=30');
+  assert.equal(calls[2].url, 'http://localhost:8000/v1/actions/act_1/reconcile');
+  assert.equal(calls[4].body.trust_status, 'REVOKED');
+  assert.equal(calls[5].url, 'http://localhost:8000/v1/audit/verify-chain');
+  assert.equal(calls[8].url, 'http://localhost:8000/v1/status');
+  assert.equal(calls[9].url, 'http://localhost:8000/v1/privacy/export');
+});

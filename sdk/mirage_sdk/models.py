@@ -9,7 +9,7 @@ import json
 import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -225,6 +225,8 @@ class VerificationMetadata(BaseModel):
     correction_applied: bool = False
     correction_iterations: int = 0
     circuit_breakers_tripped: list[str] = Field(default_factory=list)
+    enforcement_mode: Literal["enforce", "shadow"] = "enforce"
+    shadow_would_block: bool = False
 
 
 class VerificationRequest(BaseModel):
@@ -239,6 +241,7 @@ class VerificationRequest(BaseModel):
     images: list[str] = Field(default_factory=list)
     model_id: str = "allam-2-7b"
     auto_correct: bool = True
+    enforcement_mode: Literal["enforce", "shadow"] = "enforce"
 
 
 class VerificationResponse(BaseModel):
@@ -299,6 +302,7 @@ class ActionProposal(BaseModel):
     preconditions: list[PreconditionRule] = Field(default_factory=list)
     postconditions: list[PostconditionRule] = Field(default_factory=list)
     blast_radius: BlastRadiusAssessment = Field(default_factory=BlastRadiusAssessment)
+    enforcement_mode: Literal["enforce", "shadow"] = "enforce"
 
 
 class ActionAuthorizationDecision(BaseModel):
@@ -319,6 +323,8 @@ class ActionAuthorizationDecision(BaseModel):
     cumulative_window_cost: float = 0.0
     is_salami_slice_violation: bool = False
     fencing_token: int | None = None
+    enforcement_mode: Literal["enforce", "shadow"] = "enforce"
+    shadow_would_block: bool = False
 
 
 class ActionExecutionRequest(BaseModel):

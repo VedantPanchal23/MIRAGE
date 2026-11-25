@@ -25,16 +25,22 @@ import {
   Sparkles,
   LogOut,
   Copy,
-  CheckCheck
+  CheckCheck,
+  Server
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { api } from '../api/client';
 import { SEO } from '../components/common/SEO';
 import { AssuranceLab } from '../components/console/AssuranceLab';
+import { OnboardingChecklist } from '../components/console/OnboardingChecklist';
+import { AccessAndKeysPanel } from '../components/console/AccessAndKeysPanel';
+import { McpAndToolsPanel } from '../components/console/McpAndToolsPanel';
+import { OperationsGovernancePanel } from '../components/console/OperationsGovernancePanel';
 
 export function OperatorConsole({ setActiveView = () => {} }) {
-  const { user, logout } = useAuth();
-  const [activeTab, setActiveTab] = useState('transactions'); // 'transactions' | 'lab' | 'approvals' | 'outcomes' | 'audit' | 'agents' | 'health'
+  const { user, demoMode } = useAuth();
+  const [activeTab, setActiveTab] = useState('transactions');
+  const [connectionError, setConnectionError] = useState(null);
   
   // Data states
   const [stats, setStats] = useState(null);
@@ -65,6 +71,7 @@ export function OperatorConsole({ setActiveView = () => {} }) {
 
   const loadData = async () => {
     setLoading(true);
+    setConnectionError(null);
     try {
       const [s, tx, app, aud, ag, hl] = await Promise.all([
         api.getDashboardStats(),
@@ -81,7 +88,11 @@ export function OperatorConsole({ setActiveView = () => {} }) {
       setAgents(ag);
       setHealthData(hl);
     } catch (e) {
-      console.error('Error loading console data:', e);
+      setConnectionError(
+        `Live Gateway telemetry unavailable (${e.message}). Refusing to display fabricated metrics.`
+      );
+      setStats(null);
+      setHealthData(null);
     } finally {
       setLoading(false);
     }
@@ -118,7 +129,8 @@ export function OperatorConsole({ setActiveView = () => {} }) {
     try {
       const res = await api.verifyAuditTrail();
       setAuditVerified(true);
-      addToast(`Cryptographic audit trail verified back to Genesis Root (${res.verified_blocks || 8492} blocks). Zero tampering detected.`, 'success');
+      const count = res.verified_blocks ?? res.verified_entries ?? res.total_entries ?? auditRecords.length;
+      addToast(`Cryptographic audit trail verified back to Genesis Root (${count} blocks). Zero tampering detected.`, 'success');
     } catch (err) {
       addToast(`Audit verification error: ${err.message}`, 'violation');
     }
@@ -128,10 +140,15 @@ export function OperatorConsole({ setActiveView = () => {} }) {
     const isSuspended = ag.status === 'SUSPENDED';
     const action = isSuspended ? 'activate' : 'suspend';
     try {
-      await api.request(`/v1/agents/${ag.id}/${action}`, { method: 'POST' });
-    } catch (_) {}
-    setAgents(prev => prev.map(a => a.id === ag.id ? { ...a, status: isSuspended ? 'ACTIVE' : 'SUSPENDED' } : a));
-    addToast(`Agent '${ag.name}' ${isSuspended ? 'reactivated' : 'suspended'}. Distributed leases synchronized.`, 'info');
+      await api.request(`/v1/agents/${ag.id}/${action}`, {
+        method: 'POST',
+        body: JSON.stringify({ reason: `Operator Console ${action} action` }),
+      });
+      setAgents(prev => prev.map(a => a.id === ag.id ? { ...a, status: isSuspended ? 'ACTIVE' : 'SUSPENDED' } : a));
+      addToast(`Agent '${ag.name}' ${isSuspended ? 'reactivated' : 'suspended'}. Distributed leases synchronized.`, 'info');
+    } catch (err) {
+      addToast(`Failed to ${action} agent '${ag.name}': ${err.message}`, 'violation');
+    }
   };
 
   const handleCopyJson = () => {
@@ -160,6 +177,9 @@ export function OperatorConsole({ setActiveView = () => {} }) {
     { id: 'outcomes', label: 'Gate 5 Reality Probes', icon: Database },
     { id: 'audit', label: 'Audit Hash Chain', icon: FileCheck },
     { id: 'agents', label: 'Governed Agents', count: agents.length, icon: UserCheck },
+    { id: 'mcp', label: 'MCP & Tools', icon: Server },
+    { id: 'access', label: 'Keys & Team', icon: Key },
+    { id: 'governance', label: 'Governance & Billing', icon: Shield },
     { id: 'health', label: 'System Health', icon: Activity },
   ];
 
@@ -209,7 +229,7 @@ export function OperatorConsole({ setActiveView = () => {} }) {
           </div>
 
           {/* Sub-Tabs Navigation */}
-          <div className="flex items-center gap-2 overflow-x-auto text-xs font-medium text-slate-600 border-t border-slate-100 pt-1 pb-1">
+          <div className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-slate-600 border-t border-slate-100 pt-2 pb-1">
             {TABS.map(tab => {
               const Icon = tab.icon;
               const isActive = activeTab === tab.id;
@@ -245,33 +265,58 @@ export function OperatorConsole({ setActiveView = () => {} }) {
 
       {/* Main Content Area */}
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+        {connectionError && (
+          <div role="alert" className="mb-6 p-4 rounded-2xl border border-rose-200 bg-rose-50 text-rose-900 text-xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <AlertTriangle className="w-4 h-4 text-rose-700 shrink-0" />
+              <span>{connectionError}</span>
+            </div>
+            <button
+              type="button"
+              onClick={loadData}
+              className="px-3 py-1.5 rounded-lg bg-rose-700 text-white font-semibold hover:bg-rose-800 transition-colors"
+            >
+              Retry Connection
+            </button>
+          </div>
+        )}
+
+        {demoMode && !connectionError && (
+          <div role="status" className="mb-5 p-3 rounded-xl border border-amber-200 bg-amber-50/70 text-amber-900 text-xs flex items-center justify-between gap-2">
+            <span>
+              <strong>Simulated Sandbox Mode:</strong> Displaying illustrative demo telemetry. Sign in with a tenant API key for live PostgreSQL RLS metrics.
+            </span>
+          </div>
+        )}
+
+        <OnboardingChecklist user={user} onOpenTab={setActiveTab} />
 
         {/* Global Key Metrics Row */}
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
             <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-subtle">
               <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">24h Assurance Transactions</div>
-              <div className="text-2xl font-extrabold text-slate-900 font-mono mt-1">{stats.active_transactions_24h.toLocaleString()}</div>
+              <div className="text-2xl font-extrabold text-slate-900 font-mono tabular-nums mt-1">{(stats.active_transactions_24h ?? stats.total_requests ?? 0).toLocaleString()}</div>
               <div className="text-[11px] text-emerald-700 font-medium mt-1 flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" /> {stats.assurance_verdict_rate}% Certified
+                <CheckCircle2 className="w-3 h-3" /> {stats.assurance_verdict_rate ?? 100}% Certified
               </div>
             </div>
 
             <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-subtle">
               <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Pending L4 Approvals</div>
-              <div className="text-2xl font-extrabold text-amber-600 font-mono mt-1">{approvals.length}</div>
+              <div className="text-2xl font-extrabold text-amber-600 font-mono tabular-nums mt-1">{approvals.length}</div>
               <div className="text-[11px] text-slate-500 mt-1">High-risk actions paused</div>
             </div>
 
             <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-subtle">
               <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Mean Gate Latency</div>
-              <div className="text-2xl font-extrabold text-slate-900 font-mono mt-1">{stats.mean_gate_latency_ms} ms</div>
+              <div className="text-2xl font-extrabold text-slate-900 font-mono tabular-nums mt-1">{stats.mean_gate_latency_ms ?? 0} ms</div>
               <div className="text-[11px] text-slate-500 mt-1">Across Gates 1 through 4</div>
             </div>
 
             <div className="p-4 rounded-xl border border-slate-200 bg-white shadow-subtle">
               <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Cryptographic Anchors</div>
-              <div className="text-2xl font-extrabold text-slate-900 font-mono mt-1">{stats.total_audit_anchors.toLocaleString()}</div>
+              <div className="text-2xl font-extrabold text-slate-900 font-mono tabular-nums mt-1">{(stats.total_audit_anchors ?? 0).toLocaleString()}</div>
               <div className="text-[11px] text-slate-500 mt-1">Chained to Genesis Root</div>
             </div>
           </div>
@@ -449,7 +494,7 @@ export function OperatorConsole({ setActiveView = () => {} }) {
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-slate-900 font-display text-sm">
-                            Proposal for {app.tool_name}
+                            Proposal for {app.tool_name || app.action_id}
                           </span>
                           <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-bold">
                             REQUIRES {app.required_role}
@@ -482,7 +527,7 @@ export function OperatorConsole({ setActiveView = () => {} }) {
                       <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                         <div className="text-slate-500 text-[10px] uppercase font-bold mb-1">Proposed Execution Parameters</div>
                         <pre className="text-slate-800 text-[11px] overflow-x-auto whitespace-pre-wrap">
-                          {JSON.stringify(app.parameters, null, 2)}
+                          {JSON.stringify(app.parameters || {}, null, 2)}
                         </pre>
                       </div>
 
@@ -644,23 +689,29 @@ export function OperatorConsole({ setActiveView = () => {} }) {
                         {ag.status}
                       </span>
                     </div>
-                    <div className="text-xs text-slate-500 font-mono">{ag.id} &bull; {ag.role}</div>
+                    <div className="text-xs text-slate-500 font-mono">{ag.id} &bull; {ag.role || 'governed_agent'}</div>
 
                     <div className="mt-4 space-y-1 text-xs">
                       <div className="text-slate-500 text-[11px]">Autonomy Ceiling: <strong className="text-slate-900">Level {ag.max_autonomy_level}</strong></div>
                       <div className="text-slate-500 text-[11px]">Allowed Capabilities:</div>
                       <div className="flex flex-wrap gap-1 mt-1 font-mono text-[10px]">
-                        {ag.allowed_capabilities.map(cap => (
-                          <span key={cap} className="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-700 font-medium">
-                            {cap}
-                          </span>
-                        ))}
+                        {(ag.allowed_capabilities || []).length === 0 ? (
+                          <span className="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-500">Policy-bound</span>
+                        ) : (
+                          (ag.allowed_capabilities || []).map(cap => (
+                            <span key={cap} className="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-700 font-medium">
+                              {cap}
+                            </span>
+                          ))
+                        )}
                       </div>
                     </div>
                   </div>
 
                   <div className="mt-5 pt-3 border-t border-slate-200 flex items-center justify-between text-xs">
-                    <span className="text-[11px] text-slate-400">Last active: {new Date(ag.last_active_at).toLocaleTimeString()}</span>
+                    <span className="text-[11px] text-slate-400">
+                      Last active: {new Date(ag.last_active_at || ag.updated_at || ag.created_at || Date.now()).toLocaleTimeString()}
+                    </span>
                     <button 
                       onClick={() => handleToggleAgent(ag)}
                       className="text-rose-600 hover:text-rose-700 font-semibold text-xs"
@@ -673,6 +724,15 @@ export function OperatorConsole({ setActiveView = () => {} }) {
             </div>
           </div>
         )}
+
+        {/* TAB: MCP SERVERS & TOOLS */}
+        {activeTab === 'mcp' && <McpAndToolsPanel onToast={addToast} />}
+
+        {/* TAB: API KEYS & TEAM ACCESS */}
+        {activeTab === 'access' && <AccessAndKeysPanel onToast={addToast} />}
+
+        {/* TAB: STRANDED ACTIONS, KB, BUDGETS, WEBHOOKS & DSAR */}
+        {activeTab === 'governance' && <OperationsGovernancePanel onToast={addToast} />}
 
         {/* TAB 6: SYSTEM HEALTH */}
         {activeTab === 'health' && healthData && (

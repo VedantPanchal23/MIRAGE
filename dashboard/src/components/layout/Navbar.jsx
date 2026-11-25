@@ -50,51 +50,53 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
         
         {/* Left: Microdose-Style Editorial Logo */}
-        <div 
-          onClick={() => setActiveView('landing')} 
-          className="cursor-pointer group flex items-center select-none"
+        <button
+          type="button"
+          onClick={() => setActiveView('landing')}
+          className="cursor-pointer group flex items-center select-none bg-transparent border-0 p-0 text-left"
           title="MIRAGE — Execution Assurance Platform"
+          aria-label="MIRAGE Execution Assurance Home"
         >
           <MirageLogo size="md" showText={true} />
-        </div>
+        </button>
 
-        {/* Center: Microdose-Style Floating Nav Pill with Numeric Identifiers */}
+        {/* Center: Microdose-Style Floating Nav Pill */}
         {activeView === 'landing' && (
-          <nav className="hidden lg:flex items-center gap-1 bg-[#ffffff] border border-[#ededed] shadow-[0px_2px_8px_rgba(14,15,43,0.04)] rounded-full px-2 py-1.5 text-xs text-[#0c152a]">
-            <button 
-              onClick={() => handleNavClick('hero')}
-              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors flex items-center gap-1.5 font-normal whitespace-nowrap"
-            >
-              <span>Overview</span>
-              <span className="text-[10px] text-[#6b6c71] font-mono">01</span>
-            </button>
-            <button 
+          <nav aria-label="Primary sections" className="hidden lg:flex items-center gap-1 bg-[#ffffff] border border-[#ededed] shadow-[0px_2px_8px_rgba(14,15,43,0.04)] rounded-full px-2 py-1.5 text-xs text-[#0c152a]">
+            <button
+              type="button"
               onClick={() => handleNavClick('five-gates')}
-              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors flex items-center gap-1.5 font-normal whitespace-nowrap"
+              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors font-normal whitespace-nowrap"
             >
-              <span>The Five Gates</span>
-              <span className="text-[10px] text-[#6b6c71] font-mono">02</span>
+              The Five Gates
             </button>
-            <button 
+            <button
+              type="button"
               onClick={() => handleNavClick('simulator')}
-              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors flex items-center gap-1.5 font-normal whitespace-nowrap"
+              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors font-normal whitespace-nowrap"
             >
-              <span>Live Simulator</span>
-              <span className="text-[10px] text-[#6b6c71] font-mono">03</span>
+              Simulator
             </button>
-            <button 
+            <button
+              type="button"
               onClick={() => handleNavClick('architecture')}
-              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors flex items-center gap-1.5 font-normal whitespace-nowrap"
+              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors font-normal whitespace-nowrap"
             >
-              <span>Architecture</span>
-              <span className="text-[10px] text-[#6b6c71] font-mono">04</span>
+              Trust Boundaries
             </button>
-            <button 
-              onClick={() => handleNavClick('sdk-docs')}
-              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors flex items-center gap-1.5 font-normal whitespace-nowrap"
+            <button
+              type="button"
+              onClick={() => handleNavClick('pricing')}
+              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors font-normal whitespace-nowrap"
             >
-              <span>SDK &amp; API</span>
-              <span className="text-[10px] text-[#6b6c71] font-mono">05</span>
+              Pricing
+            </button>
+            <button
+              type="button"
+              onClick={() => handleNavClick('sdk-docs')}
+              className="px-3.5 py-1.5 rounded-full hover:bg-[#ededed] transition-colors font-normal whitespace-nowrap"
+            >
+              SDK &amp; API
             </button>
           </nav>
         )}
@@ -158,43 +160,46 @@ export function Navbar({ activeView = 'landing', setActiveView = () => {}, onOpe
                       </div>
                     </div>
 
-                    {/* Persona Switcher Section */}
-                    <div className="px-3 py-2 border-b border-[#ededed]">
-                      <div className="text-[10px] font-mono text-[#6b6c71] uppercase tracking-wider mb-1.5 px-1">
-                        Active Profile
+                    {/* Persona Switcher Section (Sandbox Demo Only) */}
+                    {user?.isDemo && (
+                      <div className="px-3 py-2 border-b border-[#ededed]">
+                        <div className="text-[10px] font-mono text-[#6b6c71] uppercase tracking-wider mb-1.5 px-1">
+                          Sandbox Profile
+                        </div>
+                        <div className="space-y-1">
+                          {[
+                            { role: 'OPERATOR', name: 'Vedant', sub: 'Operator · Level 3 Autonomy' },
+                            { role: 'SUPER_ADMIN', name: 'Vedant', sub: 'Super Admin · Control Plane' },
+                            { role: 'AUDITOR', name: 'Dax', sub: 'Auditor · Hash Chain & Ledger' }
+                          ].map((p) => {
+                            const isSelected = user?.role === p.role;
+                            return (
+                              <button
+                                key={p.role}
+                                type="button"
+                                onClick={() => {
+                                  switchRole(p.role);
+                                  setShowUserMenu(false);
+                                }}
+                                className={`w-full text-left px-3 py-1.5 rounded-full flex items-center justify-between transition-colors ${
+                                  isSelected
+                                    ? 'bg-[#ededed] text-[#0c152a] font-medium'
+                                    : 'text-[#6b6c71] hover:bg-[#f4f4f6] hover:text-[#0c152a]'
+                                }`}
+                              >
+                                <div>
+                                  <div className="text-xs">{p.name} ({p.role})</div>
+                                  <div className="text-[10px] text-[#6b6c71]">{p.sub}</div>
+                                </div>
+                                {isSelected && (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div className="space-y-1">
-                        {[
-                          { role: 'OPERATOR', name: 'Vedant', sub: 'Operator · Level 3 Autonomy' },
-                          { role: 'SUPER_ADMIN', name: 'Vedant', sub: 'Super Admin · Control Plane' },
-                          { role: 'AUDITOR', name: 'Dax', sub: 'Auditor · Hash Chain & Ledger' }
-                        ].map((p) => {
-                          const isSelected = user?.role === p.role;
-                          return (
-                            <button
-                              key={p.role}
-                              onClick={() => {
-                                switchRole(p.role);
-                                setShowUserMenu(false);
-                              }}
-                              className={`w-full text-left px-3 py-1.5 rounded-full flex items-center justify-between transition-colors ${
-                                isSelected 
-                                  ? 'bg-[#ededed] text-[#0c152a] font-medium' 
-                                  : 'text-[#6b6c71] hover:bg-[#f4f4f6] hover:text-[#0c152a]'
-                              }`}
-                            >
-                              <div>
-                                <div className="text-xs">{p.name} ({p.role})</div>
-                                <div className="text-[10px] text-[#6b6c71]">{p.sub}</div>
-                              </div>
-                              {isSelected && (
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
+                    )}
 
                     {/* Sign Out Action */}
                     <div className="p-1.5">

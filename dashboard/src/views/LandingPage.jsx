@@ -30,6 +30,8 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { SEO } from '../components/common/SEO';
 import { MirageLogo } from '../components/common/MirageLogo';
+import { PricingAndComparison } from '../components/landing/PricingAndComparison';
+import { EnterpriseInquiryModal } from '../components/landing/EnterpriseInquiryModal';
 
 const HERO_PIPELINE_GATES = [
   {
@@ -220,7 +222,7 @@ const SIMULATOR_SCENARIOS = [
   }
 ];
 
-export function LandingPage({ onOpenAuth, onLaunchDemo }) {
+export function LandingPage({ onOpenAuth, onLaunchDemo, onOpenLegal = () => {} }) {
   const { loginAsDemo, isAuthenticated } = useAuth();
   const [activeGateIndex, setActiveGateIndex] = useState(0);
   const [heroActiveGate, setHeroActiveGate] = useState(4); // default Gate 5 (Outcome Assurance)
@@ -230,6 +232,8 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
   const [simResult, setSimResult] = useState(null);
   const [evalMode, setEvalMode] = useState('preset'); // 'preset' | 'custom'
   const [customPrompt, setCustomPrompt] = useState('Authorize $350.00 cloud server invoice to verified vendor #8410.');
+  const [sdkTab, setSdkTab] = useState('python');
+  const [inquiryOpen, setInquiryOpen] = useState(false);
 
   const runSimulation = () => {
     setSimRunning(true);
@@ -826,6 +830,11 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
         </div>
       </section>
 
+      <PricingAndComparison
+        onOpenAuth={onOpenAuth}
+        onOpenInquiry={() => setInquiryOpen(true)}
+      />
+
       {/* ========================================================================= */}
       {/* DEVELOPER SDK & API SECTION                                               */}
       {/* ========================================================================= */}
@@ -840,50 +849,94 @@ export function LandingPage({ onOpenAuth, onLaunchDemo }) {
                 Drop-in Governance for Any Agent
               </h2>
               <p className="text-[15px] text-[#6b6c71] mt-3 leading-relaxed">
-                Compatible with LangChain, LangGraph, AutoGen, CrewAI, and direct LLM calls. Wrap any tool or agent in 2 lines of code.
+                Native SDKs and wrappers for Python, Node.js, LangChain, AutoGen, and CrewAI. Enforce Gate 3 lease fencing and Gate 5 reality verification without rebuilding agent loops.
               </p>
 
               <div className="mt-6 space-y-3 text-[13px] text-[#6b6c71]">
                 <div className="flex items-center gap-2.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span>Strict Python 3.12+ type hints with mypy compliance</span>
+                  <span>Python 3.12+ strict typing (`@govern_action`) &amp; zero-dependency JS SDK</span>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span>Automatic distributed lease fencing &amp; token rotation</span>
+                  <span>Explicit `observer=` hook for Gate 5 OBS_DIRECT verification</span>
                 </div>
                 <div className="flex items-center gap-2.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span>Zero-overhead async client with connection pooling</span>
+                  <span>Shadow mode telemetry rollout before blocking live workloads</span>
                 </div>
               </div>
             </div>
 
             <div className="lg:col-span-7 bg-[#0c152a] text-[#ffffff] rounded-[28px] p-6 shadow-xl font-mono text-[12px]">
-              <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-700 inline-block" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-700 inline-block" />
-                  <span className="w-2.5 h-2.5 rounded-full bg-slate-700 inline-block" />
-                  <span className="text-[11px] text-slate-400 font-sans ml-2">agent_governance.py</span>
+              <div className="flex flex-wrap items-center justify-between gap-2 pb-3 border-b border-slate-800 mb-4">
+                <div className="flex items-center gap-1.5">
+                  {[
+                    ['python', 'Python'],
+                    ['langchain', 'LangChain'],
+                    ['autogen', 'AutoGen'],
+                    ['crewai', 'CrewAI'],
+                    ['js', 'Node.js'],
+                  ].map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setSdkTab(id)}
+                      className={`px-2.5 py-1 rounded-full text-[11px] transition-colors ${
+                        sdkTab === id
+                          ? 'bg-emerald-500 text-slate-950 font-semibold'
+                          : 'text-slate-300 hover:bg-slate-800'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
-                <span className="text-[10px] text-slate-500 uppercase">Python SDK</span>
+                <span className="text-[10px] text-slate-400 uppercase">SDK Preview</span>
               </div>
               <pre className="overflow-x-auto text-[11px] leading-relaxed">
-{`from mirage_sdk import MirageClient, governed_action
+                {sdkTab === 'python' && `from mirage_sdk import MirageClient, govern_action
 
-# Initialize fail-closed execution client
-client = MirageClient(
-    tenant_id="tenant_apex_assurance_corp",
-    api_key="mirage_live_key_99182a7f..."
-)
+client = MirageClient(api_key="mirage_live_key_...")
 
-@governed_action(capability="cap_treasury_disburse")
+def verify_ledger(res, args, kwargs):
+    return {"ledger_settled": True, "tx_ref": res["tx_ref"]}
+
+@govern_action(capability="cap_treasury_disburse", client=client, observer=verify_ledger)
 async def disburse_vendor_payment(account_id: str, amount: float):
-    # Gate 1 to Gate 4 evaluate atomically before dispatch
-    # Gate 5 queries destination SQL ledger post-execution
-    return await execute_payment(account_id, amount)
-`}
+    return await execute_payment(account_id, amount)`}
+                {sdkTab === 'langchain' && `from mirage_sdk.integrations import MirageGovernedTool
+
+governed = MirageGovernedTool(
+    tool=transfer_tool,
+    client=client,
+    observer=verify_ledger,
+    enforcement_mode="enforce",
+)`}
+                {sdkTab === 'autogen' && `from mirage_sdk.integrations import wrap_autogen_tool
+
+safe_tool = wrap_autogen_tool(
+    transfer_funds,
+    client=client,
+    observer=verify_ledger,
+)`}
+                {sdkTab === 'crewai' && `from mirage_sdk.integrations import MirageCrewAITool
+
+crew_tool = MirageCrewAITool(
+    tool=existing_crew_tool,
+    client=client,
+    observer=verify_ledger,
+)`}
+                {sdkTab === 'js' && `import { MirageClient } from "@mirage-ai/sdk";
+
+const mirage = new MirageClient({ apiKey: process.env.MIRAGE_API_KEY });
+const decision = await mirage.proposeAction({
+  transaction_id: "tx_001",
+  tool_name: "treasury.disburse",
+  action_type: "EXECUTE",
+  target_resource: "sql://prod/ledger",
+  parameters: { amount: 450 }
+});`}
               </pre>
             </div>
           </div>
@@ -903,12 +956,22 @@ async def disburse_vendor_payment(account_id: str, amount: float):
               </span>
             </div>
 
-            <div className="text-[12px] font-mono text-[#6b6c71] flex items-center gap-4">
-              <span>PostgreSQL RLS</span>
-              <span>&bull;</span>
-              <span>Distributed Leases</span>
-              <span>&bull;</span>
-              <span>Fail-Closed</span>
+            <div className="text-[12px] font-mono text-[#6b6c71] flex flex-wrap items-center gap-4">
+              <button type="button" onClick={() => onOpenLegal('privacy')} className="hover:text-[#0c152a] underline-offset-4 hover:underline">
+                Privacy Policy
+              </button>
+              <button type="button" onClick={() => onOpenLegal('terms')} className="hover:text-[#0c152a] underline-offset-4 hover:underline">
+                Terms &amp; DPA
+              </button>
+              <button type="button" onClick={() => onOpenLegal('trust')} className="hover:text-[#0c152a] underline-offset-4 hover:underline">
+                Trust Center
+              </button>
+              <button type="button" onClick={() => onOpenLegal('status')} className="hover:text-[#0c152a] underline-offset-4 hover:underline">
+                System Status
+              </button>
+              <button type="button" onClick={() => setInquiryOpen(true)} className="hover:text-[#0c152a] underline-offset-4 hover:underline">
+                Contact Sales
+              </button>
             </div>
           </div>
 
@@ -917,6 +980,11 @@ async def disburse_vendor_payment(account_id: str, amount: float):
           </div>
         </div>
       </footer>
+
+      <EnterpriseInquiryModal
+        isOpen={inquiryOpen}
+        onClose={() => setInquiryOpen(false)}
+      />
     </div>
   );
 }

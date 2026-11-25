@@ -27,6 +27,7 @@ security_bearer = HTTPBearer(auto_error=False)
 settings = get_settings()
 EXEMPT_PATHS: set[str] = {
     "/v1/health",
+    "/v1/status",
     "/health",
     "/docs",
     "/redoc",

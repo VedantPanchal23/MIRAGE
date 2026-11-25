@@ -1,6 +1,6 @@
 """Commercial SaaS Billing and Subscription routes for MIRAGE 3.0."""
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, Request, status
 
 from gateway.dependencies import Auth
 from services.billing_service import billing_service
@@ -53,9 +53,25 @@ async def upgrade_subscription(
 
 
 @router.post("/webhook")
-async def billing_webhook(req: StripeWebhookRequest) -> dict[str, str]:
-    """Inbound webhook receiver for payment processor events (Stripe, LemonSqueezy, Paddle)."""
-    _ = await billing_service.handle_payment_webhook(req)
+async def billing_webhook(
+    req: StripeWebhookRequest,
+    request: Request,
+    stripe_signature: str | None = Header(default=None, alias="Stripe-Signature"),
+    razorpay_signature: str | None = Header(default=None, alias="X-Razorpay-Signature"),
+) -> dict[str, str]:
+    """Inbound webhook receiver verifying cryptographic payment processor signatures."""
+    raw_body = await request.body()
+    try:
+        _ = await billing_service.handle_payment_webhook(
+            req,
+            raw_body=raw_body,
+            stripe_signature=stripe_signature,
+            razorpay_signature=razorpay_signature,
+        )
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
     return {"status": "ok", "event_id": req.event_id}
 
 
@@ -70,7 +86,12 @@ async def create_stripe_checkout_session(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Requires TENANT_ADMIN to initiate Stripe checkout.",
         )
-    return await billing_service.create_stripe_checkout_session(auth=auth, req=req)
+    try:
+        return await billing_service.create_stripe_checkout_session(auth=auth, req=req)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/stripe/verify-payment", response_model=StripePaymentVerifyResponse)
@@ -84,7 +105,14 @@ async def verify_stripe_payment(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Requires TENANT_ADMIN to complete payment verification.",
         )
-    return await billing_service.verify_stripe_payment(auth=auth, req=req)
+    try:
+        return await billing_service.verify_stripe_payment(auth=auth, req=req)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_402_PAYMENT_REQUIRED, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/razorpay/create-order", response_model=RazorpayOrderResponse)
@@ -98,7 +126,12 @@ async def create_razorpay_order(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Requires TENANT_ADMIN to initiate payment.",
         )
-    return await billing_service.create_razorpay_order(auth=auth, req=req)
+    try:
+        return await billing_service.create_razorpay_order(auth=auth, req=req)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
 
 
 @router.post("/razorpay/verify-payment", response_model=RazorpayPaymentVerifyResponse)
@@ -112,4 +145,11 @@ async def verify_razorpay_payment(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Requires TENANT_ADMIN to complete payment verification.",
         )
-    return await billing_service.verify_razorpay_payment(auth=auth, req=req)
+    try:
+        return await billing_service.verify_razorpay_payment(auth=auth, req=req)
+    except PermissionError as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc

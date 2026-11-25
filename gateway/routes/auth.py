@@ -22,6 +22,11 @@ from shared.schemas.auth import AuthContext
 from shared.schemas.tenant import (
     TenantRegistrationRequest,
     TenantRegistrationResponse,
+    TenantUserCreatedResponse,
+    TenantUserCreateRequest,
+    TenantUserListResponse,
+    TenantUserResponse,
+    TenantUserUpdateRequest,
 )
 
 router = APIRouter(prefix="/v1/auth", tags=["Authentication"])
@@ -96,3 +101,35 @@ async def revoke_api_key(
 ) -> ApiKeyMetadata:
     """Immediately revoke an API key."""
     return await api_key_service.revoke_api_key(auth=auth, key_id=key_id)
+
+
+# =============================================================================
+# Tenant Team / User RBAC Management Endpoints
+# =============================================================================
+
+
+@router.get("/users", response_model=TenantUserListResponse)
+async def list_tenant_users(
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> TenantUserListResponse:
+    """List human team users within the caller's tenant."""
+    return await tenant_service.list_tenant_users(auth=auth)
+
+
+@router.post("/users", response_model=TenantUserCreatedResponse, status_code=status.HTTP_201_CREATED)
+async def create_tenant_user(
+    req: TenantUserCreateRequest,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> TenantUserCreatedResponse:
+    """Provision a tenant team member and initial scoped API key (secret returned once)."""
+    return await tenant_service.provision_tenant_user(auth=auth, req=req)
+
+
+@router.patch("/users/{user_id}", response_model=TenantUserResponse)
+async def update_tenant_user(
+    user_id: str,
+    req: TenantUserUpdateRequest,
+    auth: Annotated[AuthContext, Depends(get_current_auth)],
+) -> TenantUserResponse:
+    """Update a tenant user's RBAC role or active status."""
+    return await tenant_service.update_tenant_user(auth=auth, user_id=user_id, req=req)

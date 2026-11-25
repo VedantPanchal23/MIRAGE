@@ -8,10 +8,13 @@ retroactive ledger revision even by privileged database administrators.
 from __future__ import annotations
 
 import abc
+import base64
+import hashlib
 import json
 import os
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from shared.config import get_settings
 from shared.logging import get_logger
@@ -58,6 +61,104 @@ class AuditAnchorBackend(abc.ABC):
     async def verify_anchor(self, tenant_id: str, anchor: AnchorProof) -> bool:
         """Cryptographically verify an anchor proof against authoritative notary keys."""
 
+    @staticmethod
+    def verify_anchor_with_registry(
+        notary_keys: NotaryKeyRegistry,
+        tenant_id: str,
+        anchor: AnchorProof,
+    ) -> bool:
+        """Shared cryptographic signature and chained-digest check for any anchor backend."""
+        if anchor.tenant_id != tenant_id:
+            return False
+
+        key_bytes = notary_keys.get_key(anchor.signer_identity)
+        if not key_bytes:
+            return False
+
+        canon = compute_checkpoint_canonical_string(
+            tenant_id=tenant_id,
+            ledger_identity=anchor.ledger_identity,
+            sequence_number=anchor.sequence_number,
+            checkpoint_hash=anchor.checkpoint_hash,
+            issued_at_iso=anchor.issued_at.isoformat(),
+            signer_identity=anchor.signer_identity,
+        )
+
+        if not verify_checkpoint_signature(key_bytes, canon, anchor.signature):
+            return False
+
+        expected_chained = compute_sha256(f"anchor:{canon}:{anchor.signature}:{anchor.prev_anchor_digest}")
+        legacy_digest = compute_sha256(f"anchor:{canon}:{anchor.signature}")
+        return anchor.anchor_digest == expected_chained or anchor.anchor_digest == legacy_digest
+
+    @staticmethod
+    def build_signed_anchor_proof(
+        notary_keys: NotaryKeyRegistry,
+        tenant_id: str,
+        checkpoint: CheckpointModel,
+        prev_anchor_digest: str,
+    ) -> AnchorProof:
+        """Validate signer authorization and build a hash-chained AnchorProof."""
+        key_bytes = notary_keys.get_key(checkpoint.signer_identity)
+        if not key_bytes:
+            raise AnchorUnavailableError(
+                f"Unauthorized or unknown signer_identity '{checkpoint.signer_identity}' for anchor signing"
+            )
+
+        canon = compute_checkpoint_canonical_string(
+            tenant_id=tenant_id,
+            ledger_identity=checkpoint.ledger_identity,
+            sequence_number=checkpoint.sequence_number,
+            checkpoint_hash=checkpoint.checkpoint_hash,
+            issued_at_iso=checkpoint.issued_at.isoformat(),
+            signer_identity=checkpoint.signer_identity,
+        )
+        if not verify_checkpoint_signature(key_bytes, canon, checkpoint.signature):
+            raise AnchorVerificationError("Cryptographic signature mismatch for checkpoint to be anchored")
+
+        anchor_digest = compute_sha256(f"anchor:{canon}:{checkpoint.signature}:{prev_anchor_digest}")
+        now = datetime.now(UTC)
+        return AnchorProof(
+            anchor_id=f"anc_{checkpoint.checkpoint_id.replace('chk_', '')}_{now.strftime('%Y%m%d%H%M%S')}",
+            tenant_id=tenant_id,
+            checkpoint_hash=checkpoint.checkpoint_hash,
+            sequence_number=checkpoint.sequence_number,
+            ledger_identity=checkpoint.ledger_identity,
+            signer_identity=checkpoint.signer_identity,
+            signature=checkpoint.signature,
+            trust_tier=checkpoint.trust_tier,
+            issued_at=checkpoint.issued_at,
+            anchored_at=now,
+            prev_anchor_digest=prev_anchor_digest,
+            anchor_digest=anchor_digest,
+        )
+
+    @staticmethod
+    async def validate_proof_sequence(
+        verify_fn: Any,
+        tenant_id: str,
+        proofs: list[AnchorProof],
+    ) -> tuple[bool, list[str]]:
+        """Verify monotonic signature & prev_anchor_digest chain across ordered AnchorProof records."""
+        if not proofs:
+            return True, []
+        defects: list[str] = []
+        expected_prev_digest = "0" * 64
+        for idx, proof in enumerate(proofs):
+            if not await verify_fn(tenant_id=tenant_id, anchor=proof):
+                defects.append(
+                    f"Anchor proof at index {idx} (seq {proof.sequence_number}, id '{proof.anchor_id}') "
+                    "failed cryptographic verification"
+                )
+            if proof.prev_anchor_digest != ("0" * 64) or idx == 0:
+                if proof.prev_anchor_digest != expected_prev_digest and idx > 0:
+                    defects.append(
+                        f"Anchor proof chain broken at index {idx} (sequence {proof.sequence_number}): "
+                        f"expected prev_anchor_digest '{expected_prev_digest}', got '{proof.prev_anchor_digest}'"
+                    )
+            expected_prev_digest = proof.anchor_digest
+        return len(defects) == 0, defects
+
 
 class FileAuditAnchorBackend(AuditAnchorBackend):
     """Local append-only file-based audit anchor backend.
@@ -103,25 +204,6 @@ class FileAuditAnchorBackend(AuditAnchorBackend):
         self._ensure_dir()
         tenant_file = self._get_tenant_file(tenant_id)
 
-        # Validate signature before anchoring
-        key_bytes = self.notary_keys.get_key(checkpoint.signer_identity)
-        if not key_bytes:
-            raise AnchorUnavailableError(
-                f"Unauthorized or unknown signer_identity '{checkpoint.signer_identity}' for anchor signing"
-            )
-
-        canon = compute_checkpoint_canonical_string(
-            tenant_id=tenant_id,
-            ledger_identity=checkpoint.ledger_identity,
-            sequence_number=checkpoint.sequence_number,
-            checkpoint_hash=checkpoint.checkpoint_hash,
-            issued_at_iso=checkpoint.issued_at.isoformat(),
-            signer_identity=checkpoint.signer_identity,
-        )
-
-        if not verify_checkpoint_signature(key_bytes, canon, checkpoint.signature):
-            raise AnchorVerificationError("Cryptographic signature mismatch for checkpoint to be anchored")
-
         # Determine preceding anchor digest for immutable hash chaining
         prev_anchor_digest = "0" * 64
         if tenant_file.exists():
@@ -138,22 +220,11 @@ class FileAuditAnchorBackend(AuditAnchorBackend):
                     error=str(e),
                 )
 
-        anchor_digest = compute_sha256(f"anchor:{canon}:{checkpoint.signature}:{prev_anchor_digest}")
-        now = datetime.now(UTC)
-
-        proof = AnchorProof(
-            anchor_id=f"anc_{checkpoint.checkpoint_id.replace('chk_', '')}_{now.strftime('%Y%m%d%H%M%S')}",
+        proof = self.build_signed_anchor_proof(
+            notary_keys=self.notary_keys,
             tenant_id=tenant_id,
-            checkpoint_hash=checkpoint.checkpoint_hash,
-            sequence_number=checkpoint.sequence_number,
-            ledger_identity=checkpoint.ledger_identity,
-            signer_identity=checkpoint.signer_identity,
-            signature=checkpoint.signature,
-            trust_tier=checkpoint.trust_tier,
-            issued_at=checkpoint.issued_at,
-            anchored_at=now,
+            checkpoint=checkpoint,
             prev_anchor_digest=prev_anchor_digest,
-            anchor_digest=anchor_digest,
         )
 
         try:
@@ -220,44 +291,10 @@ class FileAuditAnchorBackend(AuditAnchorBackend):
 
     async def verify_anchor(self, tenant_id: str, anchor: AnchorProof) -> bool:
         """Verify the cryptographic authenticity of an anchor record."""
-        if anchor.tenant_id != tenant_id:
-            return False
-
-        key_bytes = self.notary_keys.get_key(anchor.signer_identity)
-        if not key_bytes:
-            return False
-
-        canon = compute_checkpoint_canonical_string(
-            tenant_id=tenant_id,
-            ledger_identity=anchor.ledger_identity,
-            sequence_number=anchor.sequence_number,
-            checkpoint_hash=anchor.checkpoint_hash,
-            issued_at_iso=anchor.issued_at.isoformat(),
-            signer_identity=anchor.signer_identity,
-        )
-
-        # 1. Verify signature
-        if not verify_checkpoint_signature(key_bytes, canon, anchor.signature):
-            # Also check against issuance time without second fractions if formatted differently
-            return False
-
-        # 2. Verify anchor digest (supports chained digest and legacy unchained digest)
-        expected_chained = compute_sha256(f"anchor:{canon}:{anchor.signature}:{anchor.prev_anchor_digest}")
-        legacy_digest = compute_sha256(f"anchor:{canon}:{anchor.signature}")
-        if anchor.anchor_digest != expected_chained and anchor.anchor_digest != legacy_digest:
-            return False
-
-        return True
+        return self.verify_anchor_with_registry(self.notary_keys, tenant_id, anchor)
 
     async def verify_anchor_chain(self, tenant_id: str) -> tuple[bool, list[str]]:
-        """Verify the complete cryptographic hash chain of anchor proofs for a tenant.
-
-        Validates:
-        1. Every anchor proof record has valid signature and digest.
-        2. Sequence numbers are strictly monotonic and increasing.
-        3. prev_anchor_digest correctly links to the preceding anchor's anchor_digest.
-        Fails closed on any detected deletion, reordering, insertion, or signature tampering.
-        """
+        """Verify the complete cryptographic hash chain of anchor proofs for a tenant."""
         tenant_file = self._get_tenant_file(tenant_id)
         if not tenant_file.exists():
             return True, []
@@ -268,44 +305,181 @@ class FileAuditAnchorBackend(AuditAnchorBackend):
         except OSError as exc:
             raise AnchorUnavailableError(f"Cannot read anchor chain for tenant '{tenant_id}': {exc}") from exc
 
-        if not lines:
-            return True, []
-
-        defects: list[str] = []
-        expected_prev_digest = "0" * 64
-
+        proofs: list[AnchorProof] = []
         for idx, line in enumerate(lines):
             try:
-                proof = AnchorProof.model_validate_json(line)
+                proofs.append(AnchorProof.model_validate_json(line))
             except Exception as e:
-                defects.append(f"Anchor record at index {idx} corrupted JSON: {e}")
-                return False, defects
+                return False, [f"Anchor record at index {idx} corrupted JSON: {e}"]
 
-            # 1. Verify single anchor authenticity
-            if not await self.verify_anchor(tenant_id=tenant_id, anchor=proof):
-                defects.append(
-                    f"Anchor proof at index {idx} (seq {proof.sequence_number}, id '{proof.anchor_id}') "
-                    "failed cryptographic verification"
-                )
-
-            # 2. Verify hash chain link (if chained anchor)
-            if proof.prev_anchor_digest != ("0" * 64) or idx == 0:
-                if proof.prev_anchor_digest != expected_prev_digest and idx > 0:
-                    defects.append(
-                        f"Anchor proof chain broken at index {idx} (sequence {proof.sequence_number}): "
-                        f"expected prev_anchor_digest '{expected_prev_digest}', got '{proof.prev_anchor_digest}'"
-                    )
-
-            expected_prev_digest = proof.anchor_digest
-
-        is_valid = len(defects) == 0
-        return is_valid, defects
+        return await self.validate_proof_sequence(self.verify_anchor, tenant_id, proofs)
 
 
-# Default singleton instance
+class S3ObjectLockAuditAnchorBackend(AuditAnchorBackend):
+    """WORM-enforced Amazon S3 Object Lock Compliance Mode external anchor backend.
+
+    Addresses RSK-ANCHOR-02 by writing signed checkpoint proofs to a remote S3 bucket
+    with COMPLIANCE retention lock and MD5 integrity headers so even root DB/host
+    compromise cannot retroactively rewrite anchored ledger heads.
+    """
+
+    def __init__(
+        self,
+        bucket: str | None = None,
+        prefix: str | None = None,
+        retention_days: int | None = None,
+        notary_keys: NotaryKeyRegistry | None = None,
+        s3_client: Any = None,
+    ) -> None:
+        settings = get_settings()
+        self.bucket = (bucket or settings.audit_anchor_s3_bucket or settings.s3_bucket_name).strip()
+        raw_prefix = prefix if prefix is not None else settings.audit_anchor_s3_prefix
+        self.prefix = raw_prefix.strip().strip("/")
+        self.retention_days = retention_days or settings.audit_anchor_retention_days
+        self.notary_keys = notary_keys or NotaryKeyRegistry()
+        self._s3_client = s3_client
+
+    def _get_client(self) -> Any:
+        if self._s3_client is not None:
+            return self._s3_client
+        if not self.bucket:
+            raise AnchorUnavailableError("AUDIT_ANCHOR_S3_BUCKET is required for s3_object_lock backend")
+        try:
+            import importlib
+
+            boto3 = importlib.import_module("boto3")
+        except ImportError as exc:
+            raise AnchorUnavailableError("boto3 package is required for S3ObjectLockAuditAnchorBackend") from exc
+        settings = get_settings()
+        self._s3_client = boto3.client(
+            "s3",
+            region_name=settings.s3_region_name,
+            endpoint_url=settings.s3_endpoint_url or None,
+            aws_access_key_id=settings.aws_access_key_id or None,
+            aws_secret_access_key=settings.aws_secret_access_key or None,
+        )
+        return self._s3_client
+
+    @staticmethod
+    def _sanitize_tenant(tenant_id: str) -> str:
+        clean = "".join(c for c in tenant_id if c.isalnum() or c in ("-", "_")).strip()
+        if not clean:
+            raise ValueError(f"Invalid tenant_id for S3 anchor storage: '{tenant_id}'")
+        return clean
+
+    def _tenant_prefix(self, tenant_id: str) -> str:
+        clean = self._sanitize_tenant(tenant_id)
+        return f"{self.prefix}/{clean}/" if self.prefix else f"{clean}/"
+
+    def _object_key(self, tenant_id: str, sequence_number: int, anchor_id: str) -> str:
+        return f"{self._tenant_prefix(tenant_id)}{sequence_number:012d}_{anchor_id}.json"
+
+    async def _list_ordered_proofs(self, tenant_id: str) -> list[AnchorProof]:
+        client = self._get_client()
+        prefix = self._tenant_prefix(tenant_id)
+        try:
+            keys: list[str] = []
+            token: str | None = None
+            while True:
+                kwargs: dict[str, Any] = {"Bucket": self.bucket, "Prefix": prefix}
+                if token:
+                    kwargs["ContinuationToken"] = token
+                resp = client.list_objects_v2(**kwargs)
+                for obj in resp.get("Contents", []):
+                    key = str(obj.get("Key", ""))
+                    if key.endswith(".json"):
+                        keys.append(key)
+                if not resp.get("IsTruncated"):
+                    break
+                token = resp.get("NextContinuationToken")
+
+            proofs: list[AnchorProof] = []
+            for key in sorted(keys):
+                body_obj = client.get_object(Bucket=self.bucket, Key=key)
+                raw = body_obj["Body"].read()
+                payload = raw.decode("utf-8") if isinstance(raw, bytes) else str(raw)
+                proofs.append(AnchorProof.model_validate_json(payload))
+            return proofs
+        except AnchorUnavailableError:
+            raise
+        except Exception as exc:
+            raise AnchorUnavailableError(f"S3 Object Lock anchor read failed for '{tenant_id}': {exc}") from exc
+
+    async def write_anchor(self, tenant_id: str, checkpoint: CheckpointModel) -> AnchorProof:
+        """Persist checkpoint proof to S3 with Object Lock COMPLIANCE retention."""
+        existing = await self._list_ordered_proofs(tenant_id)
+        prev_digest = existing[-1].anchor_digest if existing else ("0" * 64)
+        proof = self.build_signed_anchor_proof(
+            notary_keys=self.notary_keys,
+            tenant_id=tenant_id,
+            checkpoint=checkpoint,
+            prev_anchor_digest=prev_digest,
+        )
+
+        body_bytes = (proof.model_dump_json() + "\n").encode("utf-8")
+        content_md5 = base64.b64encode(hashlib.md5(body_bytes, usedforsecurity=False).digest()).decode("ascii")
+        retain_until = datetime.now(UTC) + timedelta(days=self.retention_days)
+        key = self._object_key(tenant_id, proof.sequence_number, proof.anchor_id)
+
+        client = self._get_client()
+        try:
+            client.put_object(
+                Bucket=self.bucket,
+                Key=key,
+                Body=body_bytes,
+                ContentType="application/json",
+                ContentMD5=content_md5,
+                ObjectLockMode="COMPLIANCE",
+                ObjectLockRetainUntilDate=retain_until,
+                Metadata={
+                    "tenant-id": tenant_id,
+                    "sequence-number": str(proof.sequence_number),
+                    "anchor-digest": proof.anchor_digest,
+                },
+            )
+            logger.info(
+                "Persisted S3 Object Lock WORM audit anchor",
+                tenant_id=tenant_id,
+                bucket=self.bucket,
+                key=key,
+                sequence_number=proof.sequence_number,
+            )
+            return proof
+        except Exception as exc:
+            raise AnchorUnavailableError(f"S3 Object Lock put_object failed for '{tenant_id}': {exc}") from exc
+
+    async def get_latest_anchor(self, tenant_id: str) -> AnchorProof | None:
+        anchors = await self.list_anchors(tenant_id=tenant_id, limit=1)
+        return anchors[0] if anchors else None
+
+    async def list_anchors(self, tenant_id: str, limit: int = 50) -> list[AnchorProof]:
+        proofs = await self._list_ordered_proofs(tenant_id)
+        verified: list[AnchorProof] = []
+        for proof in reversed(proofs):
+            if await self.verify_anchor(tenant_id=tenant_id, anchor=proof):
+                verified.append(proof)
+                if len(verified) >= limit:
+                    break
+        return verified
+
+    async def verify_anchor(self, tenant_id: str, anchor: AnchorProof) -> bool:
+        return self.verify_anchor_with_registry(self.notary_keys, tenant_id, anchor)
+
+    async def verify_anchor_chain(self, tenant_id: str) -> tuple[bool, list[str]]:
+        try:
+            proofs = await self._list_ordered_proofs(tenant_id)
+        except Exception as exc:
+            return False, [f"Failed retrieving S3 anchor chain: {exc}"]
+        return await self.validate_proof_sequence(self.verify_anchor, tenant_id, proofs)
+
+
+# Default singleton instances
 default_anchor_backend: AuditAnchorBackend = FileAuditAnchorBackend()
 
 
 def get_anchor_backend() -> AuditAnchorBackend:
-    """Retrieve the authoritative external audit anchor backend."""
+    """Retrieve the authoritative external audit anchor backend based on configuration."""
+    settings = get_settings()
+    if getattr(settings, "audit_anchor_backend", "file") == "s3_object_lock":
+        return S3ObjectLockAuditAnchorBackend()
     return default_anchor_backend

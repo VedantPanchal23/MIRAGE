@@ -38,6 +38,7 @@ from gateway.routes.mcp import router as mcp_router
 from gateway.routes.models import router as models_router
 from gateway.routes.outcomes import router as outcomes_router
 from gateway.routes.output import router as output_router
+from gateway.routes.privacy import router as privacy_router
 from gateway.routes.proxy import router as proxy_router
 from gateway.routes.reports import router as reports_router
 from gateway.routes.sessions import router as sessions_router
@@ -191,6 +192,7 @@ def create_app() -> FastAPI:
     app.include_router(mcp_router)
     app.include_router(inquiries_router)
     app.include_router(webhooks_router)
+    app.include_router(privacy_router)
 
     # 7. Global Error Handlers
     @app.exception_handler(StarletteHTTPException)

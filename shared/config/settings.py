@@ -64,6 +64,9 @@ class Settings(BaseSettings):
     access_token_expire_minutes: int = Field(default=1440)
     jwt_issuer: str = Field(default="mirage-control-plane")
     jwt_audience: str = Field(default="mirage-gateway")
+    oidc_issuer_url: str = Field(default="", description="Optional OIDC Identity Provider issuer URL")
+    oidc_audience: str = Field(default="", description="Expected OIDC audience / client_id")
+    oidc_jwks_url: str = Field(default="", description="Optional OIDC JWKS endpoint URL")
     demo_auth_enabled: bool = Field(default=False)
     notary_keys_json: str | None = Field(
         default=None,
@@ -73,9 +76,26 @@ class Settings(BaseSettings):
         default=None,
         description="Allow default dev notary key in non-production environments",
     )
+    audit_anchor_backend: Literal["file", "s3_object_lock"] = Field(
+        default="file",
+        description="External audit anchor storage backend ('file' or 's3_object_lock')",
+    )
     audit_anchor_dir: str = Field(
         default="data/audit_anchors",
         description="Filesystem directory for immutable external audit anchor storage",
+    )
+    audit_anchor_s3_bucket: str = Field(
+        default="",
+        description="S3 bucket configured with Object Lock (COMPLIANCE mode) for external audit anchors",
+    )
+    audit_anchor_s3_prefix: str = Field(
+        default="audit-anchors/",
+        description="Key prefix inside S3 Object Lock bucket for audit anchors",
+    )
+    audit_anchor_retention_days: int = Field(
+        default=2555,
+        ge=1,
+        description="S3 Object Lock compliance retention period in days (~7 years default)",
     )
 
     # --------------------------------------------------------------------------
@@ -305,14 +325,22 @@ class Settings(BaseSettings):
     )
 
     # --------------------------------------------------------------------------
-    # SMTP Email Delivery Configuration
+    # SMTP Email Delivery & Sales Alert Configuration
     # --------------------------------------------------------------------------
     smtp_host: str = Field(default="smtp.gmail.com", description="SMTP server hostname")
     smtp_port: int = Field(default=587, description="SMTP server port (587 for TLS)")
-    smtp_user: str = Field(default="vedantwork1402@gmail.com", description="SMTP username / email")
-    smtp_password: str = Field(default="fisiwtzwspcgvnxf", description="SMTP app password / API token")
-    smtp_from_email: str = Field(default="vedantwork1402@gmail.com", description="Sender email address")
+    smtp_user: str = Field(default="", description="SMTP username / email")
+    smtp_password: str = Field(default="", description="SMTP app password / API token")
+    smtp_from_email: str = Field(default="noreply@mirage.local", description="Sender email address")
     smtp_from_name: str = Field(default="MIRAGE AI Execution Assurance", description="Sender display name")
+    sales_notification_email: str = Field(
+        default="",
+        description="Inbox for automated lead notifications when inquiries are submitted",
+    )
+    sales_webhook_url: str = Field(
+        default="",
+        description="Optional Slack/CRM webhook URL notified on new enterprise inquiries",
+    )
 
     # --------------------------------------------------------------------------
     # Object Storage Configuration (ADR 0005)

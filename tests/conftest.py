@@ -232,7 +232,7 @@ def live_redis_database() -> Generator[Any, None, None]:
                 "-@admin",
                 "-@dangerous",
             )
-            # mirage_celery restricted to DB 1 task metadata per ADR 0003
+            # mirage_celery restricted to DB 1 task metadata and pub/sub channels per ADR 0003
             admin_client.execute_command(
                 "ACL",
                 "SETUSER",
@@ -242,9 +242,13 @@ def live_redis_database() -> Generator[Any, None, None]:
                 "resetkeys",
                 "~celery-task-meta-*",
                 "~celery-chord-*",
+                "resetchannels",
+                "&celery-task-meta-*",
+                "&celery-chord-*",
                 "-@admin",
                 "-@dangerous",
                 "+@connection",
+                "+@transaction",
                 "+get",
                 "+set",
                 "+setex",
@@ -253,6 +257,11 @@ def live_redis_database() -> Generator[Any, None, None]:
                 "+mget",
                 "+client",
                 "+info",
+                "+publish",
+                "+subscribe",
+                "+unsubscribe",
+                "+psubscribe",
+                "+punsubscribe",
             )
             admin_client.close()
 

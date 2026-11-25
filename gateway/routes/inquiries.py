@@ -4,12 +4,15 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import select
 
 from db import session as db_session
 from db.models import InquiryRecord
 from gateway.dependencies import Auth
+from services.email_service import email_service
+from shared.config.settings import get_settings
 from shared.logging import get_logger
 from shared.schemas.auth import Role
 from shared.schemas.inquiry import InquiryCreateRequest, InquiryResponse
@@ -54,6 +57,41 @@ async def submit_inquiry(req: InquiryCreateRequest) -> InquiryResponse:
             inquiry_id=inquiry_id,
             error=str(exc),
         )
+
+    settings = get_settings()
+    if settings.sales_notification_email and "@" in settings.sales_notification_email:
+        email_service.send_email(
+            to_email=settings.sales_notification_email,
+            subject=f"[MIRAGE Lead] {req.company} ({req.use_case})",
+            html_body=(
+                f"<h3>New Enterprise Inquiry: {inquiry_id}</h3>"
+                f"<p><strong>Name:</strong> {req.name} ({req.email})<br/>"
+                f"<strong>Company:</strong> {req.company} (Size: {req.team_size})<br/>"
+                f"<strong>Use Case:</strong> {req.use_case}</p>"
+                f"<pre>{req.message}</pre>"
+            ),
+            text_body=f"New Inquiry {inquiry_id} from {req.name} <{req.email}> @ {req.company}: {req.message}",
+        )
+
+    if settings.sales_webhook_url and settings.sales_webhook_url.startswith("https://"):
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    settings.sales_webhook_url,
+                    json={
+                        "text": (
+                            f"New MIRAGE enterprise lead from *{req.company}* "
+                            f"({req.name}, {req.email}) — {req.use_case}"
+                        ),
+                        "inquiry_id": inquiry_id,
+                        "company": req.company,
+                        "email": str(req.email),
+                        "team_size": req.team_size,
+                        "use_case": req.use_case,
+                    },
+                )
+        except Exception as exc:
+            logger.warning("Sales webhook notification failed (fail-safe)", inquiry_id=inquiry_id, error=str(exc))
 
     return InquiryResponse(
         id=inquiry_id,

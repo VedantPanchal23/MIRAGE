@@ -43,6 +43,15 @@ NON_RETRYABLE_EXCEPTIONS = (
 
 _HEARTBEAT_PATH = os.path.join(tempfile.gettempdir(), "worker_heartbeat")
 _stop_heartbeat = threading.Event()
+_worker_loop_local = threading.local()
+
+
+def _get_or_create_worker_loop() -> asyncio.AbstractEventLoop:
+    loop: asyncio.AbstractEventLoop | None = getattr(_worker_loop_local, "loop", None)
+    if loop is None or loop.is_closed():
+        loop = asyncio.new_event_loop()
+        _worker_loop_local.loop = loop
+    return loop
 
 
 def _heartbeat_loop() -> None:
@@ -65,6 +74,21 @@ try:
         t = threading.Thread(target=_heartbeat_loop, daemon=True, name="celery_heartbeat")
         t.start()
 
+    @signals.worker_process_init.connect  # type: ignore[untyped-decorator]
+    def on_worker_process_init(**_kwargs: Any) -> None:
+        from db import session as db_session
+
+        _worker_loop_local.loop = None
+        if getattr(db_session, "engine", None) is not None:
+            db_session.engine.sync_engine.dispose(close=False)
+
+    @signals.worker_process_shutdown.connect  # type: ignore[untyped-decorator]
+    def on_worker_process_shutdown(**_kwargs: Any) -> None:
+        loop: asyncio.AbstractEventLoop | None = getattr(_worker_loop_local, "loop", None)
+        if loop is not None and not loop.is_closed():
+            loop.close()
+        _worker_loop_local.loop = None
+
     @signals.worker_shutdown.connect  # type: ignore[untyped-decorator]
     def on_worker_shutdown(**_kwargs: Any) -> None:
         logger.info("Celery worker shutting down, stopping heartbeat")
@@ -81,15 +105,14 @@ except Exception:
 def _run_async(coro: Any) -> Any:
     """Execute an asynchronous coroutine safely across both sync and async thread contexts."""
     try:
-        loop = asyncio.get_running_loop()
+        running_loop = asyncio.get_running_loop()
     except RuntimeError:
-        loop = None
+        running_loop = None
 
-    if loop is not None and loop.is_running():
+    if running_loop is not None and running_loop.is_running():
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             return pool.submit(asyncio.run, coro).result()
-    else:
-        return asyncio.run(coro)
+    return _get_or_create_worker_loop().run_until_complete(coro)
 
 
 @celery_app.task(

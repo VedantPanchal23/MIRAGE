@@ -13,7 +13,7 @@ from db import session as db_session
 from db.models import Tenant, TenantBudgetRecord
 from services.audit_ledger import AuditLedgerService
 from services.email_service import email_service
-from shared.config.settings import get_settings
+from shared.config.settings import EnvironmentType, get_settings, is_insecure_placeholder
 from shared.logging import get_logger
 from shared.schemas.auth import AuthContext, Role
 from shared.schemas.billing import (
@@ -311,6 +311,69 @@ class BillingService:
             checkout_url=checkout_link,
         )
 
+    @staticmethod
+    def _is_live_stripe_configured(settings: Any) -> bool:
+        key = str(getattr(settings, "stripe_secret_key", "") or "").strip()
+        return (
+            key.startswith(("sk_live_", "sk_test_"))
+            and key != "sk_test_miragePlatformKey"
+            and not is_insecure_placeholder(key)
+        )
+
+    @staticmethod
+    def _is_live_razorpay_configured(settings: Any) -> bool:
+        key_id = str(getattr(settings, "razorpay_key_id", "") or "").strip()
+        key_secret = str(getattr(settings, "razorpay_key_secret", "") or "").strip()
+        return (
+            key_id.startswith("rzp_")
+            and not key_id.startswith("rzp_test_placeholder")
+            and key_id != "rzp_test_miragePlatformKey"
+            and bool(key_secret)
+            and not key_secret.startswith("test_razorpay_")
+            and not is_insecure_placeholder(key_secret)
+        )
+
+    @staticmethod
+    def verify_stripe_webhook_signature(
+        raw_body: bytes,
+        signature_header: str,
+        secret: str,
+        tolerance_seconds: int = 300,
+    ) -> None:
+        """Verify Stripe-Signature header (`t=<ts>,v1=<hex>`) against raw payload bytes."""
+        if not secret or is_insecure_placeholder(secret):
+            raise PermissionError("Stripe webhook signing secret is not configured.")
+        parts: dict[str, list[str]] = {}
+        for item in signature_header.split(","):
+            if "=" not in item:
+                continue
+            k, v = item.split("=", 1)
+            parts.setdefault(k.strip(), []).append(v.strip())
+        timestamps = parts.get("t", [])
+        signatures = parts.get("v1", [])
+        if not timestamps or not signatures:
+            raise PermissionError("Malformed Stripe-Signature header.")
+        try:
+            ts = int(timestamps[0])
+        except ValueError as exc:
+            raise PermissionError("Invalid timestamp in Stripe-Signature header.") from exc
+        if abs(int(datetime.now(UTC).timestamp()) - ts) > tolerance_seconds:
+            raise PermissionError("Stripe webhook timestamp outside replay tolerance window.")
+
+        signed_payload = f"{ts}.".encode() + raw_body
+        expected = hmac.new(secret.encode("utf-8"), signed_payload, hashlib.sha256).hexdigest()
+        if not any(hmac.compare_digest(expected, sig) for sig in signatures):
+            raise PermissionError("Invalid Stripe webhook HMAC signature.")
+
+    @staticmethod
+    def verify_razorpay_webhook_signature(raw_body: bytes, signature_header: str, secret: str) -> None:
+        """Verify Razorpay X-Razorpay-Signature HMAC-SHA256 digest against raw payload bytes."""
+        if not secret or is_insecure_placeholder(secret):
+            raise PermissionError("Razorpay webhook signing secret is not configured.")
+        expected = hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+        if not hmac.compare_digest(expected, signature_header.strip()):
+            raise PermissionError("Invalid Razorpay webhook HMAC signature.")
+
     async def create_stripe_checkout_session(
         self, auth: AuthContext, req: StripeCheckoutSessionCreateRequest
     ) -> StripeCheckoutSessionResponse:
@@ -323,6 +386,31 @@ class BillingService:
         amount_usd = float(target_spec.get("price_usd", 0.0))
         session_id = f"cs_test_{uuid.uuid4().hex[:18]}"
         checkout_url = f"https://checkout.stripe.com/c/pay/{session_id}"
+
+        if self._is_live_stripe_configured(settings):
+            success_url = req.success_url or "https://app.mirage.ai/billing/success?session_id={CHECKOUT_SESSION_ID}"
+            cancel_url = req.cancel_url or "https://app.mirage.ai/billing/cancel"
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
+                    "https://api.stripe.com/v1/checkout/sessions",
+                    auth=(settings.stripe_secret_key, ""),
+                    data={
+                        "mode": "subscription",
+                        "success_url": success_url,
+                        "cancel_url": cancel_url,
+                        "line_items[0][price]": f"price_mirage_{req.tier.value}",
+                        "line_items[0][quantity]": "1",
+                        "metadata[tenant_id]": auth.tenant_id,
+                        "metadata[tier]": req.tier.value,
+                    },
+                )
+            if resp.status_code not in (200, 201):
+                raise RuntimeError(f"Upstream Stripe checkout creation failed ({resp.status_code}).")
+            stripe_data = resp.json()
+            session_id = str(stripe_data.get("id") or session_id)
+            checkout_url = str(stripe_data.get("url") or checkout_url)
+        elif settings.environment in (EnvironmentType.PRODUCTION, EnvironmentType.STAGING):
+            raise RuntimeError("Stripe billing credentials are not configured for staging/production.")
 
         logger.info(
             "Created Stripe checkout session",
@@ -345,18 +433,44 @@ class BillingService:
     async def verify_stripe_payment(
         self, auth: AuthContext, req: StripePaymentVerifyRequest
     ) -> StripePaymentVerifyResponse:
-        """Verify Stripe payment, activate subscription, record audit entry, and dispatch official email receipt."""
+        """Verify Stripe settlement, activate subscription, record audit entry, and send receipt."""
         target_spec = TIER_SPECS.get(req.tier)
         if not target_spec:
             raise ValueError(f"Unknown subscription tier: {req.tier}")
 
-        # Transition the subscription
+        settings = get_settings()
+        verified_payment_id = req.payment_intent_id
+
+        if self._is_live_stripe_configured(settings):
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.get(
+                    f"https://api.stripe.com/v1/checkout/sessions/{req.session_id}",
+                    auth=(settings.stripe_secret_key, ""),
+                )
+            if resp.status_code != 200:
+                raise PermissionError(f"Stripe checkout session '{req.session_id}' could not be verified.")
+            session_obj = resp.json()
+            if session_obj.get("payment_status") != "paid":
+                raise PermissionError(
+                    f"Stripe checkout session '{req.session_id}' is not settled "
+                    f"(payment_status={session_obj.get('payment_status')})."
+                )
+            meta = session_obj.get("metadata") or {}
+            if meta.get("tenant_id") and meta.get("tenant_id") != auth.tenant_id:
+                raise PermissionError("Stripe checkout session belongs to a different tenant.")
+            verified_payment_id = str(session_obj.get("payment_intent") or verified_payment_id or "")
+        elif settings.environment in (EnvironmentType.PRODUCTION, EnvironmentType.STAGING):
+            raise RuntimeError("Stripe settlement verification requires configured Stripe secret credentials.")
+        elif not req.session_id.startswith("cs_test_") or not verified_payment_id:
+            raise PermissionError("Sandbox Stripe verification requires a 'cs_test_' session_id and payment_intent_id.")
+
+        # Transition the subscription only after upstream settlement / verified sandbox check
         upgrade_res = await self.upgrade_subscription(
             auth=auth,
             req=SubscriptionUpgradeRequest(target_tier=req.tier),
         )
 
-        payment_id = req.payment_intent_id or f"pi_{uuid.uuid4().hex[:16]}"
+        payment_id = verified_payment_id or f"pi_{uuid.uuid4().hex[:16]}"
         invoice_id = f"INV-{datetime.now(UTC).strftime('%Y%m%d')}-{uuid.uuid4().hex[:6].upper()}"
 
         # Log Stripe settlement entry to audit ledger
@@ -379,8 +493,7 @@ class BillingService:
             )
             await session.commit()
 
-        # Send official branded receipt to user via SMTP
-        settings = get_settings()
+        # Send official branded receipt to user via SMTP (only when SMTP user looks configured)
         user_email = settings.smtp_user if "@" in settings.smtp_user else f"{auth.tenant_id}@mirage.ai"
         email_sent = email_service.send_invoice_receipt(
             to_email=user_email,
@@ -429,14 +542,7 @@ class BillingService:
         settings = get_settings()
         order_id = f"order_{uuid.uuid4().hex[:14]}"
 
-        # Attempt real Razorpay API order creation if live or test keys configured
-        if (
-            settings.razorpay_key_id
-            and settings.razorpay_key_id.startswith("rzp_")
-            and not settings.razorpay_key_id.startswith("rzp_test_placeholder")
-            and settings.razorpay_key_secret
-            and not settings.razorpay_key_secret.startswith("test_razorpay_")
-        ):
+        if self._is_live_razorpay_configured(settings):
             try:
                 async with httpx.AsyncClient(timeout=10.0) as client:
                     resp = await client.post(
@@ -461,6 +567,8 @@ class BillingService:
                     "Razorpay API order dispatch encountered exception, using local order ID",
                     error=str(e),
                 )
+        elif settings.environment in (EnvironmentType.PRODUCTION, EnvironmentType.STAGING):
+            raise RuntimeError("Razorpay billing credentials are not configured for staging/production.")
 
         logger.info(
             "Created Razorpay order",
@@ -494,14 +602,19 @@ class BillingService:
             raise ValueError(f"Unknown subscription tier: {req.tier}")
 
         settings = get_settings()
+        is_test_shortcut = settings.environment == EnvironmentType.TEST and (
+            not req.razorpay_signature
+            or req.razorpay_signature.startswith("rzp_sig_")
+            or settings.razorpay_key_secret.startswith("test_razorpay_")
+        )
 
-        # Cryptographic HMAC verification if live or test Razorpay signature provided
-        if (
-            req.razorpay_signature
-            and not req.razorpay_signature.startswith("rzp_sig_")
-            and settings.razorpay_key_secret
-            and not settings.razorpay_key_secret.startswith("test_razorpay_")
-        ):
+        if not is_test_shortcut:
+            if settings.environment in (EnvironmentType.PRODUCTION, EnvironmentType.STAGING) and not (
+                self._is_live_razorpay_configured(settings)
+            ):
+                raise RuntimeError("Razorpay secret credentials are not configured for staging/production.")
+            if not req.razorpay_signature:
+                raise PermissionError("Missing Razorpay payment signature.")
             msg = f"{req.razorpay_order_id}|{req.razorpay_payment_id}"
             expected_sig = hmac.new(
                 settings.razorpay_key_secret.encode("utf-8"),
@@ -541,7 +654,6 @@ class BillingService:
             await session.commit()
 
         # Send official branded receipt to user via SMTP
-        settings = get_settings()
         user_email = settings.smtp_user if "@" in settings.smtp_user else f"{auth.tenant_id}@mirage.ai"
         inr_price = float(target_spec.get("price_inr", 0.0))
         email_sent = email_service.send_invoice_receipt(
@@ -578,8 +690,43 @@ class BillingService:
             message=verify_msg,
         )
 
-    async def handle_payment_webhook(self, req: StripeWebhookRequest) -> dict[str, Any]:
-        """Idempotent payment webhook processor for subscription settlements."""
+    async def handle_payment_webhook(
+        self,
+        req: StripeWebhookRequest,
+        *,
+        raw_body: bytes | None = None,
+        stripe_signature: str | None = None,
+        razorpay_signature: str | None = None,
+    ) -> dict[str, Any]:
+        """Idempotent payment webhook processor with fail-closed HMAC signature verification."""
+        settings = get_settings()
+
+        if stripe_signature is not None:
+            if raw_body is None:
+                raise PermissionError("Raw request body required for Stripe-Signature verification.")
+            self.verify_stripe_webhook_signature(
+                raw_body=raw_body,
+                signature_header=stripe_signature,
+                secret=settings.stripe_webhook_secret,
+            )
+        elif razorpay_signature is not None:
+            if raw_body is None:
+                raise PermissionError("Raw request body required for X-Razorpay-Signature verification.")
+            self.verify_razorpay_webhook_signature(
+                raw_body=raw_body,
+                signature_header=razorpay_signature,
+                secret=settings.razorpay_webhook_secret,
+            )
+        else:
+            # Fail closed on all HTTP deliveries and all non-test environments
+            if raw_body is not None or settings.environment != EnvironmentType.TEST:
+                raise PermissionError(
+                    "Unauthorized webhook delivery: valid Stripe-Signature or X-Razorpay-Signature header is required."
+                )
+            logger.warning(
+                "Unsigned webhook call accepted strictly in in-process TEST service invocation",
+                event_id=req.event_id,
+            )
         logger.info("Processing billing webhook event", event_id=req.event_id, event_type=req.event_type)
 
         data = req.data or {}

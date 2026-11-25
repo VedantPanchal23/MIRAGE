@@ -109,3 +109,56 @@ class TenantRegistrationResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
     created_at: datetime
+
+
+class TenantUserCreateRequest(BaseModel):
+    """Invite or provision a tenant team user with scoped RBAC role and initial API key."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(..., min_length=5, max_length=255)
+    display_name: str = Field(..., min_length=1, max_length=255)
+    role: str = Field(
+        default="operator",
+        description="Assigned tenant RBAC role: tenant_admin, operator, viewer, api_client",
+    )
+    scopes: list[str] = Field(default_factory=lambda: ["*"])
+
+
+class TenantUserUpdateRequest(BaseModel):
+    """Update role or active status for a tenant user."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: str | None = None
+    active: bool | None = None
+
+
+class TenantUserResponse(BaseModel):
+    """Safe representation of a tenant user."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    tenant_id: str
+    external_subject: str
+    display_name: str
+    role: str
+    active: bool
+    created_at: datetime
+
+
+class TenantUserCreatedResponse(TenantUserResponse):
+    """Response returned once when provisioning a tenant user and their initial API credential."""
+
+    identity_id: str
+    api_key: str
+    api_key_id: str
+    api_key_prefix: str
+
+
+class TenantUserListResponse(BaseModel):
+    """List of tenant users within administrative scope."""
+
+    users: list[TenantUserResponse]
+    total: int

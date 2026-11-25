@@ -32,6 +32,11 @@ from shared.schemas.tenant import (
     TenantResponse,
     TenantStatus,
     TenantUpdateRequest,
+    TenantUserCreatedResponse,
+    TenantUserCreateRequest,
+    TenantUserListResponse,
+    TenantUserResponse,
+    TenantUserUpdateRequest,
 )
 
 logger = get_logger("tenant_service")
@@ -649,6 +654,225 @@ class TenantService:
         if session is not None:
             return await _execute(session)
         async with db_session.get_tenant_session(tenant_id) as s:
+            return await _execute(s)
+
+    async def list_tenant_users(
+        self,
+        auth: AuthContext,
+        session: AsyncSession | None = None,
+    ) -> TenantUserListResponse:
+        """List human team members within the authenticated tenant."""
+        if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN, Role.VIEWER):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Listing tenant users requires TENANT_ADMIN, VIEWER, or SUPER_ADMIN role.",
+            )
+
+        async def _execute(s: AsyncSession) -> TenantUserListResponse:
+            stmt = select(User).where(User.tenant_id == auth.tenant_id).order_by(User.created_at.asc())
+            rows = list((await s.execute(stmt)).scalars().all())
+            return TenantUserListResponse(
+                users=[TenantUserResponse.model_validate(u) for u in rows],
+                total=len(rows),
+            )
+
+        if session is not None:
+            return await _execute(session)
+        async with db_session.get_tenant_session(auth.tenant_id) as s:
+            return await _execute(s)
+
+    async def provision_tenant_user(
+        self,
+        auth: AuthContext,
+        req: TenantUserCreateRequest,
+        session: AsyncSession | None = None,
+    ) -> TenantUserCreatedResponse:
+        """Provision a team user, ActorIdentity, and scoped API key inside the tenant."""
+        if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Provisioning users requires TENANT_ADMIN or SUPER_ADMIN role.",
+            )
+
+        try:
+            target_role = Role(req.role.strip().lower())
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Unknown RBAC role '{req.role}'.",
+            ) from exc
+
+        if target_role == Role.SUPER_ADMIN and auth.role != Role.SUPER_ADMIN:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Privilege escalation forbidden: TENANT_ADMIN cannot provision SUPER_ADMIN.",
+            )
+
+        from services.api_key_service import generate_secure_api_key
+
+        now = datetime.now(UTC)
+
+        async def _execute(s: AsyncSession) -> TenantUserCreatedResponse:
+            existing_stmt = select(User).where(
+                User.tenant_id == auth.tenant_id,
+                User.external_subject == req.email.strip().lower(),
+            )
+            if (await s.execute(existing_stmt)).scalar_one_or_none():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=f"User '{req.email}' already exists in tenant '{auth.tenant_id}'.",
+                )
+
+            user_id = f"user_{uuid.uuid4().hex[:12]}"
+            actor_id = f"id_{uuid.uuid4().hex[:12]}"
+            cred_id = f"key_{uuid.uuid4().hex[:12]}"
+            raw_key, key_prefix, key_hash = generate_secure_api_key(prefix="mirage_live_")
+
+            user = User(
+                id=user_id,
+                tenant_id=auth.tenant_id,
+                external_subject=req.email.strip().lower(),
+                display_name=req.display_name.strip(),
+                role=target_role.value,
+                active=True,
+                created_at=now,
+            )
+            actor = ActorIdentity(
+                id=actor_id,
+                tenant_id=auth.tenant_id,
+                subject=req.email.strip().lower(),
+                principal_type="user",
+                role=target_role.value,
+                user_id=user_id,
+                active=True,
+                created_at=now,
+            )
+            cred = ApiCredential(
+                id=cred_id,
+                tenant_id=auth.tenant_id,
+                identity_id=actor_id,
+                name=f"{req.display_name.strip()} API Key",
+                key_prefix=key_prefix,
+                scopes=req.scopes or ["*"],
+                key_hash=key_hash,
+                created_at=now,
+            )
+            s.add(user)
+            await s.flush()
+            s.add(actor)
+            await s.flush()
+            s.add(cred)
+            await s.flush()
+
+            await self._record_audit(
+                session=s,
+                tenant_id=auth.tenant_id,
+                action="USER_PROVISIONED",
+                actor_id=auth.identity_id or auth.user_id,
+                details={
+                    "user_id": user_id,
+                    "subject": user.external_subject,
+                    "role": target_role.value,
+                    "api_key_id": cred_id,
+                },
+            )
+            await s.commit()
+
+            return TenantUserCreatedResponse(
+                id=user.id,
+                tenant_id=user.tenant_id,
+                external_subject=user.external_subject,
+                display_name=user.display_name,
+                role=user.role,
+                active=user.active,
+                created_at=user.created_at,
+                identity_id=actor_id,
+                api_key=raw_key,
+                api_key_id=cred_id,
+                api_key_prefix=key_prefix,
+            )
+
+        if session is not None:
+            return await _execute(session)
+        async with db_session.get_tenant_session(auth.tenant_id) as s:
+            return await _execute(s)
+
+    async def update_tenant_user(
+        self,
+        auth: AuthContext,
+        user_id: str,
+        req: TenantUserUpdateRequest,
+        session: AsyncSession | None = None,
+    ) -> TenantUserResponse:
+        """Update role or active status of a tenant user with fail-closed hierarchy checks."""
+        if auth.role not in (Role.SUPER_ADMIN, Role.TENANT_ADMIN):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Updating users requires TENANT_ADMIN or SUPER_ADMIN role.",
+            )
+
+        target_role: Role | None = None
+        if req.role is not None:
+            try:
+                target_role = Role(req.role.strip().lower())
+            except ValueError as exc:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Unknown RBAC role '{req.role}'.",
+                ) from exc
+            if target_role == Role.SUPER_ADMIN and auth.role != Role.SUPER_ADMIN:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Privilege escalation forbidden: TENANT_ADMIN cannot assign SUPER_ADMIN.",
+                )
+
+        async def _execute(s: AsyncSession) -> TenantUserResponse:
+            stmt = select(User).where(User.id == user_id, User.tenant_id == auth.tenant_id)
+            user = (await s.execute(stmt)).scalar_one_or_none()
+            if not user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail=f"User '{user_id}' not found in tenant '{auth.tenant_id}'.",
+                )
+
+            if user.role == Role.SUPER_ADMIN.value and auth.role != Role.SUPER_ADMIN:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="TENANT_ADMIN cannot modify a SUPER_ADMIN user.",
+                )
+
+            changes: dict[str, Any] = {"user_id": user_id}
+            actor_stmt = select(ActorIdentity).where(
+                ActorIdentity.user_id == user_id,
+                ActorIdentity.tenant_id == auth.tenant_id,
+            )
+            actors = list((await s.execute(actor_stmt)).scalars().all())
+
+            if target_role is not None:
+                user.role = target_role.value
+                for actor in actors:
+                    actor.role = target_role.value
+                changes["role"] = target_role.value
+            if req.active is not None:
+                user.active = req.active
+                for actor in actors:
+                    actor.active = req.active
+                changes["active"] = req.active
+
+            await s.flush()
+            await self._record_audit(
+                session=s,
+                tenant_id=auth.tenant_id,
+                action="USER_UPDATED",
+                actor_id=auth.identity_id or auth.user_id,
+                details=changes,
+            )
+            await s.commit()
+            return TenantUserResponse.model_validate(user)
+
+        if session is not None:
+            return await _execute(session)
+        async with db_session.get_tenant_session(auth.tenant_id) as s:
             return await _execute(s)
 
     async def _record_audit(

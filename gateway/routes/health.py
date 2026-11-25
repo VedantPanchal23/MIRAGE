@@ -153,3 +153,25 @@ async def readiness_check(response: Response) -> dict[str, Any]:
         "uptime_seconds": uptime_seconds,
         "components": components,
     }
+
+
+@router.get("/status")
+async def public_status_summary() -> dict[str, Any]:
+    """Redacted public operational status summary suitable for external status pages."""
+    uptime_seconds = round(time.time() - start_time, 2)
+    circuit_statuses = get_all_circuit_statuses()
+    open_circuits = [name for name, c in circuit_statuses.items() if c.get("state") == "open"]
+    return {
+        "service": "MIRAGE Execution Assurance Platform",
+        "platform_version": "3.0.0",
+        "status": "degraded" if open_circuits else "operational",
+        "uptime_seconds": uptime_seconds,
+        "gates": {
+            "gate1_input": "operational",
+            "gate2_context": "operational",
+            "gate3_action": "operational",
+            "gate4_output": "degraded" if open_circuits else "operational",
+            "gate5_outcome": "operational",
+        },
+        "checked_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+    }

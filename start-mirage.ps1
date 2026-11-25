@@ -43,7 +43,7 @@ switch ($Choice) {
     }
     { $_ -in "2", "full", "enterprise" } {
         Write-Host "`n>>> Starting Full Enterprise Cluster with Observability..." -ForegroundColor Cyan
-        docker compose --profile full up -d
+        docker compose up -d
         Write-Host "`n>>> Waiting for Services..." -ForegroundColor Yellow
         Start-Sleep -Seconds 5
         docker compose ps
@@ -52,7 +52,6 @@ switch ($Choice) {
         Write-Host "  - Storefront & Operator Dashboard: http://localhost:3000" -ForegroundColor White
         Write-Host "  - Execution Plane Gateway:         http://localhost:8000" -ForegroundColor White
         Write-Host "  - Grafana Telemetry Dashboards:    http://localhost:3001" -ForegroundColor White
-        Write-Host "  - Prometheus Metrics Engine:       http://localhost:9090" -ForegroundColor White
         Write-Host "==================================================================" -ForegroundColor Green
     }
     { $_ -in "3", "test", "verify" } {
@@ -65,7 +64,7 @@ switch ($Choice) {
     }
     { $_ -in "5", "down", "stop" } {
         Write-Host "`n>>> Stopping All Services..." -ForegroundColor Yellow
-        docker compose --profile full down
+        docker compose down
         Write-Host ">>> All MIRAGE containers terminated safely." -ForegroundColor Green
     }
     Default {

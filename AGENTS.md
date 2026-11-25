@@ -8,9 +8,9 @@
 
 Before modifying any MIRAGE code or documentation, **read the relevant canonical specifications**:
 
-1. **Start here:** [`docs/MIRAGE_3.0_Specification.md`](docs/MIRAGE_3.0_Specification.md) — the canonical source of truth.
+1. **Start here:** [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — the canonical architecture, Five Assurance Gates specification, data model, and system diagrams.
 2. **Terminology:** [`docs/GLOSSARY.md`](docs/GLOSSARY.md) — every term has exactly one authoritative meaning.
-3. **Subsystem docs:** Read the specific document for the subsystem you are modifying before writing code (see index in `MIRAGE_3.0_Specification.md`, Section 11).
+3. **Domain guides:** Inspect the relevant consolidated guide ([`API_AND_SDK.md`](docs/API_AND_SDK.md), [`SECURITY_AND_COMPLIANCE.md`](docs/SECURITY_AND_COMPLIANCE.md), [`DEPLOYMENT_AND_OPERATIONS.md`](docs/DEPLOYMENT_AND_OPERATIONS.md), [`TESTING_AND_BENCHMARKS.md`](docs/TESTING_AND_BENCHMARKS.md)).
 4. **Architecture Decision Records:** Inspect [`docs/ADRs/README.md`](docs/ADRs/README.md) and all accepted ADRs before proposing architectural adjustments.
 
 ---
@@ -94,17 +94,16 @@ This constraint is an explicit architectural decision. To change it, an accepted
 
 ```
 MIRAGE/
-├── docs/                    # MIRAGE 3.0 specification (authoritative)
-│   ├── MIRAGE_3.0_Specification.md
-│   ├── GLOSSARY.md
-│   ├── PRD.md
-│   ├── Technical_Architecture.md
-│   ├── Security.md
-│   ├── ...                  # Subsystem specification documents
-│   ├── reports/             # Phase audit and closure reports
-│   └── ADRs/                # Architecture Decision Records
-│       ├── README.md
-│       └── 0001-0008+
+├── docs/                    # MIRAGE 3.0 consolidated documentation (authoritative)
+│   ├── ARCHITECTURE.md      # Canonical architecture, 5 gates, data model & Mermaid diagrams
+│   ├── API_AND_SDK.md       # /v1/ REST endpoints, auth attenuation, Python & JS SDKs, CLI
+│   ├── SECURITY_AND_COMPLIANCE.md # Threat model, DIFC, audit chain & residual risk register
+│   ├── DEPLOYMENT_AND_OPERATIONS.md # Docker Compose, Helm, cloud VPS, migrations & runbooks
+│   ├── TESTING_AND_BENCHMARKS.md # Test pyramid, CI pipeline, benchmarks & dev workflow
+│   ├── GLOSSARY.md          # Canonical terminology
+│   ├── CHANGELOG.md         # Version history
+│   ├── deployment/          # Cloud staging specifications (aws-private-staging.md)
+│   └── ADRs/                # Architecture Decision Records (README.md, 0001-0008+)
 ├── gateway/                 # FastAPI gateway (Execution Plane entry point)
 │   ├── middleware/          # Auth, CORS, RBAC, PII, rate-limiting
 │   └── routes/              # Versioned API routes (/v1/...)

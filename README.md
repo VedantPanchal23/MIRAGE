@@ -6,353 +6,215 @@
 [![Python](https://img.shields.io/badge/Python-3.12%20%7C%203.13-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115+-009688.svg)](https://fastapi.tiangolo.com/)
 [![React](https://img.shields.io/badge/Frontend-React%2018%20%2B%20Vite%20%28JSX%29-61dafb.svg)](https://react.dev/)
-[![Docker](https://img.shields.io/badge/Docker-12%20Containers%20Hardened-2496ed.svg)](https://www.docker.com/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16%20RLS%20Enforced-336791.svg)](https://www.postgresql.org/)
-[![License](https://img.shields.io/badge/License-Academic%20%26%20Research-green.svg)](#-authors--affiliation)
+[![Docker](https://img.shields.io/badge/Docker-13%20Services%20Hardened-2496ed.svg)](https://www.docker.com/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16.4%20RLS%20Enforced-336791.svg)](https://www.postgresql.org/)
 
 <br />
 
 **“Control AI before it acts. Verify AI after it acts.”**
 
-*A zero-trust, multi-tenant execution assurance platform governing autonomous agent lifecycles, capability authorizations, real-world tool execution, and postcondition verification.*
+*A zero-trust, multi-tenant execution assurance platform governing autonomous agent lifecycles, capability authorizations, real-world tool invocations, and independent postcondition verification.*
 
 </div>
 
 ---
 
-## 👥 Authors & Affiliation
+## Executive Overview & Core Invariant
 
-- **Vedant (23AIML042)** — Department of Artificial Intelligence & Machine Learning, CSPIT
-- **Dax (23AIML076)** — Department of Artificial Intelligence & Machine Learning, CSPIT
-- **Institution**: Chandubhai S. Patel Institute of Technology (CSPIT), Charotar University of Science and Technology (CHARUSAT)
-- **Academic Year**: 2026
-
----
-
-## 🏛️ Executive Summary & Core Invariant
-
-Modern autonomous agents and Large Language Models (LLMs) operate with dangerous epistemic unreliability: they hallucinate execution success, suffer from prompt injection, exceed operational blast radiuses, and conflate HTTP 200 responses with real-world state transitions.
-
-**MIRAGE 3.0 is not a passive hallucination detector.** It is an active **AI Execution Assurance Platform** deployed as a mediating gateway between AI agents and external environments. Every consequential transaction traverses the **Five Assurance Gates**:
+Modern autonomous agents invoke external APIs, execute SQL writes, and act across distributed tools without kernel-level mediation. **MIRAGE 3.0** sits between AI models/agents and external infrastructure to route every consequential transaction through the **Five Assurance Gates**:
 
 ```mermaid
 flowchart LR
-    In([User / Agent Request]) --> G1[Gate 1: Input Assurance]
-    G1 --> G2[Gate 2: Context Assurance]
-    G2 --> G3[Gate 3: Action Assurance]
-    G3 --> Tool[Governed Tool / MCP Proxy]
-    Tool --> G4[Gate 4: Output Assurance]
-    G4 --> G5[Gate 5: Outcome Assurance]
-    G5 --> Out([Verified Outcome & Immutable Audit])
+    In(["User / Agent Request"]) --> G1["Gate 1: Input Assurance"]
+    G1 --> G2["Gate 2: Context Assurance"]
+    G2 --> G3["Gate 3: Action Assurance"]
+    G3 --> Proxy["Governed Tool / MCP Proxy"]
+    Proxy --> G5["Gate 5: Outcome Assurance"]
+    G5 --> G4["Gate 4: Output Assurance"]
+    G4 --> Out(["Verified Output & SHA-256 Audit Ledger"])
 
     classDef gate fill:#1e293b,stroke:#3b82f6,stroke-width:2px,color:#fff;
     classDef io fill:#0f172a,stroke:#64748b,stroke-width:1px,color:#94a3b8;
     class In,Out io;
-    class G1,G2,G3,G4,G5,Tool gate;
+    class G1,G2,G3,G4,G5,Proxy gate;
 ```
 
 ### The Invariant of Epistemic Outcome Independence
-> **Core Guarantee**: An agent's assertion or a tool's internal execution return value is **never** proof of a real-world outcome. Outcome claims must be confirmed by independent reality verification gathered directly from postcondition state transitions.
+> An agent's self-report or a tool's HTTP `200 OK` return value is **never** proof of a real-world side effect. Outcome claims must be confirmed via independent Gate 5 reality verification probes (`OBS_DIRECT`, `OBS_EVENTUAL`, `OBS_INFERRED`, `OBS_BLIND`).
 
 ---
 
-## 🛡️ The Five Assurance Gates
+## The Five Assurance Gates
 
-### 1. Gate 1 — Input Assurance (Boundary Defense & Ingestion)
-- **Tenant Attribution & Identity Binding**: Enforces cryptographic JWT verification and resolves tenant membership directly from PostgreSQL with Row-Level Security (RLS).
-- **Anti-Spoofing Middleware**: ASGI boundary header stripping prevents client injection of internal headers (`X-Role`, `X-Tenant-Id`).
-- **Dynamic Information Flow Control (DIFC)**: Taint tracking tags inputs with confidential and untrusted security classifications.
-- **DLP & Prompt Injection Shield**: Scans payloads for direct/indirect injection, credential leaks, and PII before execution planning begins.
-
-### 2. Gate 2 — Context Assurance (RAG & Working Memory)
-- **Delimiter Isolation**: Strictly wraps context inside `<trusted_instructions>` and `<untrusted_data>` boundaries to defeat indirect prompt injection.
-- **Evidence Provenance & Freshness**: Qdrant vector retrieval validates document age, generation IDs, and trust tiers.
-- **Governed Memory Lifecycle**: Enforces epistemic tiers (`ATTESTED` vs. `ADVISORY`). Agents cannot self-attest or overwrite tenant truth. Poisoned context is quarantined fail-closed.
-
-### 3. Gate 3 — Action Assurance (Authorization & Dispatch)
-- **Capability-Based Access Control**: Agents possess least-privilege, short-lived capabilities. Unscoped actions are blocked at the proxy boundary.
-- **Mandatory `GovernedToolProxy`**: Direct tool invocation is architecturally prohibited. Tool schemas and parameter ranges are strictly validated.
-- **Sliding-Window Blast Radius**: Financial spend ceilings and cumulative risk budgets automatically throttle runaway agent execution.
-- **SSRF & Network Boundary Defense**: Validates all outbound endpoints against IPv4/IPv6 loopback, link-local, RFC 1918 private subnets, cloud metadata (169.254.169.254), and DNS rebinding attacks.
-- **Single-Use Human-in-the-Loop (HITL)**: Cryptographically binds approval tokens to action contracts. Agents cannot approve their own escalations.
-
-### 4. Gate 4 — Output Assurance (Verification Engine)
-- **Multimodal Consistency Pipeline**: Incorporates Retrieval-Augmented Verification (RAV), Semantic Consistency Scoring (SCS), Natural Language Inference (NLI), Information Consistency Scoring (ICS), and Visual Grounding Scoring (VGS).
-- **Meta-Learner & Calibration**: LightGBM meta-learner combines gate metrics; Isotonic Regression guarantees Expected Calibration Error ($ECE < 0.05$) and Mondrian Conformal Prediction provides 95% coverage intervals.
-- **Postcondition Honesty Enforcement**: If an agent claims *"I updated the database"* without a verified Gate 3 action contract, the claim is flagged as dishonest and blocked.
-
-### 5. Gate 5 — Outcome Assurance (Reality Verification)
-- **4-Class Epistemic Observability**: Categorizes reality verification into `OBS_DIRECT` (database/file), `OBS_EVENTUAL` (webhooks/events), `OBS_INFERRED` (indirect indicators), and `OBS_BLIND` (unverifiable external side effects).
-- **Independent State Observers**: `DatabaseStateAdapter`, `HttpResourceAdapter`, and `AsyncEventAdapter` inspect target systems independently of the tool agent.
-- **Monotonic Outcome State Machine**:
-  ```mermaid
-  stateDiagram-v2
-      [*] --> PROPOSED
-      PROPOSED --> AUTHORIZED: Gate 3 Approved
-      AUTHORIZED --> EXECUTING: Two-Phase Commit Lease
-      EXECUTING --> EXECUTION_UNCERTAIN: Timeout / Network Disruption
-      EXECUTING --> PENDING_VERIFICATION: Tool Return Captured
-      PENDING_VERIFICATION --> VERIFIED_SUCCESS: Postconditions Confirmed
-      PENDING_VERIFICATION --> VERIFIED_FAILURE: Discrepancy Detected
-      PENDING_VERIFICATION --> PARTIAL_ACHIEVEMENT: Subset Satisfied
-      EXECUTION_UNCERTAIN --> VERIFIED_SUCCESS: Independent Reconciliation
-      EXECUTION_UNCERTAIN --> VERIFIED_FAILURE: Reality Confirms No Mutation
-  ```
+1. **Gate 1 — Input Assurance (`gateway/middleware/`, `gateway/routes/transactions.py`):** Verifies JWTs and hashed API keys (`mirage_live_...`), strips client-spoofable headers (`X-Role`, `X-Tenant-ID`), evaluates scope attenuation ($\text{Role Ceiling} \cap \text{Key Scopes}$), runs Redis Lua token-bucket rate limits, and scans prompts for injection/PII/secrets.
+2. **Gate 2 — Context Assurance (`services/context_assurance.py`, `services/governed_memory.py`):** Enforces `<trusted_instructions>`/`<untrusted_data>` delimiters, Qdrant document freshness, `ATTESTED` vs `ADVISORY` memory separation (agents cannot self-attest), and Dynamic Information Flow Control (DIFC) taint tracking.
+3. **Gate 3 — Action Assurance (`services/action_governor/`, `services/mcp_registry_service.py`):** Enforces capability authorization, mandatory `GovernedToolProxy` mediation, 1-hour salami-slicing blast radius quotas (`$1,000` spend / `250` risk / `50` ops), anti-SSRF and traversal validation, Redis monotonic leases/fencing tokens, cryptographic `contract_binding_hash`, and single-use L4 HITL approvals.
+4. **Gate 5 — Outcome Assurance (`services/reality_verifier/`):** Executes out-of-band reality probes (`DatabaseStateAdapter`, `HttpResourceAdapter`, `AsyncEventAdapter`, `IndependentObserverAdapter`) using monotonic state transitions (`PENDING_VERIFICATION` → `VERIFIED_SUCCESS` / `VERIFIED_FAILURE` / `PARTIAL_ACHIEVEMENT` / `EXECUTION_UNCERTAIN`).
+5. **Gate 4 — Output Assurance (`hrs_engine/`, `workers/`, `correction_agent/`):** Runs FLAN-T5 claim decomposition, parallel **RAV / SCS / NLI (DeBERTa-v3) / ICS / VGS** signal scoring, **LightGBM** fusion, **Isotonic Calibration**, **Mondrian Conformal 95% confidence bounds**, **TreeSHAP** attribution, postcondition honesty checks, and bounded **LangGraph** self-correction.
 
 ---
 
-## 🏗️ System Architecture & Storage Planes
+## Container Topology (13 Services)
 
-MIRAGE separates control, execution, storage, and observability into isolated architectural planes:
+`docker-compose.yml` defines **13 hardened services** (12 persistent containers + 1 one-shot Alembic `migration` runner) across `frontend_net`, `backend_net`, and `observability_net`:
 
-```mermaid
-flowchart TD
-    subgraph Client ["Client & Consumer Layer"]
-        SDK["Python SDK / HTTP Client"]
-        Browser["React 18 / JSX Dashboard"]
-    end
+| Service | Image / Dockerfile | Network(s) | Exposed Host Port | Hardening Summary |
+| :--- | :--- | :--- | :--- | :--- |
+| `dashboard` | `docker/Dockerfile.dashboard` | `frontend_net` | `3000` (`:8080` internal) | Unprivileged Nginx (`101:101`), `read_only`, `cap_drop: ALL` |
+| `gateway` | `docker/Dockerfile.gateway` | `frontend_net`, `backend_net`, `observability_net` | `8000` | Non-root (`1000:1000`), `read_only`, `cap_drop: ALL`, `audit_anchors` vol |
+| `grafana` | `grafana/grafana:11.2.0` | `observability_net` | `3001` (`:3000` internal) | Provisioned dashboards (`docker/grafana/`) |
+| `worker` | `docker/Dockerfile.worker` | `backend_net`, `observability_net` | *Internal only* | Non-root (`1000:1000`), `read_only`, `cap_drop: ALL` |
+| `migration` | `docker/Dockerfile.gateway` | `backend_net` | *Internal only* | One-shot `alembic upgrade head` (DDL role `mirage`, head `026`) |
+| `postgres` | `postgres:16.4-alpine3.20` | `backend_net` | *Internal only* | `FORCE ROW LEVEL SECURITY`, runtime user `mirage_app` (`NOBYPASSRLS`) |
+| `mongodb` | `mongo:7.0.12` | `backend_net` | *Internal only* | Authenticated per-tenant trace collections + TTL indexes |
+| `qdrant` | `qdrant/qdrant:v1.12.0` | `backend_net` | *Internal only* | API-key protected HNSW vector engine |
+| `redis` | `redis:7.2.5-alpine3.20` | `backend_net` | *Internal only* | Split ACLs (`mirage_app`, `mirage_celery`) + Lua token buckets |
+| `rabbitmq` | `rabbitmq:3.13.6-management-alpine` | `backend_net` | *Internal only* | Quorum queues & Dead-Letter Exchange |
+| `otel-collector` | `otel/opentelemetry-collector-contrib:0.108.0` | `observability_net` | *Internal only* | OpenTelemetry trace collection & routing |
+| `tempo` | `grafana/tempo:2.6.0` | `observability_net` | *Internal only* | Distributed trace backend |
+| `prometheus` | `prom/prometheus:v2.54.1` | `observability_net` | *Internal only* | Internal Gateway `/metrics` scraping |
 
-    subgraph Edge ["Edge & Ingress Tier (frontend_net)"]
-        Nginx["Nginx Reverse Proxy (:8080)"]
-        Gateway["FastAPI Gateway (:8000)"]
-    end
+---
 
-    subgraph Execution ["Execution Plane (backend_net)"]
-        Worker["Celery Async Worker"]
-        ToolProxy["GovernedToolProxy"]
-        Reality["Reality Verifier Engine"]
-    end
+## Repository Source Structure
 
-    subgraph Storage ["Storage & Persistence Tier (backend_net)"]
-        PG[("PostgreSQL 16\n(RLS, Tenancy, Audit Chain)")]
-        Mongo[("MongoDB 7\n(Trace Payloads & Verification Details)")]
-        Redis[("Redis 7.2\n(ACLs, Rate Limiter, Circuit Breakers)")]
-        Rabbit[("RabbitMQ 3.13\n(Quorum Queues & Dead Letter Exch)")]
-        Qdrant[("Qdrant 1.12\n(Knowledge Base & Embeddings)")]
-    end
-
-    subgraph Observability ["Observability Tier (observability_net)"]
-        OTel["OTel Collector Contrib"]
-        Tempo["Grafana Tempo (Traces)"]
-        Prom["Prometheus (Metrics)"]
-        Grafana["Grafana 11 (Private Dashboards)"]
-    end
-
-    Browser --> Nginx
-    SDK --> Gateway
-    Nginx --> Gateway
-    Gateway --> Worker
-    Gateway --> ToolProxy
-    ToolProxy --> Reality
-
-    Gateway & Worker --> PG
-    Gateway & Worker --> Mongo
-    Gateway & Worker --> Redis
-    Gateway & Worker --> Rabbit
-    Gateway & Worker --> Qdrant
-
-    Gateway & Worker --> OTel
-    OTel --> Tempo
-    OTel --> Prom
-    Prom --> Grafana
-    Tempo --> Grafana
+```text
+MIRAGE/
+├── gateway/               # FastAPI gateway, middleware (auth/rbac/pii/rate/security) & /v1/ routes
+├── services/              # Core services (action_governor/, reality_verifier/, providers/, memory, mcp, tenant, audit)
+├── workers/               # Celery tasks, orchestrator & signal workers (rav/, scs/, ics/, visual/)
+├── hrs_engine/            # LightGBM meta-learner, isotonic calibration, Mondrian CP & TreeSHAP
+├── correction_agent/      # LangGraph claim self-correction loop
+├── mcp_server/            # Inbound JSON-RPC 2.0 MCP server & shield
+├── analytics/             # Drift monitoring, audit service & PDF compliance reporting
+├── db/                    # SQLAlchemy async models, session RLS, Redis/Mongo clients & 26 Alembic migrations
+├── shared/                # Settings validation, Pydantic schemas, structlog, Prometheus & OTel tracing
+├── dashboard/             # React 18 + Vite + Tailwind (JS/JSX only) Operator Console
+├── sdk/                   # Python SDK (mirage-sdk) & zero-dependency JS SDK (sdk/js/@mirage-ai/sdk)
+├── cli/                   # Developer CLI entrypoint (`mirage`)
+├── benchmarks/            # Offline/Tier-1/Tier-2 benchmark datasets, guard & runner
+├── scripts/               # Preflight, backup/restore, secrets serializer, smoke tests & Cloudflare tunnel
+├── infra/ & k8s/          # AWS Terraform IaC & Kubernetes Helm chart
+├── docker/                # Multi-stage Dockerfiles & datastore hardening configs
+├── tests/                 # unit/, integration/, security/, contract/, chaos/, model_unit/, performance/
+└── docs/                  # Consolidated technical & operational docs
 ```
 
 ---
 
-## 🐳 Container Topology & Security Profiles
-
-The production deployment runs 12 containers across 3 isolated Docker bridge networks:
-
-| Container | Image | Network Tier | Security Profile & Hardening |
-| :--- | :--- | :--- | :--- |
-| `mirage-gateway` | `mirage-gateway:latest` | `frontend`, `backend`, `observability` | Non-root (`1000:1000`), read-only rootfs, `cap_drop: ALL`, tmpfs `/tmp`. |
-| `mirage-worker` | `mirage-worker:latest` | `backend`, `observability` | Non-root (`1000:1000`), read-only rootfs, `cap_drop: ALL`, tmpfs `/tmp`. |
-| `mirage-dashboard` | `mirage-dashboard:latest` | `frontend` | Non-root Nginx (`101:101`), read-only rootfs, security headers, reverse proxy. |
-| `mirage-postgres` | `postgres:16.4-alpine3.20` | `backend` | Internal only. Enforces PostgreSQL RLS, separate admin & app user roles. |
-| `mirage-redis` | `redis:7.2.5-alpine3.20` | `backend` | Internal only. Redis ACLs: separate `mirage_app` and `mirage_celery` users. |
-| `mirage-mongodb` | `mongo:7.0.12` | `backend` | Internal only. Authenticated trace storage with automatic TTL indexes. |
-| `mirage-rabbitmq` | `rabbitmq:3.13.6-management-alpine` | `backend` | Internal only. Quorum queues, DLX routing, secure user credentials. |
-| `mirage-qdrant` | `qdrant/qdrant:v1.12.0` | `backend` | Internal only. HNSW indexing, authenticated API key protection. |
-| `mirage-otel-collector` | `otel/opentelemetry-collector-contrib:0.108.0` | `observability` | Internal only. Telemetry router and OTLP gRPC buffer. |
-| `mirage-tempo` | `grafana/tempo:2.6.0` | `observability` | Internal only. Distributed W3C trace context backend. |
-| `mirage-prometheus` | `prom/prometheus:v2.54.1` | `observability` | Internal only. Scrapes Gateway `/metrics` with tenant cardinality bounds. |
-| `mirage-grafana` | `grafana/grafana:11.2.0` | `observability` | Bound to `127.0.0.1:3001` (SSH/SSM port forwarding only; zero public ingress). |
-
----
-
-## ⚡ Quick Start & Verification
+## Quick Start & Public Demo
 
 ### Prerequisites
-- Python 3.12+ (or 3.13)
-- Docker & Docker Compose v2.20+
-- Node.js 20+ (for Dashboard development)
+- Python `3.12+` (or `3.13`)
+- Docker & Docker Compose `v2.20+`
+- Node.js `20+` (for frontend development & Vitest)
 
-### 1. Repository Setup & Environment
+### 1. Launch Stack & Run Verification
 ```bash
 git clone https://github.com/VedantPanchal23/MIRAGE.git
 cd MIRAGE
 
-# Copy production-ready template (safe placeholders)
 cp .env.example .env
 
-# Run database migration preflight check (Alembic Head: 023_governed_mcp_servers)
-python scripts/migration_preflight.py --target-head 023_governed_mcp_servers
-```
+# Run Alembic migration preflight check (26 revisions -> head: 026_add_execution_trace)
+python scripts/migration_preflight.py --database-url sqlite:///./tmp_preflight.db
 
-### 2. Launch Multi-Container Infrastructure
-```bash
-# Start the full 12-container hardened topology
-docker compose up -d
-
-# Verify all containers are running and healthy
+# Build and start all 13 services
+docker compose up -d --build
 docker compose ps
 ```
+Platform launcher helpers: `./start-mirage.ps1`, `start-mirage.bat`, `./start-mirage.sh`.
 
-### 3. Run Verification & Test Suites
+- **Dashboard UI:** `http://localhost:3000`
+- **FastAPI Gateway:** `http://localhost:8000` (`/v1/health`, `/v1/ready`, `/docs` when `DEBUG=true`)
+- **Grafana:** `http://localhost:3001`
+
+To share a zero-cost public HTTPS preview URL for demos:
+```powershell
+.\scripts\start-public-tunnel.ps1
+```
+
+### 2. Test & Quality Verification Suites
 ```bash
-# 1. Five-Gate Live Smoke Test (19 automated checks)
-python scripts/local_staging_smoke_test.py
+# Linting, formatting, strict typing & security scan
+ruff check .
+ruff format --check .
+mypy --strict gateway hrs_engine correction_agent analytics mcp_server models shared workers benchmarks scripts tests/unit
+bandit -r gateway hrs_engine correction_agent shared workers -ll -ii
 
-# 2. Live Adversarial PostgreSQL RLS & Role Fencing Test
-python scripts/test_live_adversarial_isolation.py
-
-# 3. Live API Abuse, JWT Tampering, & Fuzzing Matrix
-python scripts/test_api_abuse_matrix.py
-
-# 4. Toxiproxy Chaos Engineering Harness (Network partitions & latency)
-pytest tests/chaos/ -v
-
-# 5. Core Gate 5 Uncertainty & Fail-Closed Security Suites
-pytest tests/unit/test_gate5_uncertainty_remediation.py tests/integration/test_five_gates_e2e.py -v
+# Backend tests & frontend Vitest suite
+pytest tests/unit -v
+cd dashboard && npm test -- --run && npm run build
 ```
 
 ---
 
-## 🐍 Official Python SDK (`mirage-sdk`)
+## SDKs & Core REST API Overview (`/v1/`)
 
-MIRAGE includes a native, fully typed Python SDK supporting synchronous and asynchronous execution:
+Install Python SDK & CLI:
+```bash
+pip install -e ".[dev]"
+pip install -e "./sdk"
+```
 
 ```python
 from mirage_sdk import MirageClient
-from mirage_sdk.models import ActionProposal, PostconditionRule, PostconditionOperator
+from mirage_sdk.models import (
+    ActionProposal,
+    ActionType,
+    BlastRadius,
+    OutcomeVerificationRequest,
+    OutcomeVerifierType,
+    PostconditionRule,
+)
 
-# Initialize client with tenant API key
 with MirageClient(base_url="http://localhost:8000", api_key="mirage_live_...") as client:
-    # 1. Propose governed action with postcondition assertions
-    action = client.propose_action(
+    proposal = client.propose_action(
         ActionProposal(
-            action_type="EXECUTE_SQL",
+            transaction_id="tx-acct-42",
+            action_type=ActionType.WRITE,
             tool_name="database_query",
-            parameters={"query": "UPDATE accounts SET balance = balance - 250 WHERE id = 42"},
             target_resource="db.accounts",
-            idempotency_key="tx-acct-transfer-42-step-1",
-            postconditions=[
-                PostconditionRule(
-                    target="db.accounts",
-                    field="balance",
-                    operator=PostconditionOperator.EQUALS,
-                    expected_value=750,
-                )
-            ],
+            parameters={"query": "UPDATE accounts SET balance = 750 WHERE id = 42"},
+            blast_radius=BlastRadius(estimated_dollar_cost=250.0, target_environment="STAGING"),
+            postconditions=[PostconditionRule(field="balance", operator="eq", expected_value=750)],
         )
     )
-    print(f"Action Proposal ID: {action.action_id} (Status: {action.status})")
-
-    # 2. Acquire concurrency lease and dispatch execution
-    executed = client.execute_action(action.action_id)
-    print(f"Execution State: {executed.status}")
-
-    # 3. Execute Gate 5 Reality Verification independently
+    executed = client.execute_action(proposal.action_id)
     outcome = client.verify_outcome(
-        action_id=executed.action_id,
-        observations={"observed_balance": 750},
+        OutcomeVerificationRequest(
+            action_id=executed.action_id,
+            verifier_type=OutcomeVerifierType.INDEPENDENT_OBSERVER,
+            observations={"balance": 750},
+        )
     )
-    print(f"Gate 5 Outcome: {outcome.status} (Confidence: {outcome.epistemic_confidence})")
+    print(outcome.outcome_status, outcome.epistemic_confidence)
 ```
 
----
-
-## ☁️ AWS Private Staging Architecture
-
-MIRAGE provides modular, cost-conscious **Terraform Infrastructure-as-Code** (`infra/terraform/`) and an AWS Staging Compose override (`docker-compose.staging.yml`) for private cloud deployment:
-
-- **Cost-Conscious Footprint**: Single hardened `t3.large` instance ($0.0832/hr) running the proven 12-container topology in a dedicated VPC, eliminating expensive NAT Gateways and ALBs during initial validation.
-- **Zero Public Inbound Ports**: Ingress is disabled by default (`admin_cidrs = []`). Administrative terminal access and port-forwarding operate exclusively via **AWS Systems Manager (SSM) Session Manager**.
-- **KMS Encryption at Rest**: Customer Managed Key (CMK) with automated rotation encrypts EBS volumes, AWS Secrets Manager credentials, and S3 cold audit buckets.
-- **Fail-Closed Staging Configuration**: Startup halts immediately if development fallback passwords (`mirage_dev_secret`, `mirage_redis_secret`) or default signing keys are detected.
-
-```bash
-# Format and validate IaC locally (requires zero cloud spend)
-cd infra/terraform
-terraform fmt -check
-terraform init -backend=false
-terraform validate
-```
-
-*For complete prerequisites, billing budget scripts, secret injection workflows, and controlled teardown runbooks, see [`docs/deployment/aws-private-staging.md`](docs/deployment/aws-private-staging.md).*
+| Group | Verified Key Endpoints |
+| :--- | :--- |
+| **Auth & Tenants** | `POST /v1/auth/register-tenant`, `GET /v1/auth/me`, `POST/GET /v1/auth/api-keys`, `.../rotate`, `.../revoke`, `/v1/admin/tenants/*` |
+| **Transactions & Context** | `POST /v1/input-assurance`, `/v1/transactions/*`, `POST /v1/context/assemble`, `/v1/memory/*`, `/v1/kb/*` |
+| **Actions & Approvals** | `POST/GET /v1/tools`, `POST /v1/actions/propose\|authorize\|execute`, `GET /v1/actions/stranded`, `POST .../reconcile`, `/v1/approvals/*`, `/v1/resources/leases/*` |
+| **Verification & Outcomes** | `POST /v1/verify`, `POST /v1/output/assure`, `POST/WS /v1/verify/stream`, `POST /v1/chat/completions`, `POST /v1/outcomes/verify`, `GET /v1/outcomes/pending`, `POST .../reconcile`, `.../escalate` |
+| **Governed MCP & Agents** | `POST /v1/mcp/rpc`, `POST/GET /v1/mcp/servers`, `PUT .../trust`, `POST .../discover`, `/v1/agents/*`, `/v1/delegations/*`, `/v1/handoffs/*` |
+| **Audit, Reports & Health** | `POST /v1/audit/verify-chain`, `GET /v1/audit/events`, `GET /v1/audit/integrity`, `POST /v1/audit/export-bundle`, `POST /v1/audit/anchor`, `/v1/reports/*`, `GET /v1/health`, `GET /v1/ready`, `GET /metrics` |
 
 ---
 
-## 📜 Complete REST API Reference (`/v1/`)
+## Documentation Index
 
-| Route Group | Method & Endpoint | Description | Capability Required |
-| :--- | :--- | :--- | :--- |
-| **Auth & Tenants** | `POST /v1/auth/token` | Obtain tenant JWT bearer token | Public (API Key / Auth) |
-| | `POST /v1/admin/tenants` | Provision new isolated tenant | `admin:write` |
-| | `POST /v1/auth/api-keys` | Generate high-entropy tenant API key | `admin:write` |
-| | `POST /v1/auth/api-keys/{id}/revoke`| Instantly revoke an active API key | `admin:write` |
-| **Transactions** | `POST /v1/transactions` | Initialize governed AI transaction | `transaction:write` |
-| | `GET /v1/transactions/{id}` | Query full transaction execution record | `transaction:read` |
-| **Verification** | `POST /v1/verify` | Submit content for Gate 4 output assurance | `verify:execute` |
-| | `GET /v1/verify/{id}/status` | Check async verification task status | `verify:read` |
-| **Action Assurance** | `POST /v1/actions/propose` | Propose action contract with postconditions | `action:propose` |
-| | `POST /v1/actions/{id}/execute` | Acquire lease and dispatch tool proxy | `action:execute` |
-| **Outcome Assurance** | `POST /v1/outcomes/verify` | Trigger Gate 5 independent reality verification | `outcome:verify` |
-| **Governed MCP** | `GET /v1/mcp/servers` | Discover registered MCP servers | `mcp:read` |
-| | `POST /v1/mcp/servers/{id}/revoke` | Instantly revoke compromised MCP tool | `mcp:admin` |
-| **Audit & Ledger** | `GET /v1/audit/records` | Query tamper-evident audit ledger | `audit:read` |
-| | `GET /v1/audit/verify-chain` | Cryptographically verify SHA-256 chain | `audit:read` |
-| **Health & Telemetry** | `GET /v1/health` | Liveness probe (container orchestrator) | Public |
-| | `GET /v1/ready` | 6-backend readiness probe | Public |
-| | `GET /metrics` | Prometheus metrics scrape endpoint | Internal / Admin |
+- **[Architecture & System Specification](docs/ARCHITECTURE.md)** — Canonical Five Assurance Gates spec, planes, state machines, data model, source map & all Mermaid diagrams.
+- **[API & SDK Reference](docs/API_AND_SDK.md)** — Auth/scope attenuation, complete `/v1/` routes, Python & JS SDKs, and CLI usage.
+- **[Security, Compliance & Residual Risks](docs/SECURITY_AND_COMPLIANCE.md)** — Threat model, DIFC, cryptographic audit chain, and formally accepted operational boundaries (`RSK-FENCE-01`–`RSK-LATENCY-06`).
+- **[Deployment, Operations & Runbooks](docs/DEPLOYMENT_AND_OPERATIONS.md)** — Docker Compose, Kubernetes Helm, cloud VPS, migrations, backup/restore & incident response.
+- **[AWS Private Staging](docs/deployment/aws-private-staging.md)** — Terraform IaC (`infra/terraform/`) & SSM zero-inbound staging specification (ready for review; unprovisioned under `$0.00` cloud cost policy).
+- **[Testing & Benchmarks](docs/TESTING_AND_BENCHMARKS.md)** — Test pyramid, CI jobs, benchmark certification guard & developer standards.
+- **[Canonical Glossary](docs/GLOSSARY.md)** | **[Changelog](docs/CHANGELOG.md)** | **[ADRs](docs/ADRs/README.md)**
 
 ---
 
-## 🛡️ Documented System Limitations & Boundaries
+## Authors & Affiliation
 
-In accordance with MIRAGE architectural principles and ADR records:
-1. **Target-Side Fencing Boundary**: MIRAGE enforces two-phase commit leases (`EXECUTING`) prior to dispatch to prevent local blind redispatch. Target systems lacking native conditional mutation support (e.g., SMTP or generic webhooks) remain mediated-only; universal target-side fencing is not claimed across arbitrary third-party protocols.
-2. **Database-Resident vs. External Storage**: Tamper-evident SHA-256 audit chains are serialized under PostgreSQL row locks and cross-checked against filesystem/HMAC-SHA256 notary anchor proofs. Full external WORM (Write Once Read Many) cloud object storage or public blockchain notarization requires provisioned external enterprise infrastructure.
-3. **Hardware KMS Epistemic Shredding**: Memory deletion enforces cryptographic tombstoning and multi-store cache/vector eviction. True physical hardware key destruction requires integration with external dedicated HSM hardware.
-
----
-
-## 📚 Documentation Index
-
-- [Canonical Specification](docs/MIRAGE_3.0_Specification.md) — The authoritative system specification.
-- [Glossary](docs/GLOSSARY.md) — Definitive definitions for all system terminology.
-- [Technical Architecture](docs/Technical_Architecture.md) — Subsystem designs and communication protocols.
-- [Security Architecture](docs/Security.md) — Threat model, capability security, and zero-trust boundaries.
-- [API Specification](docs/API_Specification.md) — OpenAPI contracts and error specifications.
-- [Python SDK & Integration](docs/SDK_and_Integration.md) — Developer integration patterns and client libraries.
-- [AWS Private Staging Runbook](docs/deployment/aws-private-staging.md) — Cloud architecture, Terraform, and operational procedures.
-- [Observability & Audit](docs/Observability_and_Audit.md) — Tracing, metrics, and cryptographic audit proofs.
-- [Operational Runbooks](docs/runbooks/) — Incident triage, key rotation, and disaster recovery.
-- [Architecture Decision Records (ADRs)](docs/ADRs/README.md) — Architectural change governance.
-- [Project Changelog](docs/CHANGELOG.md) — Detailed version and migration history.
-
----
-
-## 📜 Citation & Research Attribution
-
-```bibtex
-@software{mirage2026assurance,
-  author = {Vedant and Dax},
-  title = {MIRAGE 3.0: An AI Execution Assurance Platform},
-  institution = {Chandubhai S. Patel Institute of Technology (CSPIT), CHARUSAT},
-  year = {2026},
-  url = {https://github.com/VedantPanchal23/MIRAGE}
-}
-```
-*Academic and Research Project developed at CSPIT, CHARUSAT. All rights reserved.*
+- **Vedant Panchal (23AIML042)** & **Dax Virani (23AIML076)** — Department of Artificial Intelligence & Machine Learning, CSPIT, CHARUSAT
+- **Project Disposition:** `MIRAGE PROJECT CLOSED — ACCEPTED WITH DOCUMENTED LIMITATIONS`

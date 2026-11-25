@@ -23,9 +23,11 @@ spec:
         - protocol: TCP
           port: 8000
         - protocol: TCP
+          port: 8080
+        - protocol: TCP
           port: 3000
   egress:
-    # Allow egress to DNS, Postgres, Redis, RabbitMQ, Qdrant
+    # Allow egress to DNS, Postgres, MongoDB, Redis, RabbitMQ, Qdrant, OTel Collector, HTTP/S
     - ports:
         - protocol: UDP
           port: 53
@@ -34,11 +36,15 @@ spec:
         - protocol: TCP
           port: 5432
         - protocol: TCP
+          port: 27017
+        - protocol: TCP
           port: 6379
         - protocol: TCP
           port: 5672
         - protocol: TCP
           port: 6333
+        - protocol: TCP
+          port: 4317
         - protocol: TCP
           port: 443
         - protocol: TCP

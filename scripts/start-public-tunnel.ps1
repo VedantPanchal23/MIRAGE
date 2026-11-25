@@ -11,7 +11,7 @@ Write-Host "==========================================================" -Foregro
 $running = docker ps -q --filter "name=mirage-dashboard"
 if (-not $running) {
     Write-Host "[1/2] Starting MIRAGE Docker Stack..." -ForegroundColor Yellow
-    docker-compose up -d
+    docker compose up -d
 } else {
     Write-Host "[1/2] MIRAGE Docker Stack is active & healthy." -ForegroundColor Green
 }

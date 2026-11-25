@@ -81,7 +81,7 @@ include = ["cli*", "shared*", "gateway*", "services*", "workers*", "models*", "h
 [tool.ruff]
 line-length = 120
 target-version = "py312"
-extend-exclude = ["reports", "dashboard"]
+extend-exclude = ["dashboard"]
 
 [tool.ruff.lint]
 select = [

@@ -52,7 +52,7 @@ case "$CHOICE" in
         ;;
     2|full|enterprise)
         echo -e "\n${CYAN}>>> Starting Full Enterprise Cluster with Observability...${NC}"
-        docker compose --profile full up -d
+        docker compose up -d
         echo -e "\n${YELLOW}>>> Waiting for Services...${NC}"
         sleep 5
         docker compose ps
@@ -61,7 +61,6 @@ case "$CHOICE" in
         echo -e "${WHITE}  - Storefront & Operator Dashboard: http://localhost:3000${NC}"
         echo -e "${WHITE}  - Execution Plane Gateway:         http://localhost:8000${NC}"
         echo -e "${WHITE}  - Grafana Telemetry Dashboards:    http://localhost:3001${NC}"
-        echo -e "${WHITE}  - Prometheus Metrics Engine:       http://localhost:9090${NC}"
         echo -e "${GREEN}==================================================================${NC}"
         ;;
     3|test|verify)
@@ -74,7 +73,7 @@ case "$CHOICE" in
         ;;
     5|down|stop)
         echo -e "\n${YELLOW}>>> Stopping All Services...${NC}"
-        docker compose --profile full down
+        docker compose down
         echo -e "${GREEN}>>> All MIRAGE containers terminated safely.${NC}"
         ;;
     *)

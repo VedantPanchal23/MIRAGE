@@ -99,7 +99,7 @@ dashboard:
   service:
     type: ClusterIP
     port: 3000
-    targetPort: 3000
+    targetPort: 8080
   resources:
     limits:
       cpu: 500m

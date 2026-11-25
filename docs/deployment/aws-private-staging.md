@@ -11,19 +11,20 @@
 
 ### 1.1 Architectural Evaluation: Single-EC2 Staging Host vs. Container Orchestration (ECS/EKS)
 
-The MIRAGE 3.0 platform operates 12 integrated services across 3 network tiers:
+The MIRAGE 3.0 platform operates 13 Compose services (12 persistent containers plus 1 one-shot `migration` runner) across 3 network tiers:
 1. **Core Gateway (`mirage-gateway`)**: FastAPI Execution Plane entry point.
 2. **Background Worker (`mirage-worker`)**: Celery daemon for async task processing.
 3. **Operator Dashboard (`mirage-dashboard`)**: React 18 / JSX web interface with Nginx reverse proxy.
-4. **Relational Control Plane (`mirage-postgres`)**: PostgreSQL 16 with Row-Level Security (RLS).
-5. **Trace Document Store (`mirage-mongodb`)**: MongoDB 7 for immutable execution payloads.
-6. **Vector Knowledge Store (`mirage-qdrant`)**: Qdrant 1.12 for Gate 2 context embeddings.
-7. **Cache & Rate Limiting (`mirage-redis`)**: Redis 7.2 with ACLs and distributed token buckets.
-8. **Message Broker (`mirage-rabbitmq`)**: RabbitMQ 3.13 with Quorum Queues.
-9. **Distributed Tracing (`mirage-tempo`)**: Grafana Tempo 2.6.
-10. **Telemetry Collector (`mirage-otel-collector`)**: OpenTelemetry Collector Contrib 0.108.
-11. **Metrics Engine (`mirage-prometheus`)**: Prometheus 2.54.
-12. **Monitoring Dashboard (`mirage-grafana`)**: Grafana 11.2 (SSM/SSH port-forwarded only).
+4. **Database Migration (`mirage-migration`)**: One-shot Alembic upgrade runner (`026_add_execution_trace` head).
+5. **Relational Control Plane (`mirage-postgres`)**: PostgreSQL 16 with Row-Level Security (RLS).
+6. **Trace Document Store (`mirage-mongodb`)**: MongoDB 7 for immutable execution payloads.
+7. **Vector Knowledge Store (`mirage-qdrant`)**: Qdrant 1.12 for Gate 2 context embeddings.
+8. **Cache & Rate Limiting (`mirage-redis`)**: Redis 7.2 with ACLs and distributed token buckets.
+9. **Message Broker (`mirage-rabbitmq`)**: RabbitMQ 3.13 with Quorum Queues.
+10. **Distributed Tracing (`mirage-tempo`)**: Grafana Tempo 2.6.
+11. **Telemetry Collector (`mirage-otel-collector`)**: OpenTelemetry Collector Contrib 0.108.
+12. **Metrics Engine (`mirage-prometheus`)**: Prometheus 2.54.
+13. **Monitoring Dashboard (`mirage-grafana`)**: Grafana 11.2 (SSM/SSH port-forwarded only).
 
 #### Deployment Model Comparison Matrix
 
@@ -260,8 +261,8 @@ python3 scripts/verify_staging_release.py --expected-ref "$MIRAGE_RELEASE_REF"
 # 4. Copy validated .env into repo working directory
 cp /opt/mirage/.env .env
 
-# 5. Run migration preflight using DDL migration credentials
-python3 scripts/migration_preflight.py --target-head 023_governed_mcp_servers
+# 5. Run migration preflight using DDL migration credentials (target head: 026_add_execution_trace)
+python3 scripts/migration_preflight.py --database-url "${DATABASE_SYNC_URL}"
 
 # 6. Launch multi-container staging stack
 docker compose -f docker-compose.yml -f docker-compose.staging.yml up -d

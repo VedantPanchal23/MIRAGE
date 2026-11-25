@@ -37,7 +37,7 @@ if "%choice%"=="1" (
 if "%choice%"=="2" (
     echo.
     echo Starting Full Enterprise Cluster...
-    docker compose --profile full up -d
+    docker compose up -d
     timeout /t 5 /nobreak >nul
     docker compose ps
     echo.
@@ -46,7 +46,6 @@ if "%choice%"=="2" (
     echo   - Storefront ^& Dashboard: http://localhost:3000
     echo   - Execution Plane Gateway:  http://localhost:8000
     echo   - Grafana Monitoring:       http://localhost:3001
-    echo   - Prometheus Metrics:       http://localhost:9090
     echo ==================================================================
     pause
     exit /b 0
@@ -70,7 +69,7 @@ if "%choice%"=="4" (
 if "%choice%"=="5" (
     echo.
     echo Stopping all containers...
-    docker compose --profile full down
+    docker compose down
     echo Done.
     pause
     exit /b 0
